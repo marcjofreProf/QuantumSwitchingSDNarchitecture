@@ -2,10 +2,6 @@
 # ---------------------------------------------------------------------------
 # Quantum-SDN Switching Architecture Bootstrap Script
 # ---------------------------------------------------------------------------
-# This script scaffolds the repository structure and installs the required 
-# cloud-native dependencies (K8s, Helm, Docker, Protoc, µONOS, Open5GS repos)
-# for the 6G-OpenLab VM infrastructure.
-# ---------------------------------------------------------------------------
 
 set -e # Exit immediately if a command exits with a non-zero status
 
@@ -22,32 +18,31 @@ log_success() { echo -e "${GREEN}[SUCCESS] $1${NC}"; }
 log_warn() { echo -e "${YELLOW}[WARNING] $1${NC}"; }
 log_error() { echo -e "${RED}[ERROR] $1${NC}"; exit 1; }
 
-# Function to prompt the user
 ask_user() {
     local prompt="$1"
     local default="$2"
     local response
-    
+
     if [ "$default" = "Y" ]; then
-        read -p "$(echo -e "${YELLOW}${prompt} [Y/n]:${NC}")" response
+        read -p "$(echo -e "${YELLOW}${prompt} [Y/n]: ${NC}")" response
         response=${response:-Y}
     else
-        read -p "$(echo -e "${YELLOW}${prompt} [y/N]:${NC}")" response
+        read -p "$(echo -e "${YELLOW}${prompt} [y/N]: ${NC}")" response
         response=${response:-N}
     fi
-    
+
     if [[ "$response" =~ ^[Yy]$ ]]; then
-        return 0 # True
+        return 0
     else
-        return 1 # False
+        return 1
     fi
 }
 
 # --- Phase 1: Repository Scaffolding ---
 create_repo_structure() {
     log_info "Phase 1: Creating Quantum-SDN repository structure..."
-    local base_dir="quantum-sdn-architecture"
-    
+    local base_dir="quantum-sdn-switching-architecture"
+
     if [ -d "$base_dir" ]; then
         log_warn "Directory '$base_dir' already exists."
         if ! ask_user "Do you want to recreate/update the folders inside it?" "Y"; then
@@ -56,11 +51,29 @@ create_repo_structure() {
         fi
     fi
 
-    mkdir -p $base_dir/{.github/workflows,docs/{architecture,api},deploy/{vm-provisioning,k8s-cluster},sdn-controller/{apps,southbound-plugins,northbound-interfaces},orchestration/{osm-packages,yang-models},workloads/open5gs,hardware-agents/{gnoi-targets,switch-drivers},tests/{latency-benchmarks,e2e-path-provisioning},scripts}
-    
-    # Create placeholder files
-    touch $base_dir/README.md $base_dir/LICENSE$base_dir/Makefile
-    
+    # Create directories with quoted variable pathing
+    mkdir -p "$base_dir"/.github/workflows \
+             "$base_dir"/docs/architecture \
+             "$base_dir"/docs/api \
+             "$base_dir"/deploy/vm-provisioning \
+             "$base_dir"/deploy/k8s-cluster \
+             "$base_dir"/sdn-controller/apps \
+             "$base_dir"/sdn-controller/southbound-plugins \
+             "$base_dir"/sdn-controller/northbound-interfaces \
+             "$base_dir"/orchestration/osm-packages \
+             "$base_dir"/orchestration/yang-models \
+             "$base_dir"/workloads/open5gs \
+             "$base_dir"/hardware-agents/gnoi-targets \
+             "$base_dir"/hardware-agents/switch-drivers \
+             "$base_dir"/tests/latency-benchmarks \
+             "$base_dir"/tests/e2e-path-provisioning \
+             "$base_dir"/scripts
+
+    # Create placeholder files cleanly
+    touch "$base_dir/README.md"
+    touch "$base_dir/LICENSE"
+    touch "$base_dir/Makefile"
+
     log_success "Repository structure created successfully at ./$base_dir"
 }
 
@@ -71,8 +84,8 @@ install_sys_deps() {
     local to_install=""
 
     for pkg in $deps; do
-        if ! dpkg -l | grep -qw $pkg; then
-            to_install="$to_install$pkg"
+        if ! dpkg -l | grep -qw "$pkg"; then
+            to_install="$to_install $pkg"
         fi
     done
 
@@ -86,7 +99,7 @@ install_sys_deps() {
     fi
 }
 
-# --- Phase 3: Docker & Kubernetes (Kind) & Helm ---
+# --- Phase 3: Docker & Kubernetes & Helm ---
 install_docker() {
     log_info "Checking Docker..."
     if command -v docker >/dev/null 2>&1; then
@@ -98,16 +111,16 @@ install_docker() {
         log_info "Installing Docker..."
         curl -fsSL https://get.docker.com -o get-docker.sh
         sudo sh get-docker.sh
-        sudo usermod -aG docker $USER
+        sudo usermod -aG docker "$USER"
         rm get-docker.sh
-        log_success "Docker installed. (You may need to log out and log back in to use Docker without sudo)."
+        log_success "Docker installed."
     fi
 }
 
 install_kubectl_and_helm() {
     log_info "Checking kubectl..."
     if command -v kubectl >/dev/null 2>&1; then
-        log_success "kubectl is already installed ($(kubectl version --client --short 2>/dev/null | grep Client || echo "Version hidden"))."
+        log_success "kubectl is already installed."
     else
         log_info "Installing kubectl..."
         curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
@@ -132,13 +145,13 @@ install_kubectl_and_helm() {
 # --- Phase 4: SDN Controller (µONOS) & Open5GS Repos ---
 setup_helm_repos() {
     log_info "Phase 4: Setting up Helm repositories for µONOS and Open5GS..."
-    
+
     # microONOS Repo
     helm repo add onosproject https://charts.onosproject.org
-    
-    # Open5GS (Using the official Orange-OpenSource Towards5G Helm repo)
+
+    # Open5GS (Using official Orange Towards5G repo)
     helm repo add towards5g https://orange-opensource.github.io/towards5g-helm
-    
+
     helm repo update
     log_success "Helm repositories added and updated."
 }
@@ -157,7 +170,7 @@ install_grpc_tools() {
         log_success "protoc installed."
     fi
 
-    log_info "Checking grpcurl (useful for testing gRPC endpoints)..."
+    log_info "Checking grpcurl..."
     if command -v grpcurl >/dev/null 2>&1; then
         log_success "grpcurl is already installed."
     else
@@ -173,25 +186,24 @@ install_grpc_tools() {
 # --- Phase 6: Orchestration (OSM) ---
 install_osm_installer() {
     log_info "Phase 6: Open Source MANO (OSM)"
-    log_warn "OSM is a highly complex orchestration platform that usually requires dedicated CPU/RAM."
-    log_warn "It installs LXD, Juju, and multiple K8s pods."
-    
+    log_warn "OSM is a highly complex orchestration platform requiring significant resources."
+
     if ask_user "Do you want to download and run the OSM standalone installer now?" "N"; then
         log_info "Downloading OSM installer..."
         wget https://osm-download.etsi.org/ftp/osm-14.0-fourteen/install_osm.sh
         chmod +x install_osm.sh
-        log_info "Running OSM installer (this may take up to 45 minutes)..."
+        log_info "Running OSM installer..."
         ./install_osm.sh
         log_success "OSM installation process finished."
     else
-        log_info "Skipping OSM installation. You can deploy it later in the 6G-OpenLab VM."
+        log_info "Skipping OSM installation."
     fi
 }
 
-# --- Main Execution block ---
-echo -e "${CYAN}=======================================================${NC}"
-echo -e "${CYAN}   Quantum-SDN Switching Architecture Environment Setup${NC}"
-echo -e "${CYAN}=======================================================${NC}"
+# --- Main Execution ---
+echo -e "${CYAN}===========================================================${NC}"
+echo -e "${CYAN}   Quantum-SDN Switching Architecture Environment Setup    ${NC}"
+echo -e "${CYAN}===========================================================${NC}"
 
 create_repo_structure
 install_sys_deps
@@ -202,7 +214,7 @@ install_grpc_tools
 install_osm_installer
 
 echo -e "${GREEN}====================================================${NC}"
-echo -e "${GREEN} Setup Complete!${NC}"
-echo -e "Navigate to your new repository: ${YELLOW}cd quantum-sdn-architecture${NC}"
-echo -e "Review Open5GS charts with: ${YELLOW}helm search repo towards5g${NC}"
+echo -e "${GREEN} Setup Complete! ${NC}"
+echo -e "Navigate to your repository: ${YELLOW}cd quantum-sdn-switching-architecture${NC}"
+echo -e "Check Helm charts: ${YELLOW}helm search repo towards5g${NC}"
 echo -e "${GREEN}====================================================${NC}"
