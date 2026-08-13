@@ -41,8 +41,8 @@ To quickly set up the repository structure and install all necessary cloud-nativ
 
 **1. Clone the repository and navigate into it:**
 ```bash
-git clone [https://github.com/marcjofreProf/QuantumSwitchingSDNarchitecture.git](https://github.com/marcjofreProf/QuantumSwitchingSDNarchitecture.git)
+git clone --depth=1 https://github.com/marcjofreProf/QuantumSwitchingSDNarchitecture.git
 cd QuantumSwitchingSDNarchitecture
 
-chmod +x bootstrap-quantum-switching-sdn.sh
-./bootstrap-quantum-switching-sdn.sh
+sudo chmod +x bootstrap-quantum-switching-sdn.sh
+sudo ./bootstrap-quantum-switching-sdn.sh
