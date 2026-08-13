@@ -29,10 +29,10 @@ ask_user() {
     local response
     
     if [ "$default" = "Y" ]; then
-        read -p "$(echo -e "${YELLOW}${prompt} [Y/n]: ${NC}")" response
+        read -p "$(echo -e "${YELLOW}${prompt} [Y/n]:${NC}")" response
         response=${response:-Y}
     else
-        read -p "$(echo -e "${YELLOW}${prompt} [y/N]: ${NC}")" response
+        read -p "$(echo -e "${YELLOW}${prompt} [y/N]:${NC}")" response
         response=${response:-N}
     fi
     
@@ -59,7 +59,7 @@ create_repo_structure() {
     mkdir -p $base_dir/{.github/workflows,docs/{architecture,api},deploy/{vm-provisioning,k8s-cluster},sdn-controller/{apps,southbound-plugins,northbound-interfaces},orchestration/{osm-packages,yang-models},workloads/open5gs,hardware-agents/{gnoi-targets,switch-drivers},tests/{latency-benchmarks,e2e-path-provisioning},scripts}
     
     # Create placeholder files
-    touch $base_dir/README.md $base_dir/LICENSE $base_dir/Makefile
+    touch $base_dir/README.md $base_dir/LICENSE$base_dir/Makefile
     
     log_success "Repository structure created successfully at ./$base_dir"
 }
@@ -72,7 +72,7 @@ install_sys_deps() {
 
     for pkg in $deps; do
         if ! dpkg -l | grep -qw $pkg; then
-            to_install="$to_install $pkg"
+            to_install="$to_install$pkg"
         fi
     done
 
@@ -135,8 +135,9 @@ setup_helm_repos() {
     
     # microONOS Repo
     helm repo add onosproject https://charts.onosproject.org
-    # Open5GS (using a popular community chart, e.g., from Gradiant or Supaglue)
-    helm repo add open5gs https://gradiant.github.io/open5gs-helm/
+    
+    # Open5GS (Using the official Orange-OpenSource Towards5G Helm repo)
+    helm repo add towards5g https://orange-opensource.github.io/towards5g-helm
     
     helm repo update
     log_success "Helm repositories added and updated."
@@ -188,9 +189,9 @@ install_osm_installer() {
 }
 
 # --- Main Execution block ---
-echo -e "${CYAN}====================================================${NC}"
-echo -e "${CYAN}   Quantum-SDN Architecture Environment Setup       ${NC}"
-echo -e "${CYAN}====================================================${NC}"
+echo -e "${CYAN}=======================================================${NC}"
+echo -e "${CYAN}   Quantum-SDN Switching Architecture Environment Setup${NC}"
+echo -e "${CYAN}=======================================================${NC}"
 
 create_repo_structure
 install_sys_deps
@@ -201,7 +202,7 @@ install_grpc_tools
 install_osm_installer
 
 echo -e "${GREEN}====================================================${NC}"
-echo -e "${GREEN} Setup Complete! ${NC}"
+echo -e "${GREEN} Setup Complete!${NC}"
 echo -e "Navigate to your new repository: ${YELLOW}cd quantum-sdn-architecture${NC}"
-echo -e "Review your Helm charts with: ${YELLOW}helm search repo onosproject${NC}"
+echo -e "Review Open5GS charts with: ${YELLOW}helm search repo towards5g${NC}"
 echo -e "${GREEN}====================================================${NC}"
