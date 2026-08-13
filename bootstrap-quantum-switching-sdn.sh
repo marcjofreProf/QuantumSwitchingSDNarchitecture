@@ -1,6 +1,6 @@
 #!/bin/bash
 # ---------------------------------------------------------------------------
-# Quantum-SDN Architecture Bootstrap Script
+# Quantum-SDN Switching Architecture Bootstrap Script
 # ---------------------------------------------------------------------------
 # This script scaffolds the repository structure and installs the required 
 # cloud-native dependencies (K8s, Helm, Docker, Protoc, µONOS, Open5GS repos)
