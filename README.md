@@ -25,7 +25,7 @@ quantum-sdn-architecture/
 │   └── open5gs/                # Helm charts/Kustomize files for Open5GS pods
 └── bootstrap-quantum-switching-sdn.sh
 
-# Quantum SDN Architecture
+# Quantum switching SDN Architecture
 
 An ultra-low latency, pure circuit-switched Software Defined Networking (SDN) architecture designed for quantum data planes. 
 
