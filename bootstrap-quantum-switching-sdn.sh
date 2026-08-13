@@ -149,8 +149,8 @@ setup_helm_repos() {
     # microONOS Repo
     helm repo add onosproject https://charts.onosproject.org
 
-    # Open5GS (Using official Orange Towards5G repo)
-    helm repo add towards5g https://orange-opensource.github.io/towards5g-helm
+    # Towards5GS (Using official Orange Towards5GS repo - Note: This is for Free5GC)
+    helm repo add towards5gs https://raw.githubusercontent.com/Orange-OpenSource/towards5gs-helm/main/repo/
 
     helm repo update
     log_success "Helm repositories added and updated."
@@ -216,11 +216,5 @@ install_osm_installer
 echo -e "${GREEN}====================================================${NC}"
 echo -e "${GREEN} Setup Complete! ${NC}"
 echo -e "Navigate to your repository: ${YELLOW}cd quantum-sdn-switching-architecture${NC}"
-echo -e "Check Helm charts: ${YELLOW}helm search repo towards5g${NC}"
-echo -e "${GREEN}====================================================${NC}"
-
-echo -e "${GREEN}====================================================${NC}"
-echo -e "${GREEN} Setup Complete! ${NC}"
-echo -e "Navigate to your repository: ${YELLOW}cd quantum-sdn-switching-architecture${NC}"
-echo -e "Check Helm charts: ${YELLOW}helm search repo towards5g${NC}"
+echo -e "Check Helm charts: ${YELLOW}helm search repo towards5gs${NC}"
 echo -e "${GREEN}====================================================${NC}"
