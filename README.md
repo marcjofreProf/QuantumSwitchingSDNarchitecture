@@ -45,4 +45,4 @@ git clone --depth=1 https://github.com/marcjofreProf/QuantumSwitchingSDNarchitec
 cd QuantumSwitchingSDNarchitecture
 
 sudo chmod +x bootstrap-quantum-switching-sdn.sh
-sudo ./bootstrap-quantum-switching-sdn.sh
+./bootstrap-quantum-switching-sdn.sh
