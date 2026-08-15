@@ -1,0 +1,23 @@
+# ---------------------------------------------------------------------------
+# Quantum-SDN Switching Architecture .gitignore
+# ---------------------------------------------------------------------------
+
+# Auto-generated scaffolding directory created by the bootstrap script
+quantum-sdn-switching-architecture/
+
+# Downloaded installation scripts
+get-docker.sh
+get_helm.sh
+install_osm.sh
+
+# Downloaded binaries and archives
+kubectl
+grpcurl_*.tar.gz
+grpcurl
+
+# Keys and credentials
+OSM-ETSI-Release-key.gpg
+
+# Standard OS hidden files
+.DS_Store
+*~
