@@ -1,11 +1,24 @@
 #!/usr/bin/env python3
-import grpc
-import argparse
-import sys
 import os
+import sys
+
+# --- ELEGANT VENV AUTO-DISCOVERY ---
+# If the user runs this with the system Python, it will lack 'grpc'.
+# We catch that, find the local .venv, and silently restart the script using it!
+try:
+    import grpc
+except ModuleNotFoundError:
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    venv_python = os.path.abspath(os.path.join(current_dir, '../.venv/bin/python3'))
+    if os.path.exists(venv_python):
+        os.execl(venv_python, venv_python, *sys.argv) # Relaunch self inside venv
+    else:
+        print("[ERROR] 'grpc' missing and '.venv' not found. Run the bootstrap script first.")
+        sys.exit(1)
+
+import argparse
 
 # Ensure the proto directory is discoverable relative to this script
-current_dir = os.path.dirname(os.path.abspath(__file__))
 proto_dir = os.path.abspath(os.path.join(current_dir, '../proto'))
 sys.path.append(proto_dir)
 
