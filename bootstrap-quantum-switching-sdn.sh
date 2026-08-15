@@ -41,7 +41,7 @@ ask_user() {
 # --- Phase 1: Repository Scaffolding ---
 create_repo_structure() {
     log_info "Phase 1: Creating Quantum-SDN repository structure..."
-    local base_dir="quantum-sdn-switching-architecture"
+    local base_dir="."
 
     if [ -d "$base_dir" ]; then
         log_warn "Directory '$base_dir' already exists."
@@ -205,23 +205,20 @@ install_osm_installer() {
 # --- Phase 7: Setup Python gRPC Client Environment ---
 setup_sdn_python_client() {
     log_info "Phase 7: Setting up Python gRPC SDN Client Environment..."
-    local base_dir="quantum-sdn-switching-architecture"
+    local base_dir="."  # <--- MUST BE "."
 
     log_info "Installing Python venv package..."
     sudo apt-get install -y python3-venv python3-pip
 
     log_info "Creating Python virtual environment in $base_dir/.venv..."
-    # Create the virtual environment
     python3 -m venv "$base_dir/.venv"
 
     log_info "Installing grpcio and grpcio-tools in the virtual environment..."
-    # Use the isolated pip inside the venv
     "$base_dir/.venv/bin/pip" install --upgrade pip
     "$base_dir/.venv/bin/pip" install grpcio grpcio-tools
 
     if [ -f "$base_dir/proto/quantum_switch.proto" ]; then
         log_info "Compiling gRPC stubs..."
-        # Use the isolated python inside the venv to compile
         "$base_dir/.venv/bin/python" -m grpc_tools.protoc -I"$base_dir/proto" \
             --python_out="$base_dir/proto" \
             --grpc_python_out="$base_dir/proto" \
