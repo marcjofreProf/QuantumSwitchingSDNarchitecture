@@ -43,14 +43,6 @@ create_repo_structure() {
     log_info "Phase 1: Creating Quantum-SDN repository structure..."
     local base_dir="."
 
-    if [ -d "$base_dir" ]; then
-        log_warn "Directory '$base_dir' already exists."
-        if ! ask_user "Do you want to recreate/update the folders inside it?" "Y"; then
-            log_info "Skipping directory creation."
-            return
-        fi
-    fi
-
     # Create directories with quoted variable pathing
     mkdir -p "$base_dir"/.github/workflows \
              "$base_dir"/docs/architecture \
@@ -75,7 +67,7 @@ create_repo_structure() {
     touch "$base_dir/LICENSE"
     touch "$base_dir/Makefile"
 
-    log_success "Repository structure created successfully at ./$base_dir"
+    log_success "Repository structure created/updated successfully."
 }
 
 # --- Phase 2: System Dependencies ---
