@@ -2,13 +2,13 @@
 import os
 import sys
 
+# Define this first so it's always available!
+current_dir = os.path.dirname(os.path.abspath(__file__))
+
 # --- ELEGANT VENV AUTO-DISCOVERY ---
-# If the user runs this with the system Python, it will lack 'grpc'.
-# We catch that, find the local .venv, and silently restart the script using it!
 try:
     import grpc
 except ModuleNotFoundError:
-    current_dir = os.path.dirname(os.path.abspath(__file__))
     venv_python = os.path.abspath(os.path.join(current_dir, '../.venv/bin/python3'))
     if os.path.exists(venv_python):
         os.execl(venv_python, venv_python, *sys.argv) # Relaunch self inside venv
