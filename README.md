@@ -46,4 +46,25 @@ cd QuantumSwitchingSDNarchitecture
 sudo chmod +x ./bootstrap-quantum-switching-sdn.sh
 ./bootstrap-quantum-switching-sdn.sh
 
-If the centralized server lacks the RAM/CPU to run a full Kubernetes cluster and µONOS, it can bypass the SDN controller layer for testing or lightweight deployments. 
+If the centralized server lacks the RAM/CPU to run a full Kubernetes cluster and µONOS, it can bypass the SDN controller layer for testing or lightweight deployments.
+
+## Hardware Debugging Tools
+
+In the full architecture, a central SDN Controller (like µONOS) will manage the network topology and send commands to the switches automatically. 
+
+However, during initial deployment or hardware troubleshooting, you can bypass the SDN controller and issue gRPC commands directly to individual hardware nodes using the provided developer scripts.
+
+**Note:** Ensure you have run the bootstrap script first, as it compiles the necessary gRPC stubs from the `proto/` directory.
+
+### Manual Node Control
+Use the CLI client to test individual connections to a node using its IP address.
+
+```bash
+# Check if the hardware node is connected or disconnected
+python3 scripts/sdn-switching-client.py <NODE_IP> status
+
+# Force the physical switch to connect (cross-connect)
+python3 scripts/sdn-switching-client.py <NODE_IP> connect
+
+# Force the physical switch to disconnect
+python3 scripts/sdn-switching-client.py <NODE_IP> disconnect
