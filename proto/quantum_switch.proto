@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package quantum.switch.v1;
+
+service QuantumSwitchService {
+  rpc SetCrossConnect (CrossConnectRequest) returns (CrossConnectResponse);
+  rpc GetCrossConnectStatus (StatusRequest) returns (StatusResponse);
+}
+
+message CrossConnectRequest {
+  bool state = 1; // true = CONNECTED, false = DISCONNECTED
+}
+
+message CrossConnectResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message StatusRequest {}
+
+message StatusResponse {
+  bool is_connected = 1;
+  string switch_type = 2;
+}
