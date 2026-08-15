@@ -2,8 +2,15 @@
 # Quantum-SDN Switching Architecture .gitignore
 # ---------------------------------------------------------------------------
 
-# Auto-generated scaffolding directory created by the bootstrap script
-quantum-sdn-switching-architecture/
+# Python Virtual Environments
+.venv/
+venv/
+env/
+
+# Python Cache and Compiled Files
+__pycache__/
+*.py[cod]
+*$py.class
 
 # Downloaded installation scripts
 get-docker.sh
