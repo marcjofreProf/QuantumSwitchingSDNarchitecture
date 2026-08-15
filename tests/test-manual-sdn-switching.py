@@ -3,8 +3,19 @@ import sys
 import os
 import time
 
+# --- ELEGANT VENV AUTO-DISCOVERY ---
+try:
+    import grpc
+except ModuleNotFoundError:
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    venv_python = os.path.abspath(os.path.join(current_dir, '../.venv/bin/python3'))
+    if os.path.exists(venv_python):
+        os.execl(venv_python, venv_python, *sys.argv)
+    else:
+        print("[ERROR] 'grpc' missing and '.venv' not found. Run the bootstrap script first.")
+        sys.exit(1)
+
 # Import the client from the scripts folder
-current_dir = os.path.dirname(os.path.abspath(__file__))
 scripts_dir = os.path.abspath(os.path.join(current_dir, '../scripts'))
 sys.path.append(scripts_dir)
 
