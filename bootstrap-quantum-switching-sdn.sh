@@ -202,171 +202,29 @@ install_osm_installer() {
     fi
 }
 
-# --- Phase 7: Setup Python gRPC Client & Test Scripts ---
+# --- Phase 7: Setup Python gRPC Client Environment ---
 setup_sdn_python_client() {
-    log_info "Phase 7: Setting up Python gRPC SDN Client..."
+    log_info "Phase 7: Setting up Python gRPC SDN Client Environment..."
     local base_dir="quantum-sdn-switching-architecture"
 
-    # 1. Generate the shared Protobuf definition
-    log_info "Generating protobuf definition at $base_dir/proto/quantum_switch.proto..."
-    cat <<EOF > "$base_dir/proto/quantum_switch.proto"
-syntax = "proto3";
-
-package quantum.switch.v1;
-
-service QuantumSwitchService {
-  rpc SetCrossConnect (CrossConnectRequest) returns (CrossConnectResponse);
-  rpc GetCrossConnectStatus (StatusRequest) returns (StatusResponse);
-}
-
-message CrossConnectRequest {
-  bool state = 1; // true = CONNECTED, false = DISCONNECTED
-}
-
-message CrossConnectResponse {
-  bool success = 1;
-  string message = 2;
-}
-
-message StatusRequest {}
-
-message StatusResponse {
-  bool is_connected = 1;
-  string switch_type = 2;
-}
-EOF
-
-    # 2. Install pip dependencies and compile proto
+    # Install pip dependencies and compile proto
     log_info "Installing Python grpcio-tools and compiling stubs..."
+    sudo apt-get install -y python3-pip
     sudo pip3 install --upgrade pip
     sudo pip3 install grpcio grpcio-tools
 
-    python3 -m grpc_tools.protoc -I"$base_dir/proto" \
-        --python_out="$base_dir/proto" \
-        --grpc_python_out="$base_dir/proto" \
-        "$base_dir/proto/quantum_switch.proto"
+    # We assume proto/quantum_switch.proto already exists in the cloned repository
+    if [ -f "$base_dir/proto/quantum_switch.proto" ]; then
+        python3 -m grpc_tools.protoc -I"$base_dir/proto" \
+            --python_out="$base_dir/proto" \
+            --grpc_python_out="$base_dir/proto" \
+            "$base_dir/proto/quantum_switch.proto"
 
-    touch "$base_dir/proto/__init__.py"
-    log_success "Stubs compiled successfully."
-
-    # 3. Generate the general CLI Client in scripts/
-    log_info "Creating CLI Client: $base_dir/scripts/sdn-switching-client.py..."
-    cat <<'EOF' > "$base_dir/scripts/sdn-switching-client.py"
-#!/usr/bin/env python3
-import grpc
-import argparse
-import sys
-import os
-
-# Ensure the proto directory is discoverable relative to this script
-current_dir = os.path.dirname(os.path.abspath(__file__))
-proto_dir = os.path.abspath(os.path.join(current_dir, '../proto'))
-sys.path.append(proto_dir)
-
-import quantum_switch_pb2
-import quantum_switch_pb2_grpc
-
-class QuantumSDNClient:
-    def __init__(self, host, port=50051):
-        self.target = f"{host}:{port}"
-        self.channel = grpc.insecure_channel(self.target)
-        self.stub = quantum_switch_pb2_grpc.QuantumSwitchServiceStub(self.channel)
-
-    def check_status(self):
-        print(f"[*] Querying status from {self.target}...")
-        request = quantum_switch_pb2.StatusRequest()
-        try:
-            response = self.stub.GetCrossConnectStatus(request, timeout=5)
-            state = "CONNECTED" if response.is_connected else "DISCONNECTED"
-            print(f"    -> Status: {state} | Hardware Type: {response.switch_type}")
-            return response.is_connected
-        except grpc.RpcError as e:
-            print(f"    -> [ERROR] gRPC: {e.code()} - {e.details()}")
-            sys.exit(1)
-
-    def set_connection(self, connect: bool):
-        action = "CONNECTING" if connect else "DISCONNECTING"
-        print(f"[*] {action} node at {self.target}...")
-        request = quantum_switch_pb2.CrossConnectRequest(state=connect)
-        try:
-            response = self.stub.SetCrossConnect(request, timeout=5)
-            if response.success:
-                print(f"    -> SUCCESS: {response.message}")
-            else:
-                print(f"    -> FAILED: {response.message}")
-        except grpc.RpcError as e:
-            print(f"    -> [ERROR] gRPC: {e.code()} - {e.details()}")
-            sys.exit(1)
-
-def main():
-    parser = argparse.ArgumentParser(description="Quantum SDN Orchestrator CLI Client")
-    parser.add_argument("node_ip", help="IP address of the BeagleBone node")
-    parser.add_argument("command", choices=["status", "connect", "disconnect"], 
-                        help="Action to perform on the remote node")
-    parser.add_argument("--port", type=int, default=50051, 
-                        help="gRPC port (default: 50051)")
-
-    args = parser.parse_args()
-    client = QuantumSDNClient(args.node_ip, args.port)
-
-    if args.command == "status":
-        client.check_status()
-    elif args.command == "connect":
-        client.set_connection(True)
-    elif args.command == "disconnect":
-        client.set_connection(False)
-
-if __name__ == "__main__":
-    main()
-EOF
-    chmod +x "$base_dir/scripts/sdn-switching-client.py"
-
-    # 4. Generate the Automated Test Script in tests/
-    log_info "Creating Test Script: $base_dir/tests/test-manual-sdn-switching.py..."
-    cat <<'EOF' > "$base_dir/tests/test-manual-sdn-switching.py"
-#!/usr/bin/env python3
-import sys
-import os
-import time
-
-# Ensure we can import the client from the scripts folder
-current_dir = os.path.dirname(os.path.abspath(__file__))
-scripts_dir = os.path.abspath(os.path.join(current_dir, '../scripts'))
-sys.path.append(scripts_dir)
-
-# Now we can import the class directly from the client file
-client_module = __import__('sdn-switching-client')
-QuantumSDNClient = client_module.QuantumSDNClient
-
-def run_test(ip):
-    print(f"\n--- Starting Automated Hardware Switching Test on {ip} ---")
-    client = QuantumSDNClient(ip)
-    
-    print("\n[Step 1] Fetching initial status...")
-    client.check_status()
-    time.sleep(1)
-
-    print("\n[Step 2] Triggering CONNECT...")
-    client.set_connection(True)
-    time.sleep(2)
-    client.check_status()
-    
-    print("\n[Step 3] Triggering DISCONNECT...")
-    client.set_connection(False)
-    time.sleep(2)
-    client.check_status()
-
-    print("\n--- Test Sequence Complete ---\n")
-
-if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("Usage: ./test-manual-sdn-switching.py <NODE_IP>")
-        sys.exit(1)
-    
-    run_test(sys.argv[1])
-EOF
-    chmod +x "$base_dir/tests/test-manual-sdn-switching.py"
-    log_success "Python SDN Client and Test scripts generated successfully."
+        touch "$base_dir/proto/__init__.py"
+        log_success "Stubs compiled successfully."
+    else
+        log_warn "proto/quantum_switch.proto not found! Skipping compilation."
+    fi
 }
 
 # --- Main Execution ---
