@@ -190,7 +190,7 @@ install_osm_installer() {
     log_info "Phase 6: Open Source MANO (OSM)"
     log_warn "OSM is a highly complex orchestration platform requiring significant resources."
 
-    if ask_user "Do you want to download and run the OSM standalone installer now?" "N"; then
+    if ask_user "Do you want to download and run the OSM standalone installer now (for lightweigh deployment with no MANO, press n)?" "N"; then
         log_info "Downloading OSM installer..."
         wget https://osm-download.etsi.org/ftp/osm-14.0-fourteen/install_osm.sh
         chmod +x install_osm.sh
@@ -207,15 +207,22 @@ setup_sdn_python_client() {
     log_info "Phase 7: Setting up Python gRPC SDN Client Environment..."
     local base_dir="quantum-sdn-switching-architecture"
 
-    # Install pip dependencies and compile proto
-    log_info "Installing Python grpcio-tools and compiling stubs..."
-    sudo apt-get install -y python3-pip
-    sudo pip3 install --upgrade pip
-    sudo pip3 install grpcio grpcio-tools
+    log_info "Installing Python venv package..."
+    sudo apt-get install -y python3-venv python3-pip
 
-    # We assume proto/quantum_switch.proto already exists in the cloned repository
+    log_info "Creating Python virtual environment in $base_dir/.venv..."
+    # Create the virtual environment
+    python3 -m venv "$base_dir/.venv"
+
+    log_info "Installing grpcio and grpcio-tools in the virtual environment..."
+    # Use the isolated pip inside the venv
+    "$base_dir/.venv/bin/pip" install --upgrade pip
+    "$base_dir/.venv/bin/pip" install grpcio grpcio-tools
+
     if [ -f "$base_dir/proto/quantum_switch.proto" ]; then
-        python3 -m grpc_tools.protoc -I"$base_dir/proto" \
+        log_info "Compiling gRPC stubs..."
+        # Use the isolated python inside the venv to compile
+        "$base_dir/.venv/bin/python" -m grpc_tools.protoc -I"$base_dir/proto" \
             --python_out="$base_dir/proto" \
             --grpc_python_out="$base_dir/proto" \
             "$base_dir/proto/quantum_switch.proto"
