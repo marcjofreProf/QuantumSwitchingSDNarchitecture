@@ -40,7 +40,7 @@ Designed for deployment on the **6G-OpenLab** infrastructure.
 To quickly set up the repository structure and install all necessary cloud-native dependencies (Docker, Kubernetes/Kind, Helm, Protoc, µONOS, Open5GS, and optionally OSM), use the provided bootstrap script.
 
 **1. Clone the repository and navigate into it:**
-git clone https://github.com/marcjofreProf/QuantumSwitchingSDNarchitecture.git main
+git clone https://github.com/marcjofreProf/QuantumSwitchingSDNarchitecture.git
 cd QuantumSwitchingSDNarchitecture
 
 sudo chmod +x ./bootstrap-quantum-switching-sdn.sh
