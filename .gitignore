@@ -28,3 +28,8 @@ OSM-ETSI-Release-key.gpg
 # Standard OS hidden files
 .DS_Store
 *~
+
+# Protobuf / gRPC generated Python files
+*_pb2.py
+*_pb2_grpc.py
+*_pb2.pyi
