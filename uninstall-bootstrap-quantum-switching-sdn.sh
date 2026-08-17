@@ -65,6 +65,35 @@ uninstall_python_env() {
     fi
 }
 
+# --- Phase 1.5: Virtual Interfaces & Networks Cleanup ---
+clean_virtual_interfaces() {
+    log_info "Phase 1.5: Cleaning up virtual network interfaces..."
+
+    # Prune unused Docker networks if Docker is running
+    if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+        log_info "Pruning unused Docker networks..."
+        docker network prune -f 2>/dev/null || true
+    fi
+
+    # Detect and remove orphaned virtual interface bridges and veth pairs
+    local v_ifaces
+    v_ifaces=$(ip -o link show | awk -F': ' '{print $2}' | grep -E '^(veth|br-|cni|dummy|virbr)')
+
+    if [ -n "$v_ifaces" ]; then
+        log_warn "Found leftover virtual interfaces: $v_ifaces"
+        if ask_user "Do you want to delete these virtual interfaces?" "Y"; then
+            for iface in $v_ifaces; do
+                log_info "Deleting interface $iface..."
+                sudo ip link set "$iface" down 2>/dev/null || true
+                sudo ip link delete "$iface" 2>/dev/null || true
+            done
+            log_success "Virtual network interfaces removed."
+        fi
+    else
+        log_success "No orphaned virtual network interfaces found."
+    fi
+}
+
 # --- Phase 2: Helm Repositories & Tooling ---
 uninstall_helm_and_repos() {
     log_info "Phase 2: Cleaning up Helm repositories and binaries..."
@@ -164,6 +193,7 @@ clean_repo_structure() {
 
 # --- Main Execution ---
 uninstall_python_env
+clean_virtual_interfaces
 uninstall_helm_and_repos
 uninstall_grpc_tools
 uninstall_docker

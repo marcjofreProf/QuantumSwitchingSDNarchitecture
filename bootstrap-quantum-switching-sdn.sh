@@ -119,7 +119,7 @@ install_kubectl_and_helm() {
         log_info "Installing kubectl..."
         curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
         sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
-        rm kubectl
+        rm -f kubectl
         log_success "kubectl installed."
     fi
 
@@ -127,12 +127,24 @@ install_kubectl_and_helm() {
     if command -v helm >/dev/null 2>&1; then
         log_success "Helm is already installed ($(helm version --short))."
     else
-        log_info "Installing Helm..."
-        curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
-        chmod 700 get_helm.sh
-        ./get_helm.sh
-        rm get_helm.sh
-        log_success "Helm installed."
+        log_info "Installing Helm (Attempting primary script)..."
+        if curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 2>/dev/null && chmod 700 get_helm.sh && ./get_helm.sh; then
+            rm -f get_helm.sh
+            log_success "Helm installed via primary official script."
+        else
+            log_warn "Primary Helm installation script failed (GitHub rate-limit or SSL error). Attempting direct CDN binary fallback..."
+            rm -f get_helm.sh
+            
+            HELM_VER="v3.17.0"
+            if wget --no-check-certificate -q "https://get.helm.sh/helm-${HELM_VER}-linux-amd64.tar.gz"; then
+                tar -zxf "helm-${HELM_VER}-linux-amd64.tar.gz"
+                sudo mv linux-amd64/helm /usr/local/bin/helm
+                rm -rf "helm-${HELM_VER}-linux-amd64.tar.gz" linux-amd64
+                log_success "Helm successfully installed via direct CDN binary fallback."
+            else
+                log_error "Failed to install Helm via both primary script and CDN binary fallback."
+            fi
+        fi
     fi
 }
 
@@ -141,10 +153,20 @@ setup_helm_repos() {
     log_info "Phase 4: Setting up Helm repositories for µONOS and Open5GS..."
 
     # microONOS Repo
-    helm repo add onosproject https://charts.onosproject.org
+    helm repo add onosproject https://charts.onosproject.org || log_warn "Failed to add onosproject repository."
 
-    # Towards5GS (Using official Orange Towards5GS repo - Note: This is for Free5GC)
-    helm repo add towards5gs https://raw.githubusercontent.com/Orange-OpenSource/towards5gs-helm/main/repo/
+    # Towards5GS Repo with jsDelivr Fallback
+    log_info "Adding Towards5GS Helm repository..."
+    if ! helm repo add towards5gs https://raw.githubusercontent.com/Orange-OpenSource/towards5gs-helm/main/repo/ 2>/dev/null; then
+        log_warn "Primary GitHub raw endpoint rate-limited/failed. Switching to jsDelivr CDN fallback..."
+        if helm repo add towards5gs https://cdn.jsdelivr.net/gh/Orange-OpenSource/towards5gs-helm@main/repo/; then
+            log_success "Towards5GS repository added using jsDelivr CDN fallback."
+        else
+            log_error "Failed to add Towards5GS repository via both primary URL and CDN fallback."
+        fi
+    else
+        log_success "Towards5GS repository added via GitHub raw endpoint."
+    fi
 
     helm repo update
     log_success "Helm repositories added and updated."
