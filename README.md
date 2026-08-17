@@ -68,3 +68,11 @@ python3 scripts/sdn-switching-client.py <NODE_IP> connect
 
 # Force the physical switch to disconnect
 python3 scripts/sdn-switching-client.py <NODE_IP> disconnect
+
+## Environment Teardown & Cleanup
+
+To remove installed binaries, purge the Python virtual environment and compiled stubs, delete Helm repositories, and reset the workspace to a clean Git state, run the provided teardown script:
+
+```bash
+sudo chmod +x uninstall-bootstrap-quantum-switching-sdn.sh
+./uninstall-bootstrap-quantum-switching-sdn.sh
