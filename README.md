@@ -1,6 +1,8 @@
 # QuantumSwitchingSDNarchitecture
 Project to develop the quantum network infrastructure for SDN switching
 
+This project works in tandem with the data plane repository: [QuantumNodeSwitchingSDNoperation](https://github.com/marcjofreProf/QuantumNodeSwitchingSDNoperation.git), which houses the nodes deployments for switching.
+
 quantum-sdn-architecture/
 ├── .github/workflows/          # CI/CD pipelines (linting, container builds)
 ├── deploy/                     # Infrastructure as Code (IaC) for 6G-OpenLab
