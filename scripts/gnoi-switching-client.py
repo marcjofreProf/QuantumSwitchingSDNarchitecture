@@ -22,8 +22,8 @@ import argparse
 proto_dir = os.path.abspath(os.path.join(current_dir, '../proto'))
 sys.path.append(proto_dir)
 
-from proto import quantum_gnoi_switching_pb2 as gnoi_pb2
-from proto import quantum_gnoi_switching_pb2_grpc as gnoi_pb2_grpc
+import quantum_gnoi_switching_pb2 as gnoi_pb2
+import quantum_gnoi_switching_pb2_grpc as gnoi_pb2_grpc
 
 class QuantumSDNClient:
     def __init__(self, host, port=50051):
