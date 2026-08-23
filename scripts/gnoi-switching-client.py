@@ -22,14 +22,14 @@ import argparse
 proto_dir = os.path.abspath(os.path.join(current_dir, '../proto'))
 sys.path.append(proto_dir)
 
-import quantum_switch_pb2
-import quantum_switch_pb2_grpc
+import quantum_gnoi_switching_pb2 as pb2
+import quantum_gnoi_switching_pb2_grpc as pb2_grpc
 
 class QuantumSDNClient:
     def __init__(self, host, port=50051):
         self.target = f"{host}:{port}"
         self.channel = grpc.insecure_channel(self.target)
-        self.stub = quantum_switch_pb2_grpc.QuantumSwitchServiceStub(self.channel)
+        self.stub = pb2_grpc.QuantumGnoiSwitchingServiceStub(channel)
 
     def check_status(self):
         print(f"[*] Querying status from {self.target}...")
