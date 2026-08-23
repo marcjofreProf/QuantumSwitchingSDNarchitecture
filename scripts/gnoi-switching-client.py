@@ -22,18 +22,18 @@ import argparse
 proto_dir = os.path.abspath(os.path.join(current_dir, '../proto'))
 sys.path.append(proto_dir)
 
-import quantum_gnoi_switching_pb2 as pb2
-import quantum_gnoi_switching_pb2_grpc as pb2_grpc
+from proto import quantum_gnoi_switching_pb2 as gnoi_pb2
+from proto import quantum_gnoi_switching_pb2_grpc as gnoi_pb2_grpc
 
 class QuantumSDNClient:
     def __init__(self, host, port=50051):
         self.target = f"{host}:{port}"
         self.channel = grpc.insecure_channel(self.target)
-        self.stub = pb2_grpc.QuantumGnoiSwitchingServiceStub(self.channel)
+        self.stub = gnoi_pb2_grpc.QuantumGnoiSwitchingServiceStub(self.channel)
 
     def check_status(self):
         print(f"[*] Querying status from {self.target}...")
-        request = quantum_switch_pb2.StatusRequest()
+        request = gnoi_pb2.StatusRequest()
         try:
             response = self.stub.GetCrossConnectStatus(request, timeout=5)
             state = "CONNECTED" if response.is_connected else "DISCONNECTED"
@@ -46,7 +46,7 @@ class QuantumSDNClient:
     def set_connection(self, connect: bool):
         action = "CONNECTING" if connect else "DISCONNECTING"
         print(f"[*] {action} node at {self.target}...")
-        request = quantum_switch_pb2.CrossConnectRequest(state=connect)
+        request = gnoi_pb2.CrossConnectRequest(state=connect)
         try:
             response = self.stub.SetCrossConnect(request, timeout=5)
             if response.success:
