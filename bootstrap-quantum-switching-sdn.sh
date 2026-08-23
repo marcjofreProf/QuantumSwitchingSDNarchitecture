@@ -231,17 +231,17 @@ setup_sdn_python_client() {
     "$base_dir/.venv/bin/pip" install --upgrade pip
     "$base_dir/.venv/bin/pip" install grpcio grpcio-tools
 
-    if [ -f "$base_dir/proto/quantum_switch.proto" ]; then
+    if [ -f "$base_dir/proto/quantum_gnoi_switching.proto" ]; then
         log_info "Compiling gRPC stubs..."
         "$base_dir/.venv/bin/python" -m grpc_tools.protoc -I"$base_dir/proto" \
             --python_out="$base_dir/proto" \
             --grpc_python_out="$base_dir/proto" \
-            "$base_dir/proto/quantum_switch.proto"
+            "$base_dir/proto/quantum_gnoi_switch.proto"
 
         touch "$base_dir/proto/__init__.py"
         log_success "Stubs compiled successfully."
     else
-        log_warn "proto/quantum_switch.proto not found! Skipping compilation."
+        log_warn "proto/quantum_gnoi_switch.proto not found! Skipping compilation."
     fi
 }
 
