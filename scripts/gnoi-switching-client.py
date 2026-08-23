@@ -29,7 +29,7 @@ class QuantumSDNClient:
     def __init__(self, host, port=50051):
         self.target = f"{host}:{port}"
         self.channel = grpc.insecure_channel(self.target)
-        self.stub = pb2_grpc.QuantumGnoiSwitchingServiceStub(channel)
+        self.stub = pb2_grpc.QuantumGnoiSwitchingServiceStub(self.channel)
 
     def check_status(self):
         print(f"[*] Querying status from {self.target}...")
