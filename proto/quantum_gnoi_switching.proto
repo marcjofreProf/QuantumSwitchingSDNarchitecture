@@ -22,10 +22,3 @@ message StatusResponse {
   bool is_connected = 1;
   string switch_type = 2;
 }
-
-message StatusRequest {}
-
-message StatusResponse {
-  bool is_connected = 1;
-  string switch_type = 2;
-}
