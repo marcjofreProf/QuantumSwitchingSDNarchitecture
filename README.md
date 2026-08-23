@@ -62,14 +62,15 @@ However, during initial deployment or hardware troubleshooting, you can bypass t
 Use the CLI client to test individual connections to a node using its IP address.
 
 ```bash
+## Check gNOI
 # Check if the hardware node is connected or disconnected
-python3 scripts/sdn-switching-client.py <NODE_IP> status
+python3 scripts/gnoi-switching-client.py <NODE_IP> status
 
 # Force the physical switch to connect (cross-connect)
-python3 scripts/sdn-switching-client.py <NODE_IP> connect
+python3 scripts/gnoi-switching-client.py <NODE_IP> connect
 
 # Force the physical switch to disconnect
-python3 scripts/sdn-switching-client.py <NODE_IP> disconnect
+python3 scripts/gnoi-switching-client.py <NODE_IP> disconnect
 
 ## Environment Teardown & Cleanup
 
