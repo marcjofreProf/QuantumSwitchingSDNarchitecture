@@ -19,7 +19,7 @@ except ModuleNotFoundError:
 scripts_dir = os.path.abspath(os.path.join(current_dir, '../scripts'))
 sys.path.append(scripts_dir)
 
-client_module = __import__('sdn-switching-client')
+client_module = __import__('gnoi-switching-client')
 QuantumSDNClient = client_module.QuantumSDNClient
 
 def run_test(ip):
@@ -44,7 +44,7 @@ def run_test(ip):
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
-        print("Usage: python3 test-manual-sdn-switching.py <NODE_IP>")
+        print("Usage: python3 tests/test-manual-gnoi-switching.py <NODE_IP>")
         sys.exit(1)
     
     run_test(sys.argv[1])
