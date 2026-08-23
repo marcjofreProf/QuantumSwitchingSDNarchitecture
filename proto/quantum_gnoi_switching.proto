@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-package quantum.switch.v1;
+package quantum.gnoi.switching.v1;
 
-service QuantumSwitchService {
+service QuantumGnoiSwitchingService {
   rpc SetCrossConnect (CrossConnectRequest) returns (CrossConnectResponse);
   rpc GetCrossConnectStatus (StatusRequest) returns (StatusResponse);
 }
@@ -14,6 +14,13 @@ message CrossConnectRequest {
 message CrossConnectResponse {
   bool success = 1;
   string message = 2;
+}
+
+message StatusRequest {}
+
+message StatusResponse {
+  bool is_connected = 1;
+  string switch_type = 2;
 }
 
 message StatusRequest {}
