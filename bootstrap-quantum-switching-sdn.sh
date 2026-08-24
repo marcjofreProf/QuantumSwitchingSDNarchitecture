@@ -56,6 +56,7 @@ create_repo_structure() {
              "$base_dir"/orchestration/yang-models \
              "$base_dir"/workloads/open5gs \
              "$base_dir"/hardware-agents/gnoi-targets \
+             "$base_dir"/hardware-agents/netconf-servers \
              "$base_dir"/hardware-agents/switch-drivers \
              "$base_dir"/tests/latency-benchmarks \
              "$base_dir"/tests/e2e-path-provisioning \
