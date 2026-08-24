@@ -12,10 +12,11 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# Downloaded installation scripts
+# Downloaded installation scripts & temp archives
 get-docker.sh
 get_helm.sh
 install_osm.sh
+helm-*-linux-amd64.tar.gz
 
 # Downloaded binaries and archives
 kubectl
@@ -33,3 +34,4 @@ OSM-ETSI-Release-key.gpg
 *_pb2.py
 *_pb2_grpc.py
 *_pb2.pyi
+proto/__init__.py
