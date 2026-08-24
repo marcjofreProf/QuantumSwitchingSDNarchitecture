@@ -18,9 +18,9 @@ import argparse
 import xml.dom.minidom
 
 # Default NETCONF credentials for the hardware agents
-NETCONF_PORT = 830
-NETCONF_USER = "admin"
-NETCONF_PASS = "admin"
+NETCONF_PORT = 8300
+NETCONF_USER = "sdn"
+NETCONF_PASS = "quantum"
 
 def send_rpc(host, rpc_xml):
     """Establishes a NETCONF session and sends the requested XML RPC."""
