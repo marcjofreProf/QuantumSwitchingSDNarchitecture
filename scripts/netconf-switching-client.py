@@ -18,11 +18,15 @@ except ModuleNotFoundError:
 import argparse
 import xml.dom.minidom
 
-# Enable legacy ssh-rsa host key support in Paramiko
-paramiko.Transport._preferred_keys = (
+# Enable legacy ssh-rsa host key support in Paramiko globally
+custom_keys = (
     'rsa-sha2-512', 'rsa-sha2-256', 'ssh-rsa',
     'ecdsa-sha2-nistp256', 'ssh-ed25519'
 )
+if hasattr(paramiko.Transport, '_preferred_keys'):
+    paramiko.Transport._preferred_keys = custom_keys
+if hasattr(paramiko.Transport, '_preferred_pubkeys'):
+    paramiko.Transport._preferred_pubkeys = custom_keys
 
 # NETCONF Agent configuration matching BeagleBone
 NETCONF_PORT = 8300
@@ -38,7 +42,6 @@ def send_rpc(host, rpc_xml):
             username=NETCONF_USER,
             password=NETCONF_PASS,
             hostkey_verify=False,
-            disabled_algorithms=dict(pubkeys=[]),  # Re-enables standard RSA host keys
             device_params={'name': 'default'}
         ) as m:
             print(f"[*] Connected to NETCONF agent at {host}:{NETCONF_PORT}")
