@@ -216,10 +216,10 @@ install_osm_installer() {
     fi
 }
 
-# --- Phase 7: Setup Python gRPC Client Environment ---
+# --- Phase 7: Setup Python gRPC & NETCONF Client Environment ---
 setup_sdn_python_client() {
-    log_info "Phase 7: Setting up Python gRPC SDN Client Environment..."
-    local base_dir="."  # <--- MUST BE "."
+    log_info "Phase 7: Setting up Python gRPC & NETCONF SDN Client Environment..."
+    local base_dir="."  
 
     log_info "Installing Python venv package..."
     sudo apt-get install -y python3-venv python3-pip
@@ -227,10 +227,11 @@ setup_sdn_python_client() {
     log_info "Creating Python virtual environment in $base_dir/.venv..."
     python3 -m venv "$base_dir/.venv"
 
-    log_info "Installing grpcio and grpcio-tools in the virtual environment..."
+    log_info "Installing grpcio, grpcio-tools, and ncclient in the virtual environment..."
     "$base_dir/.venv/bin/pip" install --upgrade pip
-    "$base_dir/.venv/bin/pip" install grpcio grpcio-tools
+    "$base_dir/.venv/bin/pip" install grpcio grpcio-tools ncclient xmltodict
 
+    # (Keep the existing protoc compilation block here...)
     if [ -f "$base_dir/proto/quantum_gnoi_switching.proto" ]; then
         log_info "Compiling gRPC stubs..."
         "$base_dir/.venv/bin/python" -m grpc_tools.protoc -I"$base_dir/proto" \
@@ -257,12 +258,13 @@ install_kubectl_and_helm
 setup_helm_repos
 install_grpc_tools
 install_osm_installer
-setup_sdn_python_client  # <--- NEW PHASE EXECUTED HERE
+setup_sdn_python_client
 
 echo -e "${GREEN}====================================================${NC}"
-echo -e "${GREEN} Setup Complete! ${NC}"
+echo -e "${GREEN} Setup Complete!${NC}"
 echo -e "Navigate to your repository: ${YELLOW}cd quantum-sdn-switching-architecture${NC}"
 echo -e "Check Helm charts: ${YELLOW}helm search repo towards5gs${NC}"
-echo -e "To run a client command: ${YELLOW}python3 scripts/gnoi-switching-client.py <IP> status${NC}"
+echo -e "To run a gNOI client command: ${YELLOW}python3 scripts/gnoi-switching-client.py <IP> status${NC}"
+echo -e "To run a NETCONF client command: ${YELLOW}python3 scripts/netconf-switching-client.py <IP> status${NC}"
 echo -e "To run a hardware test: ${YELLOW}python3 tests/test-manual-gnoi-switching.py <IP>${NC}"
 echo -e "${GREEN}====================================================${NC}"
