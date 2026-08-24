@@ -3,11 +3,11 @@ import sys
 import os
 import argparse
 import xml.dom.minidom
-import xml.etree.ElementTree as ET  # Added XML ElementTree
 
 # --- VENV AUTO-DISCOVERY ---
 try:
     from ncclient import manager
+    from lxml import etree  # STRICTLY USE LXML FOR NCCLIENT
 except ModuleNotFoundError:
     current_dir = os.path.dirname(os.path.abspath(__file__))
     venv_python = os.path.abspath(os.path.join(current_dir, '../.venv/bin/python3'))
@@ -22,7 +22,7 @@ NETCONF_PORT = 8300
 NETCONF_USER = "sdn"
 NETCONF_PASS = "quantum"
 
-def send_rpc(host, rpc_xml):
+def send_rpc(host, command):
     """Establishes a NETCONF session and sends the requested XML RPC."""
     try:
         with manager.connect(
@@ -37,10 +37,30 @@ def send_rpc(host, rpc_xml):
         ) as m:
             print(f"[*] Connected to NETCONF agent at {host}:{NETCONF_PORT}")
             
-            # FIX: Parse string into an XML Element so ncclient doesn't send an empty RPC
-            rpc_element = ET.fromstring(rpc_xml)
-            response = m.dispatch(rpc_element)
+            if command == "status":
+                # Native ncclient GET request (Generates perfect <get> RPC automatically)
+                filter_xml = '''
+                    <netconf-switch xmlns="urn:quantum:sdn:netconf-switch">
+                      <switch-state/>
+                      <switch-type/>
+                    </netconf-switch>
+                '''
+                response = m.get(filter=('subtree', filter_xml))
+
+            elif command == "connect":
+                # Dispatch custom RPC using LXML Element
+                rpc = etree.Element("{urn:quantum:sdn:netconf-switch}set-netconf-switch")
+                state = etree.SubElement(rpc, "{urn:quantum:sdn:netconf-switch}state")
+                state.text = "true"
+                response = m.dispatch(rpc)
+
+            elif command == "disconnect":
+                rpc = etree.Element("{urn:quantum:sdn:netconf-switch}set-netconf-switch")
+                state = etree.SubElement(rpc, "{urn:quantum:sdn:netconf-switch}state")
+                state.text = "false"
+                response = m.dispatch(rpc)
             
+            # Parse and print response
             pretty_xml = xml.dom.minidom.parseString(response.xml).toprettyxml()
             print("[*] Response Received:\n")
             print(pretty_xml)
@@ -58,31 +78,8 @@ def main():
     
     args = parser.parse_args()
 
-    payloads = {
-        "status": """
-            <get>
-              <filter type="subtree">
-                <netconf-switch xmlns="urn:quantum:sdn:netconf-switch">
-                  <switch-state/>
-                  <switch-type/>
-                </netconf-switch>
-              </filter>
-            </get>
-        """,
-        "connect": """
-            <set-netconf-switch xmlns="urn:quantum:sdn:netconf-switch">
-                <state>true</state>
-            </set-netconf-switch>
-        """,
-        "disconnect": """
-            <set-netconf-switch xmlns="urn:quantum:sdn:netconf-switch">
-                <state>false</state>
-            </set-netconf-switch>
-        """
-    }
-
     print(f"[*] Executing '{args.command}' on node {args.ip} via NETCONF...")
-    send_rpc(args.ip, payloads[args.command])
+    send_rpc(args.ip, args.command)
 
 if __name__ == "__main__":
     main()
