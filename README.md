@@ -3,6 +3,7 @@ Project to develop the quantum network infrastructure for SDN switching
 
 This project works in tandem with the data plane repository: [QuantumNodeSwitchingSDNoperation](https://github.com/marcjofreProf/QuantumNodeSwitchingSDNoperation.git), which houses the nodes deployments for switching.
 
+```text
 quantum-sdn-architecture/
 ├── .github/workflows/          # CI/CD pipelines (linting, container builds)
 ├── deploy/                     # Infrastructure as Code (IaC) for 6G-OpenLab
@@ -11,6 +12,7 @@ quantum-sdn-architecture/
 ├── docs/                       # Architecture schematics, PDFs, and API references
 ├── hardware-agents/            # Device-level execution and translation
 │   ├── gnoi-targets/           # Lightweight gNOI server stubs for physical switches
+│   ├── netconf-servers/        # NETCONF server stubs for standardized switch management
 │   └── switch-drivers/         # Vendor API scripts (Agiltron, Thorlabs, Keysight, DiCon)
 ├── orchestration/              # Open Source MANO (OSM) integration
 │   ├── osm-packages/           # Network Service (NS) and CNF descriptors
@@ -18,7 +20,7 @@ quantum-sdn-architecture/
 ├── sdn-controller/             # µONOS deployment and custom microservices
 │   ├── apps/                   # Custom µONOS apps for optical/quantum circuit pathing
 │   ├── northbound-interfaces/  # gNMI streaming telemetry and RESTCONF endpoints
-│   └── southbound-plugins/     # gNOI / gRPC adapter implementations
+│   └── southbound-plugins/     # gNOI, gRPC, and NETCONF adapter implementations
 ├── scripts/                    # Developer utility scripts (setup, dummy traffic)
 ├── tests/                      # Validation and benchmarking
 │   ├── e2e-path-provisioning/  # End-to-end tests for Port A to Port B mapping
@@ -26,6 +28,7 @@ quantum-sdn-architecture/
 ├── workloads/                  # 5G/6G containerized network functions
 │   └── open5gs/                # Helm charts/Kustomize files for Open5GS pods
 └── bootstrap-quantum-switching-sdn.sh
+└── uninstall-bootstrap-quantum-switching-sdn.sh
 
 # Quantum switching SDN Architecture
 
@@ -71,6 +74,16 @@ python3 scripts/gnoi-switching-client.py <NODE_IP> connect
 
 # Force the physical switch to disconnect
 python3 scripts/gnoi-switching-client.py <NODE_IP> disconnect
+
+## Check NETCONF
+# Check if the hardware node is connected or disconnected
+python3 scripts/netconf-switching-client.py <NODE_IP> status
+
+# Force the physical switch to connect (cross-connect)
+python3 scripts/netconf-switching-client.py <NODE_IP> connect
+
+# Force the physical switch to disconnect
+python3 scripts/netconf-switching-client.py <NODE_IP> disconnect
 
 ## Environment Teardown & Cleanup
 
