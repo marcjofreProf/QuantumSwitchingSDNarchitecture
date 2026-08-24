@@ -13,7 +13,7 @@ quantum-sdn-architecture/
 ├── hardware-agents/            # Device-level execution and translation
 │   ├── gnoi-targets/           # Lightweight gNOI server stubs for physical switches
 │   ├── netconf-servers/        # NETCONF server stubs for standardized switch management
-│   └── switch-drivers/         # Vendor API scripts (Agiltron, Thorlabs, Keysight, DiCon)
+│   └── switch-drivers/         # Vendor API scripts
 ├── orchestration/              # Open Source MANO (OSM) integration
 │   ├── osm-packages/           # Network Service (NS) and CNF descriptors
 │   └── yang-models/            # Standardized YANG models for orchestration
