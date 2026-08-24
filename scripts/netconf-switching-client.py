@@ -2,12 +2,11 @@
 import sys
 import os
 import argparse
-import xml.dom.minidom
 
 # --- VENV AUTO-DISCOVERY ---
 try:
     from ncclient import manager
-    from lxml import etree  # STRICTLY USE LXML FOR NCCLIENT
+    from lxml import etree
 except ModuleNotFoundError:
     current_dir = os.path.dirname(os.path.abspath(__file__))
     venv_python = os.path.abspath(os.path.join(current_dir, '../.venv/bin/python3'))
@@ -23,7 +22,7 @@ NETCONF_USER = "sdn"
 NETCONF_PASS = "quantum"
 
 def send_rpc(host, command):
-    """Establishes a NETCONF session and sends the requested XML RPC."""
+    """Establishes a NETCONF session and prints formatted status/results."""
     try:
         with manager.connect(
             host=host,
@@ -38,7 +37,6 @@ def send_rpc(host, command):
             print(f"[*] Connected to NETCONF agent at {host}:{NETCONF_PORT}")
             
             if command == "status":
-                # Native ncclient GET request (Generates perfect <get> RPC automatically)
                 filter_xml = '''
                     <netconf-switch xmlns="urn:quantum:sdn:netconf-switch">
                       <switch-state/>
@@ -46,24 +44,32 @@ def send_rpc(host, command):
                     </netconf-switch>
                 '''
                 response = m.get(filter=('subtree', filter_xml))
+                
+                # Parse XML to extract exact values
+                root = etree.fromstring(response.xml.encode('utf-8'))
+                state = root.xpath('//*[local-name()="switch-state"]/text()')
+                s_type = root.xpath('//*[local-name()="switch-type"]/text()')
+                
+                state_val = state[0] if state else "unknown"
+                type_val = s_type[0] if s_type else "unknown"
+                
+                print(f"[*] Switch State: {state_val}")
+                print(f"[*] Switch Type:  {type_val}")
 
-            elif command == "connect":
-                # Dispatch custom RPC using LXML Element
+            elif command in ("connect", "disconnect"):
+                target_state = "true" if command == "connect" else "false"
                 rpc = etree.Element("{urn:quantum:sdn:netconf-switch}set-netconf-switch")
                 state = etree.SubElement(rpc, "{urn:quantum:sdn:netconf-switch}state")
-                state.text = "true"
+                state.text = target_state
                 response = m.dispatch(rpc)
-
-            elif command == "disconnect":
-                rpc = etree.Element("{urn:quantum:sdn:netconf-switch}set-netconf-switch")
-                state = etree.SubElement(rpc, "{urn:quantum:sdn:netconf-switch}state")
-                state.text = "false"
-                response = m.dispatch(rpc)
+                
+                # Parse XML result message
+                root = etree.fromstring(response.xml.encode('utf-8'))
+                msg = root.xpath('//*[local-name()="message"]/text()')
+                msg_val = msg[0] if msg else f"State updated to {target_state}"
+                
+                print(f"[*] Result: {msg_val}")
             
-            # Parse and print response
-            pretty_xml = xml.dom.minidom.parseString(response.xml).toprettyxml()
-            print("[*] Response Received:\n")
-            print(pretty_xml)
             return True
             
     except Exception as e:
@@ -77,7 +83,7 @@ def main():
                         help="The action to perform on the node")
     
     args = parser.parse_args()
-
+    
     print(f"[*] Executing '{args.command}' on node {args.ip} via NETCONF...")
     send_rpc(args.ip, args.command)
 
