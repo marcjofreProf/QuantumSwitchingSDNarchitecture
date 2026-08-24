@@ -3,6 +3,7 @@ import sys
 import os
 import argparse
 import xml.dom.minidom
+import xml.etree.ElementTree as ET  # Added XML ElementTree
 
 # --- VENV AUTO-DISCOVERY ---
 try:
@@ -35,7 +36,11 @@ def send_rpc(host, rpc_xml):
             look_for_keys=False
         ) as m:
             print(f"[*] Connected to NETCONF agent at {host}:{NETCONF_PORT}")
-            response = m.dispatch(xml_=rpc_xml)
+            
+            # FIX: Parse string into an XML Element so ncclient doesn't send an empty RPC
+            rpc_element = ET.fromstring(rpc_xml)
+            response = m.dispatch(rpc_element)
+            
             pretty_xml = xml.dom.minidom.parseString(response.xml).toprettyxml()
             print("[*] Response Received:\n")
             print(pretty_xml)
