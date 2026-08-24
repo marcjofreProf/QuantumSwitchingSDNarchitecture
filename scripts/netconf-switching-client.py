@@ -19,11 +19,8 @@ except ModuleNotFoundError:
 import argparse
 import xml.dom.minidom
 
-# 1. Enable legacy ssh-rsa host key support in Paramiko globally
-custom_keys = (
-    'rsa-sha2-512', 'rsa-sha2-256', 'ssh-rsa',
-    'ecdsa-sha2-nistp256', 'ssh-ed25519'
-)
+# 1. Force legacy ssh-rsa negotiation ONLY to prevent SHA-1/SHA-2 signature mismatches
+custom_keys = ('ssh-rsa',)
 if hasattr(paramiko.Transport, '_preferred_keys'):
     paramiko.Transport._preferred_keys = custom_keys
 if hasattr(paramiko.Transport, '_preferred_pubkeys'):
