@@ -7,8 +7,6 @@ import xml.dom.minidom
 # --- VENV AUTO-DISCOVERY ---
 try:
     from ncclient import manager
-    import paramiko
-    from paramiko.rsakey import RSAKey
 except ModuleNotFoundError:
     current_dir = os.path.dirname(os.path.abspath(__file__))
     venv_python = os.path.abspath(os.path.join(current_dir, '../.venv/bin/python3'))
@@ -17,21 +15,6 @@ except ModuleNotFoundError:
     else:
         print("[ERROR] 'ncclient' missing and '.venv' not found. Run bootstrap script first.")
         sys.exit(1)
-
-# --- THE ULTIMATE PARAMIKO FIX ---
-# 1. Re-allow 'ssh-rsa' in key exchange to prevent "Incompatible ssh peer"
-if hasattr(paramiko.Transport, '_preferred_pubkeys'):
-    keys = list(paramiko.Transport._preferred_pubkeys)
-    if 'ssh-rsa' not in keys:
-        keys.append('ssh-rsa')
-    paramiko.Transport._preferred_pubkeys = tuple(keys)
-    
-if hasattr(paramiko.Transport, '_key_info') and 'ssh-rsa' not in paramiko.Transport._key_info:
-    paramiko.Transport._key_info['ssh-rsa'] = RSAKey
-
-# 2. Force signature verification to succeed, bypassing the cryptography failure.
-# Safe here because hostkey_verify=False is used in this trusted SDN testbed.
-RSAKey.verify_ssh_sig = lambda self, data, msg: True
 
 # NETCONF Agent configuration matching BeagleBone
 NETCONF_PORT = 8300
