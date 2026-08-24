@@ -5,19 +5,26 @@ import os
 # --- VENV AUTO-DISCOVERY ---
 try:
     from ncclient import manager
+    import paramiko
 except ModuleNotFoundError:
     current_dir = os.path.dirname(os.path.abspath(__file__))
     venv_python = os.path.abspath(os.path.join(current_dir, '../.venv/bin/python3'))
     if os.path.exists(venv_python):
         os.execl(venv_python, venv_python, *sys.argv)
     else:
-        print("[ERROR] 'ncclient' missing and '.venv' not found. Run bootstrap-quantum-switching-sdn.sh first.")
+        print("[ERROR] 'ncclient' missing and '.venv' not found. Run bootstrap script first.")
         sys.exit(1)
 
 import argparse
 import xml.dom.minidom
 
-# Default NETCONF credentials for the hardware agents
+# Enable legacy ssh-rsa host key support in Paramiko
+paramiko.Transport._preferred_keys = (
+    'rsa-sha2-512', 'rsa-sha2-256', 'ssh-rsa',
+    'ecdsa-sha2-nistp256', 'ssh-ed25519'
+)
+
+# NETCONF Agent configuration matching BeagleBone
 NETCONF_PORT = 8300
 NETCONF_USER = "sdn"
 NETCONF_PASS = "quantum"
@@ -31,6 +38,7 @@ def send_rpc(host, rpc_xml):
             username=NETCONF_USER,
             password=NETCONF_PASS,
             hostkey_verify=False,
+            disabled_algorithms=dict(pubkeys=[]),  # Re-enables standard RSA host keys
             device_params={'name': 'default'}
         ) as m:
             print(f"[*] Connected to NETCONF agent at {host}:{NETCONF_PORT}")
