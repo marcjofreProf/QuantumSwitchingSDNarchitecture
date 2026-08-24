@@ -49,7 +49,7 @@ fi
 
 # --- Phase 1: Python Virtual Environment & Stubs Cleanup ---
 uninstall_python_env() {
-    log_info "Phase 1: Removing Python virtual environment and compiled gRPC stubs..."
+    log_info "Phase 1: Removing Python virtual environment (gRPC/NETCONF) and compiled stubs..."
     local base_dir="."
 
     if [ -d "$base_dir/.venv" ]; then
