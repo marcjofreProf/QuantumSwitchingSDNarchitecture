@@ -6,6 +6,7 @@ import os
 try:
     from ncclient import manager
     import paramiko
+    from paramiko.rsakey import RSAKey
 except ModuleNotFoundError:
     current_dir = os.path.dirname(os.path.abspath(__file__))
     venv_python = os.path.abspath(os.path.join(current_dir, '../.venv/bin/python3'))
@@ -18,7 +19,7 @@ except ModuleNotFoundError:
 import argparse
 import xml.dom.minidom
 
-# Enable legacy ssh-rsa host key support in Paramiko globally
+# 1. Enable legacy ssh-rsa host key support in Paramiko globally
 custom_keys = (
     'rsa-sha2-512', 'rsa-sha2-256', 'ssh-rsa',
     'ecdsa-sha2-nistp256', 'ssh-ed25519'
@@ -27,6 +28,10 @@ if hasattr(paramiko.Transport, '_preferred_keys'):
     paramiko.Transport._preferred_keys = custom_keys
 if hasattr(paramiko.Transport, '_preferred_pubkeys'):
     paramiko.Transport._preferred_pubkeys = custom_keys
+
+# 2. Re-inject 'ssh-rsa' into Paramiko's known key classes to fix KeyError
+if hasattr(paramiko.Transport, '_key_info') and 'ssh-rsa' not in paramiko.Transport._key_info:
+    paramiko.Transport._key_info['ssh-rsa'] = RSAKey
 
 # NETCONF Agent configuration matching BeagleBone
 NETCONF_PORT = 8300
@@ -42,7 +47,9 @@ def send_rpc(host, rpc_xml):
             username=NETCONF_USER,
             password=NETCONF_PASS,
             hostkey_verify=False,
-            device_params={'name': 'default'}
+            device_params={'name': 'default'},
+            allow_agent=False,
+            look_for_keys=False
         ) as m:
             print(f"[*] Connected to NETCONF agent at {host}:{NETCONF_PORT}")
             
