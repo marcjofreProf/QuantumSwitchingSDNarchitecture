@@ -21,6 +21,9 @@ def send_rpc(host, rpc_xml):
             device_params={'name': 'default'}
         ) as m:
             print(f"[*] Connected to NETCONF agent at {host}:{NETCONF_PORT}")
+            
+            # ncclient handles the base <rpc> wrapping automatically.
+            # We just pass the inner payload.
             response = m.dispatch(xml_=rpc_xml)
             
             # Format and print the XML response nicely
@@ -41,27 +44,27 @@ def main():
     
     args = parser.parse_args()
 
-    # Define standard NETCONF XML payloads mapped to your YANG models
-    # Note: You will eventually replace the URNs with your custom quantum YANG models
+    # XML payloads mapped exactly to quantum-netconf-switch.yang
     payloads = {
         "status": """
             <get>
               <filter type="subtree">
-                <hardware-state xmlns="urn:quantum:sdn:switching:1.0">
-                  <connection-status/>
-                </hardware-state>
+                <netconf-switch xmlns="urn:quantum:sdn:netconf-switch">
+                  <switch-state/>
+                  <switch-type/>
+                </netconf-switch>
               </filter>
             </get>
         """,
         "connect": """
-            <cross-connect xmlns="urn:quantum:sdn:switching:1.0">
-                <state>active</state>
-            </cross-connect>
+            <set-netconf-switch xmlns="urn:quantum:sdn:netconf-switch">
+                <state>true</state>
+            </set-netconf-switch>
         """,
         "disconnect": """
-            <cross-connect xmlns="urn:quantum:sdn:switching:1.0">
-                <state>inactive</state>
-            </cross-connect>
+            <set-netconf-switch xmlns="urn:quantum:sdn:netconf-switch">
+                <state>false</state>
+            </set-netconf-switch>
         """
     }
 
