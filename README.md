@@ -29,8 +29,7 @@ quantum-sdn-architecture/
 │   └── open5gs/                # Helm charts/Kustomize files for Open5GS pods
 └── bootstrap-quantum-switching-sdn.sh
 └── uninstall-bootstrap-quantum-switching-sdn.sh
-´´
----
+
 
 # Quantum switching SDN Architecture
 
@@ -86,6 +85,15 @@ python3 scripts/netconf-switching-client.py <NODE_IP> connect
 
 # Force the physical switch to disconnect
 python3 scripts/netconf-switching-client.py <NODE_IP> disconnect
+
+## Automated Hardware Tests
+To validate a node's full connection lifecycle, use the automated test scripts. These execute a sequence of actions (Status ➔ Connect ➔ Status ➔ Disconnect ➔ Status) with built-in delays to verify that the physical switch properly actuates under protocol commands.
+
+# Run the automated gNOI test sequence
+python3 tests/test-manual-gnoi-switching.py <NODE_IP>
+
+# Run the automated NETCONF test sequence
+python3 tests/test-manual-netconf-switching.py <NODE_IP>
 
 ## Environment Teardown & Cleanup
 
