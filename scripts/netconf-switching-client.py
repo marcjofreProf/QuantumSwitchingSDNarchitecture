@@ -1,7 +1,20 @@
 #!/usr/bin/env python3
 import sys
+import os
+
+# --- VENV AUTO-DISCOVERY ---
+try:
+    from ncclient import manager
+except ModuleNotFoundError:
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    venv_python = os.path.abspath(os.path.join(current_dir, '../.venv/bin/python3'))
+    if os.path.exists(venv_python):
+        os.execl(venv_python, venv_python, *sys.argv)
+    else:
+        print("[ERROR] 'ncclient' missing and '.venv' not found. Run bootstrap-quantum-switching-sdn.sh first.")
+        sys.exit(1)
+
 import argparse
-from ncclient import manager
 import xml.dom.minidom
 
 # Default NETCONF credentials for the hardware agents
@@ -22,11 +35,8 @@ def send_rpc(host, rpc_xml):
         ) as m:
             print(f"[*] Connected to NETCONF agent at {host}:{NETCONF_PORT}")
             
-            # ncclient handles the base <rpc> wrapping automatically.
-            # We just pass the inner payload.
             response = m.dispatch(xml_=rpc_xml)
             
-            # Format and print the XML response nicely
             pretty_xml = xml.dom.minidom.parseString(response.xml).toprettyxml()
             print("[*] Response Received:\n")
             print(pretty_xml)
@@ -44,7 +54,6 @@ def main():
     
     args = parser.parse_args()
 
-    # XML payloads mapped exactly to quantum-netconf-switch.yang
     payloads = {
         "status": """
             <get>
