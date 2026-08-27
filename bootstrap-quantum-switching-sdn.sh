@@ -149,6 +149,37 @@ install_kubectl_and_helm() {
     fi
 }
 
+# --- Phase 3.5: Persistent Network & iptables Configuration ---
+setup_persistent_sdn_networking() {
+    log_info "Phase 3.5: Applying persistent iptables and kernel network configurations..."
+
+    # 1. Persist kernel module loading across reboots
+    log_info "Setting br_netfilter to auto-load on boot..."
+    echo "br_netfilter" | sudo tee /etc/modules-load.d/sdn-uonos.conf >/dev/null
+    sudo modprobe br_netfilter
+
+    # 2. Persist sysctl parameters across reboots
+    log_info "Writing sysctl parameters to /etc/sysctl.d/99-sdn-uonos.conf..."
+    cat <<EOF | sudo tee /etc/sysctl.d/99-sdn-uonos.conf >/dev/null
+net.ipv4.ip_forward = 1
+net.bridge.bridge-nf-call-iptables = 1
+EOF
+    sudo sysctl --system >/dev/null
+
+    # 3. Set iptables FORWARD policy to ACCEPT and make it persistent
+    log_info "Configuring persistent iptables rules..."
+    sudo iptables -P FORWARD ACCEPT
+
+    # Install iptables-persistent non-interactively to prevent prompt freezes
+    echo iptables-persistent iptables-persistent/enable-ipv4 boolean true | sudo debconf-set-selections
+    echo iptables-persistent iptables-persistent/enable-ipv6 boolean true | sudo debconf-set-selections
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y iptables-persistent netfilter-persistent
+
+    # Save current iptables state to /etc/iptables/rules.v4
+    sudo netfilter-persistent save
+    log_success "Persistent network configurations successfully applied."
+}
+
 # --- Phase 4: SDN Controller (µONOS) & Open5GS Repos ---
 setup_helm_repos() {
     log_info "Phase 4: Setting up Helm repositories for µONOS and Open5GS..."
