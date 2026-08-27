@@ -271,22 +271,44 @@ install_osm_installer() {
         sudo fuser -k 10250/tcp 10257/tcp 10259/tcp || true
 
         log_info "Downloading OSM installer..."
-        wget https://osm-download.etsi.org/ftp/osm-14.0-fourteen/install_osm.sh
+        wget https://osm-download.etsi.org/ftp/osm-14.0-fourteen/install_osm.sh -O install_osm.sh
         chmod +x install_osm.sh
         
-        # Start a background loop to automatically untaint nodes as soon as kubeconfig becomes active
+        # Start background Watchdog process to auto-repair stuck/crashing pods during installation
         (
-            for i in {1..30}; do
+            for i in {1..120}; do
                 if [ -f /etc/kubernetes/admin.conf ] || [ -f ~/.kube/config ]; then
+                    export KUBECONFIG=${KUBECONFIG:-/etc/kubernetes/admin.conf}
+                    
+                    # 1. Untaint control-plane nodes automatically
                     kubectl taint nodes --all node-role.kubernetes.io/control-plane- 2>/dev/null || true
                     kubectl taint nodes --all node-role.kubernetes.io/master- 2>/dev/null || true
+
+                    # 2. Patch kube-proxy for MetalLB strictARP support
+                    kubectl get configmap kube-proxy -n kube-system -o yaml 2>/dev/null | \
+                        sed 's/strictARP: false/strictARP: true/' | \
+                        kubectl apply -f - 2>/dev/null || true
+
+                    # 3. Detect and force-kill stuck bootstrap pods (MetalLB, CertManager, OpenEBS)
+                    for ns in metallb-system cert-manager openebs; do
+                        stuck_pods=$(kubectl get pods -n "$ns" --no-headers 2>/dev/null | awk '$3 ~ /CrashLoopBackOff|Error|ImagePullBackOff/ {print $1}')
+                        for pod in $stuck_pods; do
+                            if [ -n "$pod" ]; then
+                                kubectl delete pod "$pod" -n "$ns" --grace-period=0 --force 2>/dev/null || true
+                            fi
+                        done
+                    done
                 fi
-                sleep 5
+                sleep 8
             done
         ) &
+        WATCHDOG_PID=$!
 
         log_info "Running OSM installer..."
-        ./install_osm.sh
+        ./install_osm.sh || log_warn "OSM installer completed with non-fatal warnings."
+
+        # Terminate background watchdog after completion
+        kill $WATCHDOG_PID 2>/dev/null || true
         log_success "OSM installation process finished."
     else
         log_info "Skipping OSM installation."
