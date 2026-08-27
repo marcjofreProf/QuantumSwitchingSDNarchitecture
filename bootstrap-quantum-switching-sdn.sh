@@ -274,6 +274,17 @@ install_osm_installer() {
         wget https://osm-download.etsi.org/ftp/osm-14.0-fourteen/install_osm.sh
         chmod +x install_osm.sh
         
+        # Start a background loop to automatically untaint nodes as soon as kubeconfig becomes active
+        (
+            for i in {1..30}; do
+                if [ -f /etc/kubernetes/admin.conf ] || [ -f ~/.kube/config ]; then
+                    kubectl taint nodes --all node-role.kubernetes.io/control-plane- 2>/dev/null || true
+                    kubectl taint nodes --all node-role.kubernetes.io/master- 2>/dev/null || true
+                fi
+                sleep 5
+            done
+        ) &
+
         log_info "Running OSM installer..."
         ./install_osm.sh
         log_success "OSM installation process finished."
