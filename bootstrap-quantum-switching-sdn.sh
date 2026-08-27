@@ -38,6 +38,14 @@ ask_user() {
     fi
 }
 
+# --- Phase 0: System Locks & Background Services ---
+stop_unattended_upgrades() {
+    log_info "Phase 0: Disabling unattended-upgrades to prevent APT lock conflicts..."
+    sudo systemctl stop unattended-upgrades 2>/dev/null || true
+    sudo systemctl disable unattended-upgrades 2>/dev/null || true
+    log_success "unattended-upgrades stopped and disabled."
+}
+
 # --- Phase 1: Repository Scaffolding ---
 create_repo_structure() {
     log_info "Phase 1: Creating Quantum-SDN repository structure..."
@@ -74,8 +82,7 @@ create_repo_structure() {
 # --- Phase 2: System Dependencies ---
 install_sys_deps() {
     log_info "Phase 2: Checking basic system dependencies (curl, git, wget, jq, python3-pip)..."
-    # ADDED: python3-pip and python3-venv for the gRPC client phase
-    local deps="curl git wget jq build-essential python3-pip python3-venv"
+    local deps="curl git wget jq build-essential python3-pip python3-venv gpg psmisc"
     local to_install=""
 
     for pkg in $deps; do
@@ -86,8 +93,8 @@ install_sys_deps() {
 
     if [ -n "$to_install" ]; then
         log_info "Installing missing packages:$to_install"
-        sudo apt-get update -y
-        sudo apt-get install -y $to_install
+        sudo DEBIAN_FRONTEND=noninteractive apt-get update -y
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y $to_install
         log_success "System dependencies installed."
     else
         log_success "All basic system dependencies are already installed."
@@ -112,7 +119,23 @@ install_docker() {
     fi
 }
 
+setup_k8s_apt_repo() {
+    log_info "Configuring Kubernetes APT keyring non-interactively..."
+    sudo mkdir -p -m 755 /etc/apt/keyrings
+
+    # Pass --yes to gpg to overwrite existing keyrings without prompt
+    curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.28/deb/Release.key | \
+        sudo gpg --dearmor --yes -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+
+    echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.28/deb/ /" | \
+        sudo tee /etc/apt/sources.list.d/kubernetes.list >/dev/null
+
+    log_success "Kubernetes APT keyring non-interactive setup complete."
+}
+
 install_kubectl_and_helm() {
+    setup_k8s_apt_repo
+
     log_info "Checking kubectl..."
     if command -v kubectl >/dev/null 2>&1; then
         log_success "kubectl is already installed."
@@ -133,7 +156,7 @@ install_kubectl_and_helm() {
             rm -f get_helm.sh
             log_success "Helm installed via primary official script."
         else
-            log_warn "Primary Helm installation script failed (GitHub rate-limit or SSL error). Attempting direct CDN binary fallback..."
+            log_warn "Primary Helm installation script failed. Attempting direct CDN binary fallback..."
             rm -f get_helm.sh
             
             HELM_VER="v3.17.0"
@@ -237,16 +260,17 @@ install_osm_installer() {
     log_warn "OSM is a highly complex orchestration platform requiring significant resources."
 
     if ask_user "Do you want to download and run the OSM standalone installer now?" "N"; then
-        log_info "Cleaning up any stale Kubernetes configurations prior to install..."
+        log_info "Purging residual Kubernetes processes, manifests, and ports prior to install..."
         sudo kubeadm reset -f || true
-        sudo rm -rf /etc/kubernetes/manifests/* /var/lib/etcd /etc/cni/net.d
+        sudo systemctl stop kubelet || true
+        sudo rm -rf /etc/kubernetes/manifests/* /var/lib/etcd /var/lib/kubelet/* /etc/cni/net.d
+        sudo fuser -k 10250/tcp 10257/tcp 10259/tcp || true
 
         log_info "Downloading OSM installer..."
         wget https://osm-download.etsi.org/ftp/osm-14.0-fourteen/install_osm.sh
         chmod +x install_osm.sh
         
         log_info "Running OSM installer..."
-        # Running with non-interactive flags where applicable
         ./install_osm.sh
         log_success "OSM installation process finished."
     else
@@ -269,7 +293,6 @@ setup_sdn_python_client() {
     "$base_dir/.venv/bin/pip" install --upgrade pip
     "$base_dir/.venv/bin/pip" install grpcio grpcio-tools ncclient xmltodict
 
-    # (Keep the existing protoc compilation block here...)
     if [ -f "$base_dir/proto/quantum_gnoi_switching.proto" ]; then
         log_info "Compiling gRPC stubs..."
         "$base_dir/.venv/bin/python" -m grpc_tools.protoc -I"$base_dir/proto" \
@@ -289,10 +312,12 @@ echo -e "${CYAN}===========================================================${NC}
 echo -e "${CYAN}   Quantum-SDN Switching Architecture Environment Setup    ${NC}"
 echo -e "${CYAN}===========================================================${NC}"
 
+stop_unattended_upgrades
 create_repo_structure
 install_sys_deps
 install_docker
 install_kubectl_and_helm
+setup_persistent_sdn_networking
 setup_helm_repos
 install_grpc_tools
 install_osm_installer
