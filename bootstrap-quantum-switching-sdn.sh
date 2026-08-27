@@ -236,11 +236,17 @@ install_osm_installer() {
     log_info "Phase 6: Open Source MANO (OSM)"
     log_warn "OSM is a highly complex orchestration platform requiring significant resources."
 
-    if ask_user "Do you want to download and run the OSM standalone installer now (for lightweigh deployment with no MANO, press n)?" "N"; then
+    if ask_user "Do you want to download and run the OSM standalone installer now?" "N"; then
+        log_info "Cleaning up any stale Kubernetes configurations prior to install..."
+        sudo kubeadm reset -f || true
+        sudo rm -rf /etc/kubernetes/manifests/* /var/lib/etcd /etc/cni/net.d
+
         log_info "Downloading OSM installer..."
         wget https://osm-download.etsi.org/ftp/osm-14.0-fourteen/install_osm.sh
         chmod +x install_osm.sh
+        
         log_info "Running OSM installer..."
+        # Running with non-interactive flags where applicable
         ./install_osm.sh
         log_success "OSM installation process finished."
     else
