@@ -181,15 +181,19 @@ setup_persistent_sdn_networking() {
     echo "br_netfilter" | sudo tee /etc/modules-load.d/sdn-uonos.conf >/dev/null
     sudo modprobe br_netfilter
 
-    # 2. Persist sysctl parameters across reboots
+    # 2. Clean legacy sysctl parameters that fail on newer kernels
+    sudo sed -i '/net.core.bpf_jit_limit/d' /etc/sysctl.d/*.conf /etc/sysctl.conf 2>/dev/null || true
+
+    # 3. Write sysctl parameters to /etc/sysctl.d/99-sdn-uonos.conf
     log_info "Writing sysctl parameters to /etc/sysctl.d/99-sdn-uonos.conf..."
     cat <<EOF | sudo tee /etc/sysctl.d/99-sdn-uonos.conf >/dev/null
 net.ipv4.ip_forward = 1
 net.bridge.bridge-nf-call-iptables = 1
 EOF
-    sudo sysctl --system >/dev/null
+    # Load specifically our config file to avoid global sysctl file conflicts
+    sudo sysctl -p /etc/sysctl.d/99-sdn-uonos.conf >/dev/null
 
-    # 3. Set iptables FORWARD policy to ACCEPT and make it persistent
+    # 4. Set iptables FORWARD policy to ACCEPT and make it persistent
     log_info "Configuring persistent iptables rules..."
     sudo iptables -P FORWARD ACCEPT
 
