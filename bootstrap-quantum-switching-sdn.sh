@@ -330,7 +330,7 @@ setup_sdn_python_client() {
 
 # --- Phase 8: Deploy Persistent RESTCONF Systemd Service ---
 deploy_restconf_service() {
-    log_info "Phase 8: Deploying persistent RESTCONF systemd service on port 8181..."
+    log_info "Phase 8: Deploying persistent stateful RESTCONF systemd service on port 8181..."
 
     local script_path="/usr/local/bin/quantum_restconf_server.py"
     local service_path="/etc/systemd/system/quantum-restconf.service"
@@ -341,11 +341,37 @@ deploy_restconf_service() {
 from flask import Flask, request, jsonify
 
 app = Flask(__name__)
+current_service = {}
 
-@app.route('/restconf/data/example-quantum-switching-terminal-service:quantum-services/cross-connect-service', methods=['POST', 'PUT'])
+ENDPOINT = '/restconf/data/example-quantum-switching-terminal-service:quantum-services/cross-connect-service'
+
+@app.route(ENDPOINT, methods=['POST', 'PUT'])
 def handle_cross_connect():
-    print('\n[+] RESTCONF Payload received:\n', request.get_data(as_text=True))
-    return jsonify({'status': 'CREATED'}), 201
+    global current_service
+    data = request.get_json(force=True, silent=True) or {}
+    current_service = data if data else {
+        'service-id': 'example-qservice-opt-01',
+        'target-node-ip': '10.0.0.254',
+        'status': 'PROVISIONED',
+        'admin-state': 'ENABLED'
+    }
+    print('\n[+] RESTCONF Payload received (CONNECT):\n', request.get_data(as_text=True))
+    return jsonify({'status': 'CREATED', 'cross-connect-service': current_service}), 201
+
+@app.route(ENDPOINT, methods=['GET'])
+def get_cross_connect():
+    if not current_service:
+        return jsonify({'status': 'NOT_FOUND', 'message': 'No active cross-connect'}), 404
+    return jsonify({'cross-connect-service': current_service}), 200
+
+@app.route(ENDPOINT, methods=['DELETE'])
+def delete_cross_connect():
+    global current_service
+    if not current_service:
+        return jsonify({'status': 'NOT_FOUND', 'message': 'No service to delete'}), 404
+    current_service = {}
+    print('\n[-] RESTCONF Service DELETED')
+    return jsonify({'status': 'DELETED'}), 200
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8181)
