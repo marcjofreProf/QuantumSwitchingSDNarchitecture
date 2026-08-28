@@ -65,6 +65,7 @@ create_repo_structure() {
              "$base_dir"/workloads/open5gs \
              "$base_dir"/hardware-agents/gnoi-targets \
              "$base_dir"/hardware-agents/netconf-servers \
+             "$base_dir"/hardware-agents/restconf-servers \
              "$base_dir"/hardware-agents/switch-drivers \
              "$base_dir"/tests/latency-benchmarks \
              "$base_dir"/tests/e2e-path-provisioning \
@@ -190,19 +191,17 @@ setup_persistent_sdn_networking() {
 net.ipv4.ip_forward = 1
 net.bridge.bridge-nf-call-iptables = 1
 EOF
-    # Load specifically our config file to avoid global sysctl file conflicts
     sudo sysctl -p /etc/sysctl.d/99-sdn-uonos.conf >/dev/null
 
     # 4. Set iptables FORWARD policy to ACCEPT and make it persistent
     log_info "Configuring persistent iptables rules..."
     sudo iptables -P FORWARD ACCEPT
 
-    # Install iptables-persistent non-interactively to prevent prompt freezes
+    # Install iptables-persistent non-interactively
     echo iptables-persistent iptables-persistent/enable-ipv4 boolean true | sudo debconf-set-selections
     echo iptables-persistent iptables-persistent/enable-ipv6 boolean true | sudo debconf-set-selections
     sudo DEBIAN_FRONTEND=noninteractive apt-get install -y iptables-persistent netfilter-persistent
 
-    # Save current iptables state to /etc/iptables/rules.v4
     sudo netfilter-persistent save
     log_success "Persistent network configurations successfully applied."
 }
@@ -210,11 +209,8 @@ EOF
 # --- Phase 4: SDN Controller (µONOS) & Open5GS Repos ---
 setup_helm_repos() {
     log_info "Phase 4: Setting up Helm repositories for µONOS and Open5GS..."
-
-    # microONOS Repo
     helm repo add onosproject https://charts.onosproject.org || log_warn "Failed to add onosproject repository."
 
-    # Towards5GS Repo with jsDelivr Fallback
     log_info "Adding Towards5GS Helm repository..."
     if ! helm repo add towards5gs https://raw.githubusercontent.com/Orange-OpenSource/towards5gs-helm/main/repo/ 2>/dev/null; then
         log_warn "Primary GitHub raw endpoint rate-limited/failed. Switching to jsDelivr CDN fallback..."
@@ -231,7 +227,7 @@ setup_helm_repos() {
     log_success "Helm repositories added and updated."
 }
 
-# --- Phase 5: gRPC & gNOI Tooling ---
+# --- Phase 5: gRPC, gNOI & gNMI Tooling ---
 install_grpc_tools() {
     log_info "Phase 5: Checking Protocol Buffers (protoc) for gNOI/gRPC development..."
     if command -v protoc >/dev/null 2>&1; then
@@ -256,6 +252,15 @@ install_grpc_tools() {
         rm grpcurl_1.8.7_linux_x86_64.tar.gz LICENSE
         log_success "grpcurl installed."
     fi
+
+    log_info "Checking gnmic (gNMI CLI and server mock tool)..."
+    if command -v gnmic >/dev/null 2>&1; then
+        log_success "gnmic is already installed."
+    else
+        log_info "Installing gnmic..."
+        bash -c "$(curl -sL https://get-gnmic.kmrd.dev)" || log_warn "Failed to install gnmic via primary script."
+        log_success "gnmic installed."
+    fi
 }
 
 # --- Phase 6: Orchestration (OSM) ---
@@ -274,22 +279,18 @@ install_osm_installer() {
         wget https://osm-download.etsi.org/ftp/osm-14.0-fourteen/install_osm.sh -O install_osm.sh
         chmod +x install_osm.sh
         
-        # Start background Watchdog process to auto-repair stuck/crashing pods during installation
+        # Start background Watchdog process
         (
             for i in {1..120}; do
                 if [ -f /etc/kubernetes/admin.conf ] || [ -f ~/.kube/config ]; then
                     export KUBECONFIG=${KUBECONFIG:-/etc/kubernetes/admin.conf}
-                    
-                    # 1. Untaint control-plane nodes automatically
                     kubectl taint nodes --all node-role.kubernetes.io/control-plane- 2>/dev/null || true
                     kubectl taint nodes --all node-role.kubernetes.io/master- 2>/dev/null || true
 
-                    # 2. Patch kube-proxy for MetalLB strictARP support
                     kubectl get configmap kube-proxy -n kube-system -o yaml 2>/dev/null | \
                         sed 's/strictARP: false/strictARP: true/' | \
                         kubectl apply -f - 2>/dev/null || true
 
-                    # 3. Detect and force-kill stuck bootstrap pods (MetalLB, CertManager, OpenEBS)
                     for ns in metallb-system cert-manager openebs; do
                         stuck_pods=$(kubectl get pods -n "$ns" --no-headers 2>/dev/null | awk '$3 ~ /CrashLoopBackOff|Error|ImagePullBackOff/ {print $1}')
                         for pod in $stuck_pods; do
@@ -307,7 +308,6 @@ install_osm_installer() {
         log_info "Running OSM installer..."
         ./install_osm.sh || log_warn "OSM installer completed with non-fatal warnings."
 
-        # Terminate background watchdog after completion
         kill $WATCHDOG_PID 2>/dev/null || true
         log_success "OSM installation process finished."
     else
@@ -315,9 +315,9 @@ install_osm_installer() {
     fi
 }
 
-# --- Phase 7: Setup Python gRPC & NETCONF Client Environment ---
+# --- Phase 7: Setup Python gRPC, NETCONF & RESTCONF Client Environment ---
 setup_sdn_python_client() {
-    log_info "Phase 7: Setting up Python gRPC & NETCONF SDN Client Environment..."
+    log_info "Phase 7: Setting up Python gRPC, NETCONF & RESTCONF SDN Environment..."
     local base_dir="."  
 
     log_info "Installing Python venv package..."
@@ -326,9 +326,9 @@ setup_sdn_python_client() {
     log_info "Creating Python virtual environment in $base_dir/.venv..."
     python3 -m venv "$base_dir/.venv"
 
-    log_info "Installing grpcio, grpcio-tools, and ncclient in the virtual environment..."
+    log_info "Installing grpcio, grpcio-tools, ncclient, and Flask (for RESTCONF) in the virtual environment..."
     "$base_dir/.venv/bin/pip" install --upgrade pip
-    "$base_dir/.venv/bin/pip" install grpcio grpcio-tools ncclient xmltodict
+    "$base_dir/.venv/bin/pip" install grpcio grpcio-tools ncclient xmltodict Flask Werkzeug requests
 
     if [ -f "$base_dir/proto/quantum_gnoi_switching.proto" ]; then
         log_info "Compiling gRPC stubs..."
@@ -343,6 +343,64 @@ setup_sdn_python_client() {
         log_warn "proto/quantum_gnoi_switching.proto not found! Skipping compilation."
     fi
 }
+
+# --- Phase 8: Scaffold Terminal Mock Servers (RESTCONF & gNMI) ---
+setup_terminal_servers() {
+    log_info "Phase 8: Scaffolding terminal-listening RESTCONF and gNMI mock servers..."
+    local base_dir="."
+
+    # RESTCONF Mock Server
+    cat << 'EOF' > "$base_dir/hardware-agents/restconf-servers/mock_restconf.py"
+import logging
+from flask import Flask, jsonify, request
+
+app = Flask(__name__)
+logging.basicConfig(level=logging.INFO)
+
+@app.route('/restconf/data', methods=['GET'])
+def get_data():
+    return jsonify({
+        "ietf-interfaces:interfaces": {
+            "interface": [
+                {"name": "eth0", "type": "ethernetCsmacd", "enabled": True}
+            ]
+        }
+    })
+
+if __name__ == '__main__':
+    print("[RESTCONF] Starting Terminal Mock Server on 0.0.0.0:8080...")
+    app.run(host='0.0.0.0', port=8080)
+EOF
+
+    # gNMI Mock Server (Basic Scaffolding)
+    cat << 'EOF' > "$base_dir/hardware-agents/gnoi-targets/mock_gnmi.py"
+from concurrent import futures
+import grpc
+import time
+import logging
+
+def serve():
+    server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+    # Note: Requires compiled gNMI protobuf bindings to fully attach Servicer
+    # gnmi_pb2_grpc.add_gNMIServicer_to_server(MockgNMIServicer(), server)
+    
+    server.add_insecure_port('[::]:9339')
+    print("[gNMI] Starting Terminal Mock Server on [::]:9339...")
+    server.start()
+    try:
+        while True:
+            time.sleep(86400)
+    except KeyboardInterrupt:
+        server.stop(0)
+
+if __name__ == '__main__':
+    logging.basicConfig()
+    serve()
+EOF
+
+    log_success "Terminal mock servers generated in hardware-agents/ directories."
+}
+
 
 # --- Main Execution ---
 echo -e "${CYAN}===========================================================${NC}"
@@ -359,12 +417,14 @@ setup_helm_repos
 install_grpc_tools
 install_osm_installer
 setup_sdn_python_client
+setup_terminal_servers
 
 echo -e "${GREEN}====================================================${NC}"
 echo -e "${GREEN} Setup Complete!${NC}"
 echo -e "Navigate to your repository: ${YELLOW}cd quantum-sdn-switching-architecture${NC}"
-echo -e "Check Helm charts: ${YELLOW}helm search repo towards5gs${NC}"
+echo -e "To start RESTCONF Mock: ${YELLOW}source .venv/bin/activate && python3 hardware-agents/restconf-servers/mock_restconf.py${NC}"
+echo -e "To start gNMI Mock: ${YELLOW}source .venv/bin/activate && python3 hardware-agents/gnoi-targets/mock_gnmi.py${NC}"
+echo -e "To query gNMI Target: ${YELLOW}gnmic -a localhost:9339 --insecure capabilities${NC}"
 echo -e "To run a gNOI client command: ${YELLOW}python3 scripts/gnoi-switching-client.py <IP> status${NC}"
 echo -e "To run a NETCONF client command: ${YELLOW}python3 scripts/netconf-switching-client.py <IP> status${NC}"
-echo -e "To run a hardware test: ${YELLOW}python3 tests/test-manual-gnoi-switching.py <IP>${NC}"
 echo -e "${GREEN}====================================================${NC}"
