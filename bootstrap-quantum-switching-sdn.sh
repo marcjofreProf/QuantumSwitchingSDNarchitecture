@@ -51,7 +51,6 @@ create_repo_structure() {
     log_info "Phase 1: Creating Quantum-SDN repository structure..."
     local base_dir="."
 
-    # Create directories with quoted variable pathing
     mkdir -p "$base_dir"/.github/workflows \
              "$base_dir"/docs/architecture \
              "$base_dir"/docs/api \
@@ -72,7 +71,6 @@ create_repo_structure() {
              "$base_dir"/scripts \
              "$base_dir"/proto
 
-    # Create placeholder files cleanly
     touch "$base_dir/README.md"
     touch "$base_dir/LICENSE"
     touch "$base_dir/Makefile"
@@ -82,8 +80,8 @@ create_repo_structure() {
 
 # --- Phase 2: System Dependencies ---
 install_sys_deps() {
-    log_info "Phase 2: Checking basic system dependencies (curl, git, wget, jq, python3-pip)..."
-    local deps="curl git wget jq build-essential python3-pip python3-venv gpg psmisc"
+    log_info "Phase 2: Checking basic system dependencies..."
+    local deps="curl git wget jq build-essential python3-pip python3-venv python3-flask gpg psmisc"
     local to_install=""
 
     for pkg in $deps; do
@@ -124,7 +122,6 @@ setup_k8s_apt_repo() {
     log_info "Configuring Kubernetes APT keyring non-interactively..."
     sudo mkdir -p -m 755 /etc/apt/keyrings
 
-    # Pass --yes to gpg to overwrite existing keyrings without prompt
     curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.28/deb/Release.key | \
         sudo gpg --dearmor --yes -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
 
@@ -177,15 +174,12 @@ install_kubectl_and_helm() {
 setup_persistent_sdn_networking() {
     log_info "Phase 3.5: Applying persistent iptables and kernel network configurations..."
 
-    # 1. Persist kernel module loading across reboots
     log_info "Setting br_netfilter to auto-load on boot..."
     echo "br_netfilter" | sudo tee /etc/modules-load.d/sdn-uonos.conf >/dev/null
     sudo modprobe br_netfilter
 
-    # 2. Clean legacy sysctl parameters that fail on newer kernels
     sudo sed -i '/net.core.bpf_jit_limit/d' /etc/sysctl.d/*.conf /etc/sysctl.conf 2>/dev/null || true
 
-    # 3. Write sysctl parameters to /etc/sysctl.d/99-sdn-uonos.conf
     log_info "Writing sysctl parameters to /etc/sysctl.d/99-sdn-uonos.conf..."
     cat <<EOF | sudo tee /etc/sysctl.d/99-sdn-uonos.conf >/dev/null
 net.ipv4.ip_forward = 1
@@ -193,11 +187,9 @@ net.bridge.bridge-nf-call-iptables = 1
 EOF
     sudo sysctl -p /etc/sysctl.d/99-sdn-uonos.conf >/dev/null
 
-    # 4. Set iptables FORWARD policy to ACCEPT and make it persistent
     log_info "Configuring persistent iptables rules..."
     sudo iptables -P FORWARD ACCEPT
 
-    # Install iptables-persistent non-interactively
     echo iptables-persistent iptables-persistent/enable-ipv4 boolean true | sudo debconf-set-selections
     echo iptables-persistent iptables-persistent/enable-ipv6 boolean true | sudo debconf-set-selections
     sudo DEBIAN_FRONTEND=noninteractive apt-get install -y iptables-persistent netfilter-persistent
@@ -209,6 +201,7 @@ EOF
 # --- Phase 4: SDN Controller (µONOS) & Open5GS Repos ---
 setup_helm_repos() {
     log_info "Phase 4: Setting up Helm repositories for µONOS and Open5GS..."
+
     helm repo add onosproject https://charts.onosproject.org || log_warn "Failed to add onosproject repository."
 
     log_info "Adding Towards5GS Helm repository..."
@@ -227,7 +220,7 @@ setup_helm_repos() {
     log_success "Helm repositories added and updated."
 }
 
-# --- Phase 5: gRPC, gNOI & gNMI Tooling ---
+# --- Phase 5: gRPC & gNOI Tooling ---
 install_grpc_tools() {
     log_info "Phase 5: Checking Protocol Buffers (protoc) for gNOI/gRPC development..."
     if command -v protoc >/dev/null 2>&1; then
@@ -252,15 +245,6 @@ install_grpc_tools() {
         rm grpcurl_1.8.7_linux_x86_64.tar.gz LICENSE
         log_success "grpcurl installed."
     fi
-
-    log_info "Checking gnmic (gNMI CLI and server mock tool)..."
-    if command -v gnmic >/dev/null 2>&1; then
-        log_success "gnmic is already installed."
-    else
-        log_info "Installing gnmic..."
-        bash -c "$(curl -sL https://get-gnmic.kmrd.dev)" || log_warn "Failed to install gnmic via primary script."
-        log_success "gnmic installed."
-    fi
 }
 
 # --- Phase 6: Orchestration (OSM) ---
@@ -279,11 +263,11 @@ install_osm_installer() {
         wget https://osm-download.etsi.org/ftp/osm-14.0-fourteen/install_osm.sh -O install_osm.sh
         chmod +x install_osm.sh
         
-        # Start background Watchdog process
         (
             for i in {1..120}; do
                 if [ -f /etc/kubernetes/admin.conf ] || [ -f ~/.kube/config ]; then
                     export KUBECONFIG=${KUBECONFIG:-/etc/kubernetes/admin.conf}
+                    
                     kubectl taint nodes --all node-role.kubernetes.io/control-plane- 2>/dev/null || true
                     kubectl taint nodes --all node-role.kubernetes.io/master- 2>/dev/null || true
 
@@ -315,20 +299,20 @@ install_osm_installer() {
     fi
 }
 
-# --- Phase 7: Setup Python gRPC, NETCONF & RESTCONF Client Environment ---
+# --- Phase 7: Setup Python Environment ---
 setup_sdn_python_client() {
     log_info "Phase 7: Setting up Python gRPC, NETCONF & RESTCONF SDN Environment..."
     local base_dir="."  
 
     log_info "Installing Python venv package..."
-    sudo apt-get install -y python3-venv python3-pip
+    sudo apt-get install -y python3-venv python3-pip python3-flask
 
     log_info "Creating Python virtual environment in $base_dir/.venv..."
     python3 -m venv "$base_dir/.venv"
 
-    log_info "Installing grpcio, grpcio-tools, ncclient, and Flask (for RESTCONF) in the virtual environment..."
+    log_info "Installing dependencies in virtual environment..."
     "$base_dir/.venv/bin/pip" install --upgrade pip
-    "$base_dir/.venv/bin/pip" install grpcio grpcio-tools ncclient xmltodict Flask Werkzeug requests
+    "$base_dir/.venv/bin/pip" install grpcio grpcio-tools ncclient xmltodict flask
 
     if [ -f "$base_dir/proto/quantum_gnoi_switching.proto" ]; then
         log_info "Compiling gRPC stubs..."
@@ -344,63 +328,59 @@ setup_sdn_python_client() {
     fi
 }
 
-# --- Phase 8: Scaffold Terminal Mock Servers (RESTCONF & gNMI) ---
-setup_terminal_servers() {
-    log_info "Phase 8: Scaffolding terminal-listening RESTCONF and gNMI mock servers..."
-    local base_dir="."
+# --- Phase 8: Deploy Persistent RESTCONF Systemd Service ---
+deploy_restconf_service() {
+    log_info "Phase 8: Deploying persistent RESTCONF systemd service on port 8181..."
 
-    # RESTCONF Mock Server
-    cat << 'EOF' > "$base_dir/hardware-agents/restconf-servers/mock_restconf.py"
-import logging
-from flask import Flask, jsonify, request
+    local script_path="/usr/local/bin/quantum_restconf_server.py"
+    local service_path="/etc/systemd/system/quantum-restconf.service"
+
+    log_info "Deploying RESTCONF server script to $script_path..."
+    cat << 'EOF' | sudo tee "$script_path" >/dev/null
+#!/usr/bin/env python3
+from flask import Flask, request, jsonify
 
 app = Flask(__name__)
-logging.basicConfig(level=logging.INFO)
 
-@app.route('/restconf/data', methods=['GET'])
-def get_data():
-    return jsonify({
-        "ietf-interfaces:interfaces": {
-            "interface": [
-                {"name": "eth0", "type": "ethernetCsmacd", "enabled": True}
-            ]
-        }
-    })
+@app.route('/restconf/data/example-quantum-switching-terminal-service:quantum-services/cross-connect-service', methods=['POST', 'PUT'])
+def handle_cross_connect():
+    print('\n[+] RESTCONF Payload received:\n', request.get_data(as_text=True))
+    return jsonify({'status': 'CREATED'}), 201
 
 if __name__ == '__main__':
-    print("[RESTCONF] Starting Terminal Mock Server on 0.0.0.0:8080...")
-    app.run(host='0.0.0.0', port=8080)
+    app.run(host='0.0.0.0', port=8181)
 EOF
 
-    # gNMI Mock Server (Basic Scaffolding)
-    cat << 'EOF' > "$base_dir/hardware-agents/gnoi-targets/mock_gnmi.py"
-from concurrent import futures
-import grpc
-import time
-import logging
+    sudo chmod +x "$script_path"
 
-def serve():
-    server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
-    # Note: Requires compiled gNMI protobuf bindings to fully attach Servicer
-    # gnmi_pb2_grpc.add_gNMIServicer_to_server(MockgNMIServicer(), server)
-    
-    server.add_insecure_port('[::]:9339')
-    print("[gNMI] Starting Terminal Mock Server on [::]:9339...")
-    server.start()
-    try:
-        while True:
-            time.sleep(86400)
-    except KeyboardInterrupt:
-        server.stop(0)
+    log_info "Creating systemd unit file at $service_path..."
+    cat << EOF | sudo tee "$service_path" >/dev/null
+[Unit]
+Description=Quantum SDN RESTCONF Switching Terminal Service
+After=network.target
 
-if __name__ == '__main__':
-    logging.basicConfig()
-    serve()
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/python3 $script_path
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
 EOF
 
-    log_success "Terminal mock servers generated in hardware-agents/ directories."
+    log_info "Enabling and launching quantum-restconf.service..."
+    sudo systemctl daemon-reload
+    sudo systemctl enable quantum-restconf.service
+    sudo systemctl restart quantum-restconf.service
+
+    if systemctl is-active --quiet quantum-restconf.service; then
+        log_success "RESTCONF service successfully active and listening on port 8181."
+    else
+        log_error "RESTCONF service failed to start."
+    fi
 }
-
 
 # --- Main Execution ---
 echo -e "${CYAN}===========================================================${NC}"
@@ -417,14 +397,12 @@ setup_helm_repos
 install_grpc_tools
 install_osm_installer
 setup_sdn_python_client
-setup_terminal_servers
+deploy_restconf_service
 
 echo -e "${GREEN}====================================================${NC}"
 echo -e "${GREEN} Setup Complete!${NC}"
+echo -e "RESTCONF service active on: ${YELLOW}0.0.0.0:8181${NC}"
+echo -e "Check RESTCONF status: ${YELLOW}sudo systemctl status quantum-restconf.service${NC}"
+echo -e "View RESTCONF logs: ${YELLOW}sudo journalctl -u quantum-restconf.service -f${NC}"
 echo -e "Navigate to your repository: ${YELLOW}cd quantum-sdn-switching-architecture${NC}"
-echo -e "To start RESTCONF Mock: ${YELLOW}source .venv/bin/activate && python3 hardware-agents/restconf-servers/mock_restconf.py${NC}"
-echo -e "To start gNMI Mock: ${YELLOW}source .venv/bin/activate && python3 hardware-agents/gnoi-targets/mock_gnmi.py${NC}"
-echo -e "To query gNMI Target: ${YELLOW}gnmic -a localhost:9339 --insecure capabilities${NC}"
-echo -e "To run a gNOI client command: ${YELLOW}python3 scripts/gnoi-switching-client.py <IP> status${NC}"
-echo -e "To run a NETCONF client command: ${YELLOW}python3 scripts/netconf-switching-client.py <IP> status${NC}"
 echo -e "${GREEN}====================================================${NC}"
