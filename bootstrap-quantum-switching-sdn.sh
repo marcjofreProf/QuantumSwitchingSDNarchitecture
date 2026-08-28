@@ -208,60 +208,60 @@ setup_helm_repos() {
     if ! helm repo add towards5gs https://raw.githubusercontent.com/Orange-OpenSource/towards5gs-helm/main/repo/ 2>/dev/null; then
         log_warn "Primary GitHub raw endpoint rate-limited/failed. Switching to jsDelivr CDN fallback..."
         if helm repo add towards5gs https://cdn.jsdelivr.net/gh/Orange-OpenSource/towards5gs-helm@main/repo/; then
-            log_success "Towards5GS repository added using jsDelivr CDN fallback."[cite: 7]
+            log_success "Towards5GS repository added using jsDelivr CDN fallback."
         else
-            log_error "Failed to add Towards5GS repository via both primary URL and CDN fallback."[cite: 7]
+            log_error "Failed to add Towards5GS repository via both primary URL and CDN fallback."
         fi
     else
-        log_success "Towards5GS repository added via GitHub raw endpoint."[cite: 7]
+        log_success "Towards5GS repository added via GitHub raw endpoint."
     fi
 
-    helm repo update[cite: 7]
-    log_success "Helm repositories added and updated."[cite: 7]
+    helm repo update
+    log_success "Helm repositories added and updated."
 }
 
 # --- Phase 5: gRPC & gNOI Tooling ---
 install_grpc_tools() {
-    log_info "Phase 5: Checking Protocol Buffers (protoc) for gNOI/gRPC development..."[cite: 7]
-    if command -v protoc >/dev/null 2>&1; then[cite: 7]
-        log_success "protoc is already installed ($(protoc --version))."[cite: 7]
-        if ask_user "Do you want to attempt upgrading protoc?" "N"; then[cite: 7]
-            sudo apt-get install -y protobuf-compiler[cite: 7]
+    log_info "Phase 5: Checking Protocol Buffers (protoc) for gNOI/gRPC development..."
+    if command -v protoc >/dev/null 2>&1; then
+        log_success "protoc is already installed ($(protoc --version))."
+        if ask_user "Do you want to attempt upgrading protoc?" "N"; then
+            sudo apt-get install -y protobuf-compiler
         fi
     else
-        log_info "Installing Protocol Buffers Compiler..."[cite: 7]
-        sudo apt-get install -y protobuf-compiler[cite: 7]
-        log_success "protoc installed."[cite: 7]
+        log_info "Installing Protocol Buffers Compiler..."
+        sudo apt-get install -y protobuf-compiler
+        log_success "protoc installed."
     fi
 
-    log_info "Checking grpcurl..."[cite: 7]
-    if command -v grpcurl >/dev/null 2>&1; then[cite: 7]
-        log_success "grpcurl is already installed."[cite: 7]
+    log_info "Checking grpcurl..."
+    if command -v grpcurl >/dev/null 2>&1; then
+        log_success "grpcurl is already installed."
     else
-        log_info "Installing grpcurl..."[cite: 7]
-        wget https://github.com/fullstorydev/grpcurl/releases/download/v1.8.7/grpcurl_1.8.7_linux_x86_64.tar.gz[cite: 7]
-        tar -xvf grpcurl_1.8.7_linux_x86_64.tar.gz[cite: 7]
-        sudo mv grpcurl /usr/local/bin/[cite: 7]
-        rm grpcurl_1.8.7_linux_x86_64.tar.gz LICENSE[cite: 7]
-        log_success "grpcurl installed."[cite: 7]
+        log_info "Installing grpcurl..."
+        wget https://github.com/fullstorydev/grpcurl/releases/download/v1.8.7/grpcurl_1.8.7_linux_x86_64.tar.gz
+        tar -xvf grpcurl_1.8.7_linux_x86_64.tar.gz
+        sudo mv grpcurl /usr/local/bin/
+        rm grpcurl_1.8.7_linux_x86_64.tar.gz LICENSE
+        log_success "grpcurl installed."
     fi
 }
 
 # --- Phase 6: Orchestration (OSM) ---
 install_osm_installer() {
-    log_info "Phase 6: Open Source MANO (OSM)"[cite: 7]
-    log_warn "OSM is a highly complex orchestration platform requiring significant resources."[cite: 7]
+    log_info "Phase 6: Open Source MANO (OSM)"
+    log_warn "OSM is a highly complex orchestration platform requiring significant resources."
 
-    if ask_user "Do you want to download and run the OSM standalone installer now?" "N"; then[cite: 7]
-        log_info "Purging residual Kubernetes processes, manifests, and ports prior to install..."[cite: 7]
-        sudo kubeadm reset -f || true[cite: 7]
-        sudo systemctl stop kubelet || true[cite: 7]
-        sudo rm -rf /etc/kubernetes/manifests/* /var/lib/etcd /var/lib/kubelet/* /etc/cni/net.d[cite: 7]
-        sudo fuser -k 10250/tcp 10257/tcp 10259/tcp || true[cite: 7]
+    if ask_user "Do you want to download and run the OSM standalone installer now?" "N"; then
+        log_info "Purging residual Kubernetes processes, manifests, and ports prior to install..."
+        sudo kubeadm reset -f || true
+        sudo systemctl stop kubelet || true
+        sudo rm -rf /etc/kubernetes/manifests/* /var/lib/etcd /var/lib/kubelet/* /etc/cni/net.d
+        sudo fuser -k 10250/tcp 10257/tcp 10259/tcp || true
 
-        log_info "Downloading OSM installer..."[cite: 7]
-        wget https://osm-download.etsi.org/ftp/osm-14.0-fourteen/install_osm.sh -O install_osm.sh[cite: 7]
-        chmod +x install_osm.sh[cite: 7]
+        log_info "Downloading OSM installer..."
+        wget https://osm-download.etsi.org/ftp/osm-14.0-fourteen/install_osm.sh -O install_osm.sh
+        chmod +x install_osm.sh
         
         (
             for i in {1..120}; do
@@ -289,22 +289,22 @@ install_osm_installer() {
         ) &
         WATCHDOG_PID=$!
 
-        log_info "Running OSM installer..."[cite: 7]
-        ./install_osm.sh || log_warn "OSM installer completed with non-fatal warnings."[cite: 7]
+        log_info "Running OSM installer..."
+        ./install_osm.sh || log_warn "OSM installer completed with non-fatal warnings."
 
-        kill $WATCHDOG_PID 2>/dev/null || true[cite: 7]
-        log_success "OSM installation process finished."[cite: 7]
+        kill $WATCHDOG_PID 2>/dev/null || true
+        log_success "OSM installation process finished."
     else
-        log_info "Skipping OSM installation."[cite: 7]
+        log_info "Skipping OSM installation."
     fi
 }
 
 # --- Phase 7: Setup Python Environment, Proto compilation & CLI scripts ---
 setup_sdn_python_client() {
-    log_info "Phase 7: Provisioning Python virtual environment & CLI node clients..."[cite: 7]
+    log_info "Phase 7: Provisioning Python virtual environment & CLI node clients..."
     local base_dir="."  
 
-    sudo apt-get install -y python3-venv python3-pip python3-flask[cite: 7]
+    sudo apt-get install -y python3-venv python3-pip python3-flask
 
     sudo python3 -m venv /opt/sdn-venv
     sudo /opt/sdn-venv/bin/pip install --upgrade pip
@@ -473,12 +473,12 @@ EOF
     chmod +x "$base_dir/scripts/gnoi-switching-client.py"
     chmod +x "$base_dir/scripts/netconf-switching-client.py"
 
-    log_success "Python environment, Proto stubs, and CLI scripts generated."[cite: 7]
+    log_success "Python environment, Proto stubs, and CLI scripts generated."
 }
 
 # --- Phase 8: Deploy Integrated Real µONOS-SDN Controller ---
 deploy_sdn_controller_services() {
-    log_info "Phase 8: Deploying Real µONOS-SDN Controller Service (RESTCONF 8181 + gNOI/gRPC 50051)..."[cite: 7]
+    log_info "Phase 8: Deploying Real µONOS-SDN Controller Service (RESTCONF 8181 + gNOI/gRPC 50051)..."
 
     local script_path="/usr/local/bin/quantum_sdn_controller.py"
     local service_path="/etc/systemd/system/quantum-sdn-controller.service"
@@ -494,7 +494,6 @@ import grpc
 from grpc_reflection.v1alpha import reflection
 from ncclient import manager
 
-sys.path.append("/home/marcjofre/Scripts/QuantumServiceOperationSDNarchitecture/proto")
 sys.path.append("./proto")
 
 try:
@@ -508,7 +507,7 @@ app = Flask(__name__)
 services_db = {}
 
 # ---------------------------------------------------------------------------
-# REAL SOUTHBOUND PROTOCOL DISPATCHERS (NETCONF / gNOI) - NO ARTIFICIAL MOCKS
+# REAL SOUTHBOUND PROTOCOL DISPATCHERS (NETCONF / gNOI)
 # ---------------------------------------------------------------------------
 
 def dispatch_southbound_netconf(target_ip, operation, service_data):
@@ -708,9 +707,9 @@ if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8181)
 EOF
 
-    sudo chmod +x "$script_path"
+        sudo chmod +x "$script_path"
 
-    cat << EOF | sudo tee "$service_path" >/dev/null
+        cat << EOF | sudo tee "$service_path" >/dev/null
 [Unit]
 Description=Quantum SDN µONOS Protocol Controller Service
 After=network.target
@@ -726,37 +725,37 @@ RestartSec=3
 WantedBy=multi-user.target
 EOF
 
-    sudo systemctl daemon-reload
-    sudo systemctl enable quantum-sdn-controller.service
-    sudo systemctl restart quantum-sdn-controller.service
+        sudo systemctl daemon-reload
+        sudo systemctl enable quantum-sdn-controller.service
+        sudo systemctl restart quantum-sdn-controller.service
 
-    if systemctl is-active --quiet quantum-sdn-controller.service; then
-        log_success "Real µONOS-SDN Controller deployed and active."[cite: 7]
-    else
-        log_error "SDN Controller service failed to start."[cite: 7]
-    fi
-}
+        if systemctl is-active --quiet quantum-sdn-controller.service; then
+            log_success "Real µONOS-SDN Controller deployed and active."
+        else
+            log_error "SDN Controller service failed to start."
+        fi
+    }
 
-# --- Main Execution ---
-echo -e "${CYAN}===========================================================${NC}"
-echo -e "${CYAN}   Quantum-SDN Switching Architecture Environment Setup    ${NC}"
-echo -e "${CYAN}===========================================================${NC}"
+    # --- Main Execution ---
+    echo -e "${CYAN}===========================================================${NC}"
+    echo -e "${CYAN}   Quantum-SDN Switching Architecture Environment Setup    ${NC}"
+    echo -e "${CYAN}===========================================================${NC}"
 
-stop_unattended_upgrades
-create_repo_structure
-install_sys_deps
-install_docker
-install_kubectl_and_helm
-setup_persistent_sdn_networking
-setup_helm_repos
-install_grpc_tools
-install_osm_installer
-setup_sdn_python_client
-deploy_sdn_controller_services
+    stop_unattended_upgrades
+    create_repo_structure
+    install_sys_deps
+    install_docker
+    install_kubectl_and_helm
+    setup_persistent_sdn_networking
+    setup_helm_repos
+    install_grpc_tools
+    install_osm_installer
+    setup_sdn_python_client
+    deploy_sdn_controller_services
 
-echo -e "${GREEN}====================================================${NC}"
-echo -e "${GREEN} Setup Complete!${NC}"
-echo -e "RESTCONF Northbound: http://0.0.0.0:8181"
-echo -e "gNOI/gRPC Northbound: 0.0.0.0:50051"
-echo -e "Controller Status:    sudo systemctl status quantum-sdn-controller.service"
-echo -e "${GREEN}====================================================${NC}"
+    echo -e "${GREEN}====================================================${NC}"
+    echo -e "${GREEN} Setup Complete!${NC}"
+    echo -e "RESTCONF Northbound: http://0.0.0.0:8181"
+    echo -e "gNOI/gRPC Northbound: 0.0.0.0:50051"
+    echo -e "Controller Status:    sudo systemctl status quantum-sdn-controller.service"
+    echo -e "${GREEN}====================================================${NC}"
