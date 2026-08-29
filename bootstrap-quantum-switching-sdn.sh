@@ -215,11 +215,26 @@ install_grpc_tools() {
 install_osm_installer() {
     log_info "Phase 6: Open Source MANO (OSM)"
     if ask_user "Do you want to download and run the OSM standalone installer now?" "N"; then
+        log_info "Checking for lingering Juju VCA controllers and namespaces..."
+        
+        # Purge any zombie Juju VCA controllers from previous failed runs
+        if command -v juju >/dev/null 2>&1; then
+            log_info "Force-killing any existing osm-vca Juju controller..."
+            juju kill-controller -y osm-vca 2>/dev/null || true
+            juju unregister osm-vca 2>/dev/null || true
+        fi
+        
+        # Clean up stale Kubernetes controller namespace
+        if kubectl get namespace controller-osm-vca >/dev/null 2>&1; then
+            log_info "Deleting leftover controller-osm-vca namespace..."
+            kubectl delete namespace controller-osm-vca --ignore-not-found=true
+            sleep 3
+        fi
+
         log_info "Downloading OSM installer..."
         wget https://osm-download.etsi.org/ftp/osm-14.0-fourteen/install_osm.sh -O install_osm.sh
         chmod +x install_osm.sh
         
-        # Removed --vca osm-vca so Juju performs a fresh bootstrap
         log_info "Running OSM installer (targeting existing K3s cluster)..."
         ./install_osm.sh -y --charmed --k8s ~/.kube/config || log_warn "OSM installer completed with warnings."
     else
