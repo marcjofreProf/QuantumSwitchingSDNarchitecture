@@ -12,10 +12,8 @@ YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
-# Ensure KUBECONFIG is set globally for all kubectl operations
 export KUBECONFIG=${KUBECONFIG:-$HOME/.kube/config}
 
-# --- Helper Functions ---
 log_info() { echo -e "${CYAN}[INFO] $1${NC}"; }
 log_success() { echo -e "${GREEN}[SUCCESS] $1${NC}"; }
 log_warn() { echo -e "${YELLOW}[WARNING] $1${NC}"; }
@@ -41,7 +39,6 @@ ask_user() {
     fi
 }
 
-# --- Phase 0: System Locks & Background Services ---
 stop_unattended_upgrades() {
     log_info "Phase 0: Disabling unattended-upgrades to prevent APT lock conflicts..."
     sudo systemctl stop unattended-upgrades 2>/dev/null || true
@@ -49,7 +46,6 @@ stop_unattended_upgrades() {
     log_success "unattended-upgrades stopped and disabled."
 }
 
-# --- Phase 1: Repository Scaffolding ---
 create_repo_structure() {
     log_info "Phase 1: Ensuring repository directory structure..."
     local base_dir="."
@@ -77,7 +73,6 @@ create_repo_structure() {
     log_success "Repository structure verified."
 }
 
-# --- Phase 2: System Dependencies ---
 install_sys_deps() {
     log_info "Phase 2: Checking basic system dependencies..."
     local deps="curl git wget jq build-essential python3-pip python3-venv python3-flask gpg psmisc"
@@ -99,7 +94,6 @@ install_sys_deps() {
     fi
 }
 
-# --- Phase 3: Docker, Kubernetes Tools & Local K8s Cluster ---
 install_docker() {
     log_info "Checking Docker..."
     if command -v docker >/dev/null 2>&1; then
@@ -157,7 +151,6 @@ ensure_kubernetes_cluster() {
     fi
 }
 
-# --- Phase 3.5: Persistent Network & iptables Configuration ---
 setup_persistent_sdn_networking() {
     log_info "Phase 3.5: Applying persistent iptables and kernel network configurations..."
     echo "br_netfilter" | sudo tee /etc/modules-load.d/sdn-uonos.conf >/dev/null
@@ -179,17 +172,21 @@ EOF
     sudo netfilter-persistent save
 }
 
-# --- Phase 4: SDN Controller (µONOS) & Open5GS Repos ---
 setup_helm_repos() {
     log_info "Phase 4: Setting up Helm repositories for µONOS, Atomix, and Open5GS..."
     helm repo add onosproject https://charts.onosproject.org || log_warn "Failed to add onosproject repository."
-    helm repo add atomix https://charts.atomix.io || log_warn "Failed to add atomix repository."
+    
+    # Fallback structure to bypass the charts.atomix.io DNS lookup error
+    helm repo add atomix https://charts.atomix.io || \
+        helm repo add atomix https://atomix.github.io/atomix-helm || \
+        helm repo add atomix https://atomix.github.io/atomix-helm-charts || \
+        log_warn "Failed to add atomix repository from all known endpoints."
+        
     helm repo add towards5gs https://raw.githubusercontent.com/Orange-OpenSource/towards5gs-helm/main/repo/ || \
         helm repo add towards5gs https://cdn.jsdelivr.net/gh/Orange-OpenSource/towards5gs-helm@main/repo/
     helm repo update
 }
 
-# --- Phase 5: gRPC, gNOI & gNMI Tooling ---
 install_grpc_tools() {
     log_info "Phase 5: Checking gRPC/protobuf tools and gnmic for gNMI..."
     if ! command -v protoc >/dev/null 2>&1; then
@@ -209,20 +206,19 @@ install_grpc_tools() {
     fi
 }
 
-# --- Phase 6: Orchestration (OSM) ---
 install_osm_installer() {
     log_info "Phase 6: Open Source MANO (OSM)"
     if ask_user "Do you want to download and run the OSM standalone installer now?" "N"; then
         log_info "Downloading OSM installer..."
         wget https://osm-download.etsi.org/ftp/osm-14.0-fourteen/install_osm.sh -O install_osm.sh
         chmod +x install_osm.sh
-        ./install_osm.sh || log_warn "OSM installer completed with warnings."
+        # Pass the KUBECONFIG explicitly so it utilizes K3s instead of crashing kubeadm on port 6443
+        ./install_osm.sh --k8s ~/.kube/config || log_warn "OSM installer completed with warnings."
     else
         log_info "Skipping OSM installation."
     fi
 }
 
-# --- Phase 7: Setup Python Environment & Proto Compilation ---
 setup_sdn_python_client() {
     log_info "Phase 7: Provisioning Python environment and compiling Protobuf stubs..."
     local base_dir="."  
@@ -249,7 +245,6 @@ setup_sdn_python_client() {
     log_success "Python environment and Protobuf stubs initialized."
 }
 
-# --- Phase 7.5: µONOS Model Plugin Compilation ---
 compile_uonos_model_plugins() {
     log_info "Phase 7.5: Compiling µONOS YANG Model Plugins..."
     
@@ -270,7 +265,8 @@ compile_uonos_model_plugins() {
 
     log_info "Executing onosproject/model-compiler..."
     if command -v docker >/dev/null 2>&1; then
-        docker run --rm -v "$(pwd)/${plugin_dir}:/config-model" onosproject/model-compiler:latest -name controller-quantum-switching -version 1.0.0 || log_warn "Model compiler encountered an issue."
+        # Modified shorthand flags to full double-dash flags (--name and --version)
+        docker run --rm -v "$(pwd)/${plugin_dir}:/config-model" onosproject/model-compiler:latest --name controller-quantum-switching --version 1.0.0 || log_warn "Model compiler encountered an issue."
         
         log_info "Building the resulting Model Plugin Docker Image..."
         if [ -f "$plugin_dir/Makefile" ]; then
@@ -284,7 +280,6 @@ compile_uonos_model_plugins() {
     fi
 }
 
-# --- Phase 8: Deploy Cloud-Native µONOS & RESTCONF Gateway ---
 deploy_cloud_native_uonos() {
     log_info "Phase 8: Deploying µONOS microservices and RESTCONF Gateway..."
     
