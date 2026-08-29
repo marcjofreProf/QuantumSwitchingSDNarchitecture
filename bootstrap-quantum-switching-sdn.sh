@@ -206,7 +206,7 @@ install_grpc_tools() {
 install_osm_installer() {
     log_info "Phase 6: Evaluating Open Source MANO (OSM) state..."
 
-    # Check if OSM is operational; prompt only if already present
+    # 1. Smart Detection: Prompt only if OSM is already operational
     local osm_active=false
     if kubectl get pods -n osm 2>/dev/null | grep -E 'nbi|ro|mon' | grep -q 'Running'; then
         osm_active=true
@@ -219,11 +219,16 @@ install_osm_installer() {
             return 0
         fi
     else
-        log_info "OSM is not currently active. Proceeding with deployment..."
+        log_info "OSM is not currently active. Proceeding with automated deployment..."
     fi
 
+    # 2. Host Network & Firewall Configuration for Juju API
+    log_info "Opening port 17070 and enabling IP forwarding..."
+    sudo ufw allow 17070/tcp >/dev/null 2>&1 || true
+    sudo sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 || true
+
+    # 3. Purge lingering Juju controllers, cached clouds, and deadlocked namespaces
     log_info "Purging lingering Juju controllers, cached clouds, and deadlocked namespaces..."
-    
     if command -v juju >/dev/null 2>&1; then
         juju kill-controller -y osm-vca 2>/dev/null || true
         juju unregister osm-vca 2>/dev/null || true
@@ -237,10 +242,11 @@ install_osm_installer() {
         kubectl get namespace controller-osm-vca -o json 2>/dev/null | jq '.spec.finalizers=[]' | kubectl replace --raw /api/v1/namespaces/controller-osm-vca/finalize -f - 2>/dev/null || true
     fi
 
+    # 4. Storage readiness verification
     log_info "Ensuring K3s local storage class is fully initialized..."
     kubectl rollout status deployment/local-path-provisioner -n kube-system --timeout=60s || true
 
-    # Background daemon to assign single primary host IP to controller-service
+    # 5. Background daemon to cleanly assign single primary host IP to controller-service
     (
         while true; do
             if kubectl get svc controller-service -n controller-osm-vca >/dev/null 2>&1; then
@@ -254,6 +260,7 @@ install_osm_installer() {
         done
     ) &
 
+    # 6. Execute OSM Installation
     log_info "Downloading OSM installer..."
     wget https://osm-download.etsi.org/ftp/osm-14.0-fourteen/install_osm.sh -O install_osm.sh
     chmod +x install_osm.sh
