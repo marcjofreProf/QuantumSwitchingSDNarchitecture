@@ -278,6 +278,7 @@ install_osm_installer() {
 
     # --- Pre-Flight Cleanup ---
     log_info "Purging stale Juju client cache, orphaned controllers, and leftover namespaces..."
+    juju destroy-model osm -y --destroy-storage --force 2>/dev/null || true
     rm -rf ~/.local/share/juju ~/.cache/juju 2>/dev/null || true
     kubectl delete namespace controller-osm-vca --force --grace-period=0 2>/dev/null || true
     kubectl delete namespace osm --force --grace-period=0 2>/dev/null || true
@@ -319,7 +320,7 @@ install_osm_installer() {
     ) &
     CERT_SYNC_PID=$!
 
-    log_info "Bootstrapping Juju Controller with Ubuntu 22.04 (jammy) model defaults..."
+    log_info "Bootstrapping Juju Controller..."
     juju bootstrap k8s-cloud osm-vca \
         --config default-series=jammy \
         --model-default default-series=jammy
@@ -327,14 +328,15 @@ install_osm_installer() {
     kill $CERT_SYNC_PID 2>/dev/null || true
     # --------------------------------------------------------
 
-    # --- Generate MongoDB Channel Overlay ---
+    # --- Generate Corrected MongoDB Channel Overlay ---
     log_info "Generating Juju overlay file for mongodb-k8s compatibility..."
     cat << 'EOF' > /tmp/mongo-fix.yaml
 applications:
   mongodb-k8s:
+    charm: mongodb-k8s
     channel: latest/edge
 EOF
-    # ----------------------------------------
+    # --------------------------------------------------
 
     log_info "Downloading OSM installer..."
     wget https://osm-download.etsi.org/ftp/osm-14.0-fourteen/install_osm.sh -O install_osm.sh
