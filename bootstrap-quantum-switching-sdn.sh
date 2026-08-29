@@ -276,6 +276,13 @@ install_osm_installer() {
         log_info "OSM is not currently active. Proceeding with deployment..."
     fi
 
+    # --- Pre-Flight Cleanup ---
+    log_info "Purging stale Juju client cache and orphaned controllers to prevent bootstrap conflicts..."
+    rm -rf ~/.local/share/juju ~/.cache/juju 2>/dev/null || true
+    kubectl delete namespace controller-osm-vca --force --grace-period=0 2>/dev/null || true
+    sleep 3 # Brief pause to allow the namespace termination to register
+    # --------------------------
+
     # Fix cluster DNS resolution & enable host IP forwarding if needed
     log_info "Configuring CoreDNS upstream servers and kernel IP forwarding..."
     sudo sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 || true
