@@ -134,8 +134,11 @@ install_kubectl_and_helm() {
 ensure_kubernetes_cluster() {
     log_info "Verifying active Kubernetes cluster for µONOS deployment..."
     if ! sudo kubectl cluster-info >/dev/null 2>&1; then
-        log_warn "No active Kubernetes cluster found. Installing lightweight K3s cluster for testing..."
-        curl -sfL https://get.k3s.io | sh -
+        log_warn "No active Kubernetes cluster found. Deploying K3s integrated with Docker..."
+        if [ -f /usr/local/bin/k3s-uninstall.sh ]; then
+            sudo /usr/local/bin/k3s-uninstall.sh >/dev/null 2>&1 || true
+        fi
+        curl -sfL https://get.k3s.io | sh -s - --docker
         mkdir -p ~/.kube
         sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
         sudo chown $(id -u):$(id -g) ~/.kube/config
@@ -218,7 +221,6 @@ setup_sdn_python_client() {
     sudo python3 -m venv /opt/sdn-venv
     sudo /opt/sdn-venv/bin/pip install --upgrade pip grpcio grpcio-tools grpcio-reflection ncclient xmltodict flask requests
 
-    # Compile gNOI Protobuf stubs from tracked repository file
     if [ -f "$base_dir/proto/quantum_gnoi_switching.proto" ]; then
         log_info "Compiling quantum_gnoi_switching.proto..."
         /opt/sdn-venv/bin/python -m grpc_tools.protoc -I"$base_dir/proto" \
@@ -229,7 +231,6 @@ setup_sdn_python_client() {
         log_warn "quantum_gnoi_switching.proto not found in ./proto/ directory!"
     fi
 
-    # Grant execution permissions across all test and driver scripts
     chmod +x "$base_dir"/tests/e2e-path-provisioning/* 2>/dev/null || true
     chmod +x "$base_dir"/hardware-agents/switch-drivers/* 2>/dev/null || true
     chmod +x "$base_dir"/hardware-agents/gnoi-targets/* 2>/dev/null || true
