@@ -227,37 +227,49 @@ install_osm_installer() {
     kubectl get configmap coredns -n kube-system -o json 2>/dev/null | sed 's/forward . \/etc\/resolv.conf/forward . 8.8.8.8 1.1.1.1/' | kubectl apply -f - >/dev/null 2>&1 || true
     kubectl rollout restart deployment coredns -n kube-system >/dev/null 2>&1 || true
 
-    # Purge lingering Juju controllers, cached clouds, and deadlocked namespaces
-    log_info "Purging lingering Juju controllers, cached clouds, and deadlocked namespaces..."
-    if command -v juju >/dev/null 2>&1; then
-        timeout 15s juju destroy-controller --release-storage --destroy-all-models -y osm-vca 2>/dev/null || true
-        timeout 10s juju kill-controller -y osm-vca 2>/dev/null || true
-        timeout 5s juju unregister osm-vca 2>/dev/null || true
-        timeout 5s juju remove-cloud k8s-cloud --client 2>/dev/null || true
-    fi
-    
-    if kubectl get namespace controller-osm-vca >/dev/null 2>&1; then
-        log_info "Clearing controller-osm-vca namespace..."
-        timeout 10s kubectl delete namespace controller-osm-vca --wait=false 2>/dev/null || true
-        sleep 2
-        kubectl get namespace controller-osm-vca -o json 2>/dev/null | jq '.spec.finalizers=[]' | timeout 10s kubectl replace --raw /api/v1/namespaces/controller-osm-vca/finalize -f - 2>/dev/null || true
-    fi
+    # --- SOLID PURGE BLOCK START ---
+    log_info "Executing deep cleanup of previous Juju environments and deadlocked K8s storage..."
+
+    # 1. Kill any frozen Juju processes
+    sudo killall -9 juju 2>/dev/null || true
+
+    # 2. Force Juju to instantly forget the controller by wiping its local cache
+    rm -rf ~/.local/share/juju/controllers/osm-vca* 2>/dev/null || true
+    rm -rf ~/.local/share/juju/models/osm-vca* 2>/dev/null || true
+    sed -i '/osm-vca/d' ~/.local/share/juju/controllers.yaml 2>/dev/null || true
+
+    # 3. Drop the namespace in the background to prevent freezing
+    kubectl delete namespace controller-osm-vca --wait=false 2>/dev/null || true
+
+    # 4. Strip the Kubernetes finalizers to instantly release the namespace
+    kubectl get namespace controller-osm-vca -o json 2>/dev/null | jq '.spec.finalizers=[]' | kubectl replace --raw /api/v1/namespaces/controller-osm-vca/finalize -f - 2>/dev/null || true
+
+    # 5. SCORCHED EARTH: Physically delete the leftover corrupted storage folders from the host
+    sudo rm -rf /var/lib/rancher/k3s/storage/*osm-vca*
+
+    # 6. Restart the K3s storage provisioner to ensure a clean slate
+    kubectl rollout restart deployment local-path-provisioner -n kube-system >/dev/null 2>&1 || true
+    # --- SOLID PURGE BLOCK END ---
 
     log_info "Ensuring K3s local storage class is fully initialized..."
     kubectl rollout status deployment/local-path-provisioner -n kube-system --timeout=60s || true
 
-    # Background daemon to assign single primary host IP
+    # Hardened background daemon: aggressively forces a single IP and won't exit until verified
     (
-        for i in {1..30}; do
+        for i in {1..60}; do
             if kubectl get svc controller-service -n controller-osm-vca >/dev/null 2>&1; then
-                EXT_IP=$(kubectl get svc controller-service -n controller-osm-vca -o jsonpath='{.spec.externalIPs[*]}' 2>/dev/null || true)
-                if [ -z "$EXT_IP" ] || [[ "$EXT_IP" == *","* ]]; then
-                    HOST_IP=$(ip route get 1.1.1.1 2>/dev/null | grep -oP 'src \K\S+')
+                EXT_IP_RAW=$(kubectl get svc controller-service -n controller-osm-vca -o jsonpath='{.spec.externalIPs[*]}' 2>/dev/null || true)
+                
+                # If IP string contains a space, comma, or is empty, apply the patch
+                if [[ "$EXT_IP_RAW" == *" "* ]] || [[ "$EXT_IP_RAW" == *","* ]] || [ -z "$EXT_IP_RAW" ]; then
+                    HOST_IP=$(ip route get 1.1.1.1 2>/dev/null | grep -oP 'src \K\S+' | head -n1)
                     if [ -n "$HOST_IP" ]; then
                         kubectl patch svc controller-service -n controller-osm-vca --type='json' -p="[{\"op\": \"replace\", \"path\": \"/spec/externalIPs\", \"value\": [\"$HOST_IP\"]}]" >/dev/null 2>&1 || true
                     fi
+                else
+                    # Exactly one clean IP exists. Safe to exit loop.
+                    break
                 fi
-                break
             fi
             sleep 2
         done
