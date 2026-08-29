@@ -233,20 +233,24 @@ install_osm_installer() {
     # 1. Kill any frozen Juju processes
     sudo killall -9 juju 2>/dev/null || true
 
-    # 2. Obliterate all Juju local configurations to prevent YAML corruption
-    log_info "Wiping local Juju configuration cache..."
+    # 2. Obliterate local Juju client state
     rm -rf ~/.local/share/juju 2>/dev/null || true
 
-    # 3. Drop the namespace in the background to prevent freezing
-    kubectl delete namespace controller-osm-vca --wait=false 2>/dev/null || true
+    # 3. Stop running pods FIRST to unmount storage drives
+    kubectl delete statefulset --all -n controller-osm-vca --force --grace-period=0 2>/dev/null || true
+    kubectl delete pod --all -n controller-osm-vca --force --grace-period=0 2>/dev/null || true
+    sleep 3
 
-    # 4. Strip the Kubernetes finalizers to instantly release the namespace
+    # 4. SCORCHED EARTH: Delete host storage folders after unmounting
+    sudo rm -rf /var/lib/rancher/k3s/storage/*osm-vca* 2>/dev/null || true
+    sudo rm -rf /var/lib/rancher/k3s/storage/pvc-* 2>/dev/null || true
+
+    # 5. Drop namespace and clear finalizers
+    kubectl delete pvc --all -n controller-osm-vca --force --grace-period=0 2>/dev/null || true
+    kubectl delete namespace controller-osm-vca --wait=false 2>/dev/null || true
     kubectl get namespace controller-osm-vca -o json 2>/dev/null | jq '.spec.finalizers=[]' | kubectl replace --raw /api/v1/namespaces/controller-osm-vca/finalize -f - 2>/dev/null || true
 
-    # 5. SCORCHED EARTH: Physically delete the leftover corrupted storage folders from the host
-    sudo rm -rf /var/lib/rancher/k3s/storage/*osm-vca*
-
-    # 6. Restart the K3s storage provisioner to ensure a clean slate
+    # 6. Restart storage provisioner
     kubectl rollout restart deployment local-path-provisioner -n kube-system >/dev/null 2>&1 || true
     # --- SOLID PURGE BLOCK END ---
 
