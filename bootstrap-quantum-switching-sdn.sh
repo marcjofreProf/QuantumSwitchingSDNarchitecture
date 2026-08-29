@@ -445,22 +445,59 @@ module controller-quantum-switching {
     prefix qswitch;
 
     organization "Custom";
-    contact "SDN Architecture Team";
+    contact "SDN Architecture Team <sdn@example.com>";
     description "Quantum Switching Model";
 
     revision 2026-01-01 {
         description "Initial revision.";
+        reference "RFC 8407 Compliance";
     }
 
     container switching {
-        leaf enabled {
-            type boolean;
-            default true;
+        description "Top-level container for switching configurations.";
+        leaf state {
+            type enumeration {
+                enum enabled {
+                    description "Enable switching.";
+                }
+                enum disabled {
+                    description "Disable switching.";
+                }
+            }
+            default enabled;
+            description "Switching operational state.";
         }
     }
 }
 EOF
     fi
+
+    # Sanitize copied YANG model to satisfy pyang RFC 8407 linting rules
+    log_info "Sanitizing YANG model for pyang RFC 8407 compliance..."
+    python3 - << 'EOF'
+import re
+
+yang_file = "./sdn-controller/northbound-interfaces/model-plugin/yang/controller-quantum-switching.yang"
+with open(yang_file, "r") as f:
+    content = f.read()
+
+# Fix missing contact statement
+if "contact" not in content:
+    content = re.sub(r'(organization\s+[^;]+;)', r'\1\n    contact "SDN Architecture Team <sdn@example.com>";', content)
+
+# Fix missing revision reference
+if "reference" not in content:
+    content = re.sub(r'(revision\s+[0-9\-]+\s*\{[^}]*description\s+[^;]+;)', r'\1\n        reference "RFC 8407 Compliance";', content)
+
+# Convert uppercase enums (ENABLED/DISABLED) to lowercase hyphenated names and inject descriptions
+content = re.sub(r'enum\s+ENABLED\s*;', 'enum enabled {\n            description "Enabled state.";\n        }', content)
+content = re.sub(r'enum\s+DISABLED\s*;', 'enum disabled {\n            description "Disabled state.";\n        }', content)
+content = re.sub(r'enum\s+ENABLED\s*\{', 'enum enabled {\n            description "Enabled state.";', content)
+content = re.sub(r'enum\s+DISABLED\s*\{', 'enum disabled {\n            description "Disabled state.";', content)
+
+with open(yang_file, "w") as f:
+    f.write(content)
+EOF
 
     # Create VERSION file required by model-compiler
     echo "1.0.0" > "$plugin_dir/VERSION"
