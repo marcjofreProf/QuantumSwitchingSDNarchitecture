@@ -134,11 +134,18 @@ install_kubectl_and_helm() {
 ensure_kubernetes_cluster() {
     log_info "Verifying active Kubernetes cluster for µONOS deployment..."
     if ! sudo kubectl cluster-info >/dev/null 2>&1; then
-        log_warn "No active Kubernetes cluster found. Deploying K3s integrated with Docker..."
+        log_warn "No active Kubernetes cluster found. Deploying standalone K3s..."
+        
         if [ -f /usr/local/bin/k3s-uninstall.sh ]; then
             sudo /usr/local/bin/k3s-uninstall.sh >/dev/null 2>&1 || true
         fi
-        curl -sfL https://get.k3s.io | sh -s - --docker
+        
+        # Install standard K3s (containerd) without Traefik to avoid port conflicts
+        curl -sfL https://get.k3s.io | sh -s - server --disable traefik --disable servicelb
+        
+        # Wait a moment for the configuration file to be generated
+        sleep 5
+        
         mkdir -p ~/.kube
         sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
         sudo chown $(id -u):$(id -g) ~/.kube/config
