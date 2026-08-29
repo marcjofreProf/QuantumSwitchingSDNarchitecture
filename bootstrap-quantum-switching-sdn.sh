@@ -277,9 +277,10 @@ install_osm_installer() {
     fi
 
     # --- Pre-Flight Cleanup ---
-    log_info "Purging stale Juju client cache and orphaned controllers to prevent bootstrap conflicts..."
+    log_info "Purging stale Juju client cache, orphaned controllers, and leftover namespaces..."
     rm -rf ~/.local/share/juju ~/.cache/juju 2>/dev/null || true
     kubectl delete namespace controller-osm-vca --force --grace-period=0 2>/dev/null || true
+    kubectl delete namespace osm --force --grace-period=0 2>/dev/null || true
     sleep 3
     # --------------------------
 
