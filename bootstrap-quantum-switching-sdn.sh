@@ -129,32 +129,23 @@ install_kubectl_and_helm() {
 }
 
 ensure_kubernetes_cluster() {
-    log_info "Verifying active Kubernetes cluster for µONOS deployment..."
+    log_info "Verifying active Kubernetes cluster for µONOS and OSM deployment..."
     
-    # Ensure KUBECONFIG is explicitly set for the current session
     export KUBECONFIG=${KUBECONFIG:-$HOME/.kube/config}
     
-    if ! kubectl cluster-info >/dev/null 2>&1; then
-        log_warn "No active Kubernetes cluster found. Deploying standalone K3s..."
-        
-        if [ -f /usr/local/bin/k3s-uninstall.sh ]; then
-            sudo /usr/local/bin/k3s-uninstall.sh >/dev/null 2>&1 || true
-        fi
-        
-        # UPDATED: Removed --disable servicelb to allow External IPs for LoadBalancers
-        curl -sfL https://get.k3s.io | sh -s - server --disable traefik
-        sleep 5
-        
-        mkdir -p ~/.kube
-        sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
-        sudo chown $(id -u):$(id -g) ~/.kube/config
-        
-        # Make KUBECONFIG persistent for future terminal sessions
+    # Ensure K3s is running with ServiceLB enabled (no --disable servicelb flag)
+    log_info "Enforcing K3s configuration with active ServiceLB..."
+    curl -sfL https://get.k3s.io | sh -s - server --disable traefik
+    sleep 5
+    
+    mkdir -p ~/.kube
+    sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
+    sudo chown $(id -u):$(id -g) ~/.kube/config
+    
+    if ! grep -q 'KUBECONFIG' ~/.bashrc; then
         echo 'export KUBECONFIG=$HOME/.kube/config' >> ~/.bashrc
-        log_success "Local K3s Kubernetes cluster deployed."
-    else
-        log_success "Kubernetes cluster is reachable. Skipping fresh K3s installation."
     fi
+    log_success "K3s cluster configured with native LoadBalancer support."
 }
 
 setup_persistent_sdn_networking() {
