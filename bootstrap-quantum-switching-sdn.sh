@@ -227,8 +227,10 @@ install_osm_installer() {
     kubectl get configmap coredns -n kube-system -o json 2>/dev/null | sed 's/forward . \/etc\/resolv.conf/forward . 8.8.8.8 1.1.1.1/' | kubectl apply -f - >/dev/null 2>&1 || true
     kubectl rollout restart deployment coredns -n kube-system >/dev/null 2>&1 || true
 
+    # Purge lingering Juju controllers, cached clouds, and deadlocked namespaces
     log_info "Purging lingering Juju controllers, cached clouds, and deadlocked namespaces..."
     if command -v juju >/dev/null 2>&1; then
+        timeout 15s juju destroy-controller --release-storage --destroy-all-models -y osm-vca 2>/dev/null || true
         timeout 10s juju kill-controller -y osm-vca 2>/dev/null || true
         timeout 5s juju unregister osm-vca 2>/dev/null || true
         timeout 5s juju remove-cloud k8s-cloud --client 2>/dev/null || true
