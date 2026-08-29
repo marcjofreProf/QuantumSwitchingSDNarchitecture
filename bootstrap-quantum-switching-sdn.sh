@@ -183,8 +183,13 @@ ensure_kubernetes_cluster() {
     sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 2>/dev/null || true
     echo "kernel.apparmor_restrict_unprivileged_userns=0" | sudo tee /etc/sysctl.d/99-juju.conf >/dev/null
     
-    # Ensure K3s is pinned to v1.26.15 (OSM 14 compatible)
-    log_info "Enforcing K3s v1.26.15 configuration with active ServiceLB..."
+    # Check if a healthy Kubernetes cluster is already running
+    if kubectl cluster-info >/dev/null 2>&1; then
+        log_success "Kubernetes cluster is already running and accessible. Skipping K3s re-installation."
+        return 0
+    fi
+
+    log_info "No active cluster detected. Enforcing K3s v1.26.15 configuration with active ServiceLB..."
     curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=v1.26.15+k3s1 sh -s - server --disable traefik
     sleep 5
     
@@ -271,35 +276,7 @@ install_osm_installer() {
         log_info "OSM is not currently active. Proceeding with deployment..."
     fi
 
-    # --- SCORCHED EARTH K3S PURGE START ---
-    log_info "Executing nuclear cleanup of K3s and Juju environments to prevent stale state loops..."
-
-    # 1. Kill any frozen Juju processes
-    sudo killall -9 juju 2>/dev/null || true
-
-    # 2. Trigger native K3s uninstall to cleanly destroy K8s state, PVs, and networking
-    if [ -f /usr/local/bin/k3s-uninstall.sh ]; then
-        log_info "Uninstalling K3s completely..."
-        sudo /usr/local/bin/k3s-uninstall.sh
-    fi
-
-    # 3. Wipe all remaining host storage and Juju client caches
-    log_info "Wiping host storage and Juju caches..."
-    sudo rm -rf /var/lib/rancher/k3s
-    rm -rf ~/.local/share/juju ~/.cache/juju ~/.kube 2>/dev/null || true
-
-    # 4. Re-install pristine K3s cluster (Pinned to v1.26.15)
-    log_info "Re-installing pristine K3s v1.26.15 cluster..."
-    curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=v1.26.15+k3s1 sh -s - server --disable traefik
-    sleep 10
-    
-    mkdir -p ~/.kube
-    sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
-    sudo chown $(id -u):$(id -g) ~/.kube/config
-    export KUBECONFIG=$HOME/.kube/config
-    # --- SCORCHED EARTH K3S PURGE END ---
-
-    # Fix cluster DNS resolution & enable host IP forwarding
+    # Fix cluster DNS resolution & enable host IP forwarding if needed
     log_info "Configuring CoreDNS upstream servers and kernel IP forwarding..."
     sudo sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 || true
     kubectl get configmap coredns -n kube-system -o json 2>/dev/null | sed 's/forward . \/etc\/resolv.conf/forward . 8.8.8.8 1.1.1.1/' | kubectl apply -f - >/dev/null 2>&1 || true
