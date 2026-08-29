@@ -302,7 +302,7 @@ install_osm_installer() {
     log_info "Ensuring K3s local storage class is fully initialized..."
     kubectl rollout status deployment/local-path-provisioner -n kube-system --timeout=60s || true
 
-    # --- Explicit Juju Bootstrap with Model Defaults ---
+    # --- Register Cloud and Bootstrap Juju ---
     log_info "Registering local K3s cluster with Juju..."
     juju add-k8s k8s-cloud --client || true
 
@@ -323,27 +323,66 @@ install_osm_installer() {
     log_info "Bootstrapping Juju Controller..."
     juju bootstrap k8s-cloud osm-vca \
         --config default-series=jammy \
-        --model-default default-series=jammy
+        --model-default default-series=jammy || true
 
     kill $CERT_SYNC_PID 2>/dev/null || true
     # --------------------------------------------------------
 
-    # --- Generate Corrected MongoDB Channel Overlay ---
-    log_info "Generating Juju overlay file for mongodb-k8s compatibility..."
-    cat << 'EOF' > /tmp/mongo-fix.yaml
-applications:
-  mongodb-k8s:
-    charm: mongodb-k8s
-    channel: latest/edge
-EOF
-    # --------------------------------------------------
+    # --- Model Creation and Juju 3 Bundle Patching ---
+    log_info "Adding 'osm' model on k8s-cloud..."
+    juju add-model osm k8s-cloud
 
-    log_info "Downloading OSM installer..."
-    wget https://osm-download.etsi.org/ftp/osm-14.0-fourteen/install_osm.sh -O install_osm.sh
-    chmod +x install_osm.sh
-    
-    log_info "Running OSM installer with native overlay flag..."
-    ./install_osm.sh -y --charmed --k8s ~/.kube/config --vca osm-vca --overlay /tmp/mongo-fix.yaml || log_warn "OSM installer completed with warnings."
+    log_info "Retrieving OSM bundle definition..."
+    if [ -f "/usr/share/osm-devops/installers/charm/bundles/osm/bundle.yaml" ]; then
+        cp /usr/share/osm-devops/installers/charm/bundles/osm/bundle.yaml /tmp/osm-bundle.yaml
+    else
+        wget -q https://raw.githubusercontent.com/charmed-osm/osm-operators/main/devops/charmed/bundles/osm/bundle.yaml -O /tmp/osm-bundle.yaml
+    fi
+
+    log_info "Applying inline Python patch to transform bundle to Juju 3 base syntax..."
+    python3 -c "
+with open('/tmp/osm-bundle.yaml', 'r') as f:
+    text = f.read()
+
+lines = text.splitlines()
+out = []
+in_mongo = False
+mongo_has_base = False
+
+for line in lines:
+    stripped = line.strip()
+    if line.startswith('  ') and not line.startswith('    ') and stripped.endswith(':'):
+        if in_mongo and not mongo_has_base:
+            out.append('    base: ubuntu@22.04')
+        in_mongo = ('mongo' in stripped)
+        mongo_has_base = False
+        
+    if 'charm:' in line and 'mongodb' in line:
+        in_mongo = True
+        
+    if in_mongo and ('base:' in line or 'series:' in line):
+        mongo_has_base = True
+        
+    if 'series:' in line:
+        indent = line[:line.find('series:')]
+        line = f'{indent}base: ubuntu@22.04'
+        
+    if in_mongo and 'channel:' in line:
+        indent = line[:line.find('channel:')]
+        line = f'{indent}channel: \"6/stable\"'
+        
+    out.append(line)
+
+if in_mongo and not mongo_has_base:
+    out.append('    base: ubuntu@22.04')
+
+with open('/tmp/osm-bundle.yaml', 'w') as f:
+    f.write('\n'.join(out) + '\n')
+"
+
+    log_info "Deploying patched OSM bundle to model 'osm'..."
+    juju deploy /tmp/osm-bundle.yaml --trust
+    log_success "OSM bundle deployment initiated successfully."
 }
 
 setup_sdn_python_client() {
