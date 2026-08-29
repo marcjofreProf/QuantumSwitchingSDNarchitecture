@@ -327,37 +327,21 @@ install_osm_installer() {
     kill $CERT_SYNC_PID 2>/dev/null || true
     # --------------------------------------------------------
 
-    # --- MongoDB Overlay Injection Fix ---
-    log_info "Injecting MongoDB overlay fix for Charmhub channel compatibility..."
+    # --- Generate MongoDB Channel Overlay ---
+    log_info "Generating Juju overlay file for mongodb-k8s compatibility..."
     cat << 'EOF' > /tmp/mongo-fix.yaml
 applications:
   mongodb-k8s:
     channel: latest/edge
 EOF
-
-    sudo bash -c 'cat << "EOF" > /usr/local/bin/juju
-#!/usr/bin/bash
-REAL_JUJU=$(which -a juju | grep -v "/usr/local/bin/juju" | head -n 1)
-
-if [[ "$1" == "deploy" ]]; then
-    exec "$REAL_JUJU" deploy --overlay /tmp/mongo-fix.yaml "${@:2}"
-else
-    exec "$REAL_JUJU" "$@"
-fi
-EOF'
-    sudo chmod +x /usr/local/bin/juju
-    # -------------------------------------
+    # ----------------------------------------
 
     log_info "Downloading OSM installer..."
     wget https://osm-download.etsi.org/ftp/osm-14.0-fourteen/install_osm.sh -O install_osm.sh
     chmod +x install_osm.sh
     
-    log_info "Running OSM installer to deploy MANO components..."
-    ./install_osm.sh -y --charmed --k8s ~/.kube/config --vca osm-vca || log_warn "OSM installer completed with warnings."
-
-    # --- Clean Up Wrapper ---
-    sudo rm -f /usr/local/bin/juju /tmp/mongo-fix.yaml
-    # ------------------------
+    log_info "Running OSM installer with native overlay flag..."
+    ./install_osm.sh -y --charmed --k8s ~/.kube/config --vca osm-vca --overlay /tmp/mongo-fix.yaml || log_warn "OSM installer completed with warnings."
 }
 
 setup_sdn_python_client() {
