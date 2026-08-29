@@ -233,10 +233,9 @@ install_osm_installer() {
     # 1. Kill any frozen Juju processes
     sudo killall -9 juju 2>/dev/null || true
 
-    # 2. Force Juju to instantly forget the controller by wiping its local cache
-    rm -rf ~/.local/share/juju/controllers/osm-vca* 2>/dev/null || true
-    rm -rf ~/.local/share/juju/models/osm-vca* 2>/dev/null || true
-    sed -i '/osm-vca/d' ~/.local/share/juju/controllers.yaml 2>/dev/null || true
+    # 2. Obliterate all Juju local configurations to prevent YAML corruption
+    log_info "Wiping local Juju configuration cache..."
+    rm -rf ~/.local/share/juju 2>/dev/null || true
 
     # 3. Drop the namespace in the background to prevent freezing
     kubectl delete namespace controller-osm-vca --wait=false 2>/dev/null || true
