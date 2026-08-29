@@ -298,17 +298,14 @@ install_osm_installer() {
 
     log_info "Launching background surgical fix for API Server..."
     (
-        # Wait for the controller pod to be created
         while ! kubectl get pod controller-0 -n controller-osm-vca 2>/dev/null | grep -qE "1/2|2/2"; do
             sleep 2
         done
 
-        # Wait for Juju to render the template certificates
         while ! kubectl exec -n controller-osm-vca controller-0 -c api-server -- stat /var/lib/juju/template-ca.crt >/dev/null 2>&1; do
             sleep 2
         done
 
-        # Execute the exact one-liner used in the terminal to copy certs and restart PID 1
         kubectl exec -n controller-osm-vca controller-0 -c api-server -- sh -c 'cp /var/lib/juju/template-ca.crt /var/lib/juju/ca.crt && cp /var/lib/juju/template-server.pem /var/lib/juju/server.pem && kill 1' 2>/dev/null || true
     ) &
     CERT_SYNC_PID=$!
@@ -316,7 +313,6 @@ install_osm_installer() {
     log_info "Bootstrapping Juju Controller..."
     juju bootstrap k8s-cloud osm-vca
 
-    # Clean up background monitor
     kill $CERT_SYNC_PID 2>/dev/null || true
     # --------------------------------------------------------
 
@@ -325,7 +321,7 @@ install_osm_installer() {
     chmod +x install_osm.sh
     
     log_info "Running OSM installer to deploy MANO components over the established controller..."
-    ./install_osm.sh -y --charmed --k8s ~/.kube/config || log_warn "OSM installer completed with warnings."
+    ./install_osm.sh -y --charmed --k8s ~/.kube/config --vca osm-vca || log_warn "OSM installer completed with warnings."
 }
 
 setup_sdn_python_client() {
@@ -368,11 +364,16 @@ compile_uonos_model_plugins() {
         log_warn "YANG model $yang_target not found!"
     fi
 
+    # The model-compiler requires the modules to be explicitly listed
     cat <<EOF > "$plugin_dir/metadata.yaml"
 name: controller-quantum-switching
 version: 1.0.0
 artifactName: controller-quantum-switching
 goPackage: github.com/onosproject/controller-quantum-switching
+modules:
+  - name: controller-quantum-switching
+    organization: custom
+    revision: ""
 EOF
 
     log_info "Executing onosproject/model-compiler..."
@@ -409,17 +410,29 @@ deploy_cloud_native_uonos() {
     log_info "Deploying Atomix Controllers..."
     helm upgrade --install atomix-controller atomix/atomix-controller -n micro-onos --wait
     
-    log_info "Extracting and manually applying Atomix Raft CRDs..."
+    log_info "Deploying Atomix Raft Storage..."
+    helm upgrade --install atomix-raft-storage atomix/atomix-raft-storage -n micro-onos --wait
+
+    log_info "Extracting and applying mandatory Atomix CRDs for ONOS..."
+    helm pull atomix/atomix-controller --untar 2>/dev/null || true
+    if [ -d "atomix-controller/crds" ]; then
+        kubectl apply -f atomix-controller/crds/ 2>/dev/null || true
+        rm -rf atomix-controller
+    fi
+
     helm pull atomix/atomix-raft-storage --untar 2>/dev/null || true
     if [ -d "atomix-raft-storage/crds" ]; then
         kubectl apply -f atomix-raft-storage/crds/ 2>/dev/null || true
         rm -rf atomix-raft-storage
     fi
     
-    helm upgrade --install atomix-raft-storage atomix/atomix-raft-storage -n micro-onos --wait
+    log_info "Waiting for Kubernetes API server to register Atomix CRDs..."
+    local crds=(
+        "storageprofiles.atomix.io"
+        "raftclusters.raft.atomix.io"
+        "raftstores.raft.atomix.io"
+    )
     
-    log_info "Waiting for Kubernetes to register Atomix CRDs..."
-    local crds=("raftclusters.raft.atomix.io" "raftstores.raft.atomix.io" "storageprofiles.atomix.io")
     for crd in "${crds[@]}"; do
         local retries=15
         while ! kubectl get crd "$crd" >/dev/null 2>&1; do
@@ -427,7 +440,7 @@ deploy_cloud_native_uonos() {
             retries=$((retries - 1))
             if [ $retries -le 0 ]; then break; fi
         done
-        kubectl wait --for=condition=established crd/"$crd" --timeout=60s || true
+        kubectl wait --for=condition=established crd/"$crd" --timeout=60s 2>/dev/null || true
     done
     
     log_info "Deploying ONOS Topology and Config..."
