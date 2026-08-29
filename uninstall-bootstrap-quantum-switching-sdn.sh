@@ -49,19 +49,23 @@ fi
 
 # --- Phase 1: Python Virtual Environment & Stubs Cleanup ---
 uninstall_python_env() {
-    log_info "Phase 1: Removing Python virtual environment (gRPC/NETCONF) and compiled stubs..."
+    log_info "Phase 1: Removing Python virtual environment (/opt/sdn-venv) and compiled stubs..."
     local base_dir="."
+
+    if [ -d "/opt/sdn-venv" ]; then
+        sudo rm -rf "/opt/sdn-venv"
+        log_success "Removed /opt/sdn-venv directory."
+    fi
 
     if [ -d "$base_dir/.venv" ]; then
         rm -rf "$base_dir/.venv"
-        log_success "Removed $base_dir/.venv directory."
+        log_success "Removed local .venv directory."
     fi
 
-    # Remove generated gRPC/proto files
     if [ -d "$base_dir/proto" ]; then
         rm -f "$base_dir/proto/"*_pb2*.py
         rm -f "$base_dir/proto/__init__.py"
-        log_success "Cleaned compiled proto stubs from $base_dir/proto."
+        log_success "Cleaned compiled proto stubs."
     fi
 }
 
@@ -94,21 +98,27 @@ clean_virtual_interfaces() {
     fi
 }
 
-# --- Phase 2: Helm Repositories & Tooling ---
+# --- Phase 2: Helm, Kubernetes Namespaces & Tooling ---
 uninstall_helm_and_repos() {
-    log_info "Phase 2: Cleaning up Helm repositories and binaries..."
+    log_info "Phase 2: Cleaning up Kubernetes namespaces, Helm repos, and binaries..."
+
+    if command -v kubectl >/dev/null 2>&1; then
+        log_info "Deleting micro-onos Kubernetes namespace..."
+        kubectl delete namespace micro-onos 2>/dev/null || true
+    fi
 
     if command -v helm >/dev/null 2>&1; then
         helm repo remove onosproject 2>/dev/null || true
         helm repo remove towards5gs 2>/dev/null || true
-        log_success "Removed ONOS and Towards5GS Helm repositories."
+        log_success "Removed Helm repositories."
     fi
 
-    if ask_user "Do you want to remove installed binaries (kubectl, grpcurl, helm) from /usr/local/bin?" "N"; then
+    if ask_user "Do you want to remove installed binaries (kubectl, grpcurl, gnmic, helm) from /usr/local/bin?" "N"; then
         sudo rm -f /usr/local/bin/kubectl
         sudo rm -f /usr/local/bin/grpcurl
+        sudo rm -f /usr/local/bin/gnmic
         sudo rm -f /usr/local/bin/helm
-        log_success "Removed kubectl, grpcurl, and helm binaries."
+        log_success "Removed kubectl, grpcurl, gnmic, and helm binaries."
     fi
 }
 
