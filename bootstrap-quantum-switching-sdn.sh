@@ -237,7 +237,8 @@ install_osm_installer() {
         log_info "Force-killing existing osm-vca Juju controller and clearing local cloud definition..."
         juju kill-controller -y osm-vca 2>/dev/null || true
         juju unregister osm-vca 2>/dev/null || true
-        juju remove-cloud k8s-cloud 2>/dev/null || true
+        # ADDED -y HERE TO PREVENT INTERACTIVE PROMPT:
+        juju remove-cloud -y k8s-cloud 2>/dev/null || true
     fi
     
     # Non-blocking namespace deletion with automatic finalizer patch
