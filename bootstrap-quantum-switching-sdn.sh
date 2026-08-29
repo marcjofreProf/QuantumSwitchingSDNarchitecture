@@ -206,7 +206,6 @@ install_grpc_tools() {
 install_osm_installer() {
     log_info "Phase 6: Evaluating Open Source MANO (OSM) state..."
 
-    # 1. Smart Detection: Prompt only if OSM is already operational
     local osm_active=false
     if kubectl get pods -n osm 2>/dev/null | grep -E 'nbi|ro|mon' | grep -q 'Running'; then
         osm_active=true
@@ -219,15 +218,15 @@ install_osm_installer() {
             return 0
         fi
     else
-        log_info "OSM is not currently active. Proceeding with automated deployment..."
+        log_info "OSM is not currently active. Proceeding with deployment..."
     fi
 
-    # 2. Host Network & Firewall Configuration for Juju API
-    log_info "Opening port 17070 and enabling IP forwarding..."
-    sudo ufw allow 17070/tcp >/dev/null 2>&1 || true
+    # Fix cluster DNS resolution & enable host IP forwarding
+    log_info "Configuring CoreDNS upstream servers and kernel IP forwarding..."
     sudo sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 || true
+    kubectl get configmap coredns -n kube-system -o json 2>/dev/null | sed 's/forward . \/etc\/resolv.conf/forward . 8.8.8.8 1.1.1.1/' | kubectl apply -f - >/dev/null 2>&1 || true
+    kubectl rollout restart deployment coredns -n kube-system >/dev/null 2>&1 || true
 
-    # Purge lingering Juju controllers, cached clouds, and deadlocked namespaces (Guarded with timeouts)
     log_info "Purging lingering Juju controllers, cached clouds, and deadlocked namespaces..."
     if command -v juju >/dev/null 2>&1; then
         timeout 10s juju kill-controller -y osm-vca 2>/dev/null || true
@@ -236,22 +235,20 @@ install_osm_installer() {
     fi
     
     if kubectl get namespace controller-osm-vca >/dev/null 2>&1; then
-        log_info "Clearing controller-osm-vca namespace and finalizers..."
+        log_info "Clearing controller-osm-vca namespace..."
         timeout 10s kubectl delete namespace controller-osm-vca --wait=false 2>/dev/null || true
         sleep 2
         kubectl get namespace controller-osm-vca -o json 2>/dev/null | jq '.spec.finalizers=[]' | timeout 10s kubectl replace --raw /api/v1/namespaces/controller-osm-vca/finalize -f - 2>/dev/null || true
     fi
 
-    # 4. Storage readiness verification
     log_info "Ensuring K3s local storage class is fully initialized..."
     kubectl rollout status deployment/local-path-provisioner -n kube-system --timeout=60s || true
 
-    # Background daemon to safely ensure a single clean host IP
+    # Background daemon to assign single primary host IP
     (
         for i in {1..30}; do
             if kubectl get svc controller-service -n controller-osm-vca >/dev/null 2>&1; then
                 EXT_IP=$(kubectl get svc controller-service -n controller-osm-vca -o jsonpath='{.spec.externalIPs[*]}' 2>/dev/null || true)
-                # Only patch if IP is missing or contains duplicate commas
                 if [ -z "$EXT_IP" ] || [[ "$EXT_IP" == *","* ]]; then
                     HOST_IP=$(ip route get 1.1.1.1 2>/dev/null | grep -oP 'src \K\S+')
                     if [ -n "$HOST_IP" ]; then
@@ -264,7 +261,6 @@ install_osm_installer() {
         done
     ) &
 
-    # 6. Execute OSM Installation
     log_info "Downloading OSM installer..."
     wget https://osm-download.etsi.org/ftp/osm-14.0-fourteen/install_osm.sh -O install_osm.sh
     chmod +x install_osm.sh
