@@ -242,9 +242,9 @@ install_osm_installer() {
     sudo rm -rf /var/lib/rancher/k3s
     rm -rf ~/.local/share/juju ~/.cache/juju ~/.kube 2>/dev/null || true
 
-    # 4. Re-install pristine K3s cluster
-    log_info "Re-installing pristine K3s cluster..."
-    curl -sfL https://get.k3s.io | sh -s - server --disable traefik
+    # 4. Re-install pristine K3s cluster (Pinned to v1.26.15)
+    log_info "Re-installing pristine K3s v1.26.15 cluster..."
+    curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=v1.26.15+k3s1 sh -s - server --disable traefik
     sleep 10
     
     mkdir -p ~/.kube
