@@ -340,11 +340,10 @@ install_osm_installer() {
     fi
 
     log_info "Applying inline Python patch to transform bundle to Juju 3 base syntax..."
-    python3 -c "
+    python3 - << 'EOF'
 with open('/tmp/osm-bundle.yaml', 'r') as f:
-    text = f.read()
+    lines = f.read().splitlines()
 
-lines = text.splitlines()
 out = []
 in_mongo = False
 mongo_has_base = False
@@ -369,7 +368,7 @@ for line in lines:
         
     if in_mongo and 'channel:' in line:
         indent = line[:line.find('channel:')]
-        line = f'{indent}channel: \"6/stable\"'
+        line = f'{indent}channel: "6/stable"'
         
     out.append(line)
 
@@ -378,7 +377,7 @@ if in_mongo and not mongo_has_base:
 
 with open('/tmp/osm-bundle.yaml', 'w') as f:
     f.write('\n'.join(out) + '\n')
-"
+EOF
 
     log_info "Deploying patched OSM bundle to model 'osm'..."
     juju deploy /tmp/osm-bundle.yaml --trust
