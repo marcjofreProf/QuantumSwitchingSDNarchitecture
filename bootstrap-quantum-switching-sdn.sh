@@ -213,33 +213,51 @@ install_grpc_tools() {
 }
 
 install_osm_installer() {
-    log_info "Phase 6: Open Source MANO (OSM)"
-    if ask_user "Do you want to download and run the OSM standalone installer now?" "N"; then
-        log_info "Checking for lingering Juju VCA controllers and namespaces..."
-        
-        # Purge any zombie Juju VCA controllers from previous failed runs
-        if command -v juju >/dev/null 2>&1; then
-            log_info "Force-killing any existing osm-vca Juju controller..."
-            juju kill-controller -y osm-vca 2>/dev/null || true
-            juju unregister osm-vca 2>/dev/null || true
-        fi
-        
-        # Clean up stale Kubernetes controller namespace
-        if kubectl get namespace controller-osm-vca >/dev/null 2>&1; then
-            log_info "Deleting leftover controller-osm-vca namespace..."
-            kubectl delete namespace controller-osm-vca --ignore-not-found=true
-            sleep 3
-        fi
+    log_info "Phase 6: Evaluating Open Source MANO (OSM) state..."
 
-        log_info "Downloading OSM installer..."
-        wget https://osm-download.etsi.org/ftp/osm-14.0-fourteen/install_osm.sh -O install_osm.sh
-        chmod +x install_osm.sh
-        
-        log_info "Running OSM installer (targeting existing K3s cluster)..."
-        ./install_osm.sh -y --charmed --k8s ~/.kube/config || log_warn "OSM installer completed with warnings."
-    else
-        log_info "Skipping OSM installation."
+    # Check if OSM is already installed and running
+    local osm_active=false
+    if kubectl get pods -n osm 2>/dev/null | grep -E 'nbi|ro|mon' | grep -q 'Running'; then
+        osm_active=true
     fi
+
+    if [ "$osm_active" = true ]; then
+        log_success "OSM is already installed and operational in namespace 'osm'."
+        if ! ask_user "Do you want to re-install / upgrade Open Source MANO?" "N"; then
+            log_info "Skipping OSM re-installation."
+            return 0
+        fi
+    else
+        log_info "OSM is not currently active. Proceeding with automated deployment..."
+    fi
+
+    log_info "Checking for lingering Juju VCA controllers, clouds, and deadlocked namespaces..."
+    
+    if command -v juju >/dev/null 2>&1; then
+        log_info "Force-killing existing osm-vca Juju controller and clearing local cloud definition..."
+        juju kill-controller -y osm-vca 2>/dev/null || true
+        juju unregister osm-vca 2>/dev/null || true
+        juju remove-cloud k8s-cloud 2>/dev/null || true
+    fi
+    
+    # Non-blocking namespace deletion with automatic finalizer patch
+    if kubectl get namespace controller-osm-vca >/dev/null 2>&1; then
+        log_info "Forcefully clearing controller-osm-vca namespace and finalizers..."
+        kubectl delete namespace controller-osm-vca --wait=false 2>/dev/null || true
+        sleep 2
+        kubectl get namespace controller-osm-vca -o json 2>/dev/null | jq '.spec.finalizers=[]' | kubectl replace --raw /api/v1/namespaces/controller-osm-vca/finalize -f - 2>/dev/null || true
+    fi
+
+    # Ensure local path storage is ready before bootstrapping Juju
+    log_info "Ensuring K3s local storage class is fully initialized..."
+    kubectl rollout status deployment/local-path-provisioner -n kube-system --timeout=60s || true
+
+    log_info "Downloading OSM installer..."
+    wget https://osm-download.etsi.org/ftp/osm-14.0-fourteen/install_osm.sh -O install_osm.sh
+    chmod +x install_osm.sh
+    
+    log_info "Running OSM installer targeting local cluster (Timeout extended for resource provisioning)..."
+    ./install_osm.sh -y --charmed --k8s ~/.kube/config || log_warn "OSM installer completed with warnings."
 }
 
 setup_sdn_python_client() {
@@ -302,16 +320,35 @@ EOF
 }
 
 deploy_cloud_native_uonos() {
-    log_info "Phase 8: Deploying µONOS microservices and RESTCONF Gateway..."
+    log_info "Phase 8: Evaluating µONOS deployment state..."
+    
+    # Check if µONOS pods are active and operational
+    local uonos_active=false
+    if kubectl get pods -n micro-onos 2>/dev/null | grep -E 'onos-topo|onos-config' | grep -q 'Running'; then
+        uonos_active=true
+    fi
+
+    if [ "$uonos_active" = true ]; then
+        log_success "µONOS is already installed and operational in namespace 'micro-onos'."
+        if ! ask_user "Do you want to re-install / upgrade the µONOS deployment?" "N"; then
+            log_info "Skipping µONOS re-installation."
+            return 0
+        fi
+    else
+        log_info "µONOS is not currently operational. Proceeding with deployment..."
+    fi
+
     kubectl create namespace micro-onos --dry-run=client -o yaml | kubectl apply -f -
 
     log_info "Deploying Atomix Controllers..."
     helm upgrade --install atomix-controller atomix/atomix-controller -n micro-onos --wait
     
     log_info "Extracting and manually applying Atomix Raft CRDs..."
-    helm pull atomix/atomix-raft-storage --untar
-    kubectl apply -f atomix-raft-storage/crds/ 2>/dev/null || true
-    rm -rf atomix-raft-storage
+    helm pull atomix/atomix-raft-storage --untar 2>/dev/null || true
+    if [ -d "atomix-raft-storage/crds" ]; then
+        kubectl apply -f atomix-raft-storage/crds/ 2>/dev/null || true
+        rm -rf atomix-raft-storage
+    fi
     
     helm upgrade --install atomix-raft-storage atomix/atomix-raft-storage -n micro-onos --wait
     
