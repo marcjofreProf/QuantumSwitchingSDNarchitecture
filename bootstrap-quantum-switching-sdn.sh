@@ -219,9 +219,9 @@ install_osm_installer() {
         wget https://osm-download.etsi.org/ftp/osm-14.0-fourteen/install_osm.sh -O install_osm.sh
         chmod +x install_osm.sh
         
-        # Added --vca osm-vca to handle existing controller conflicts gracefully
+        # Removed --vca osm-vca so Juju performs a fresh bootstrap
         log_info "Running OSM installer (targeting existing K3s cluster)..."
-        ./install_osm.sh -y --charmed --k8s ~/.kube/config --vca osm-vca || log_warn "OSM installer completed with warnings."
+        ./install_osm.sh -y --charmed --k8s ~/.kube/config || log_warn "OSM installer completed with warnings."
     else
         log_info "Skipping OSM installation."
     fi
@@ -267,11 +267,12 @@ compile_uonos_model_plugins() {
         log_warn "YANG model $yang_target not found!"
     fi
 
-    # Dynamically generate a valid metadata.yaml to satisfy mandatory compiler fields
+    # Added goPackage to satisfy mandatory compiler fields
     cat <<EOF > "$plugin_dir/metadata.yaml"
 name: controller-quantum-switching
 version: 1.0.0
 artifactName: controller-quantum-switching
+goPackage: github.com/onosproject/controller-quantum-switching
 EOF
 
     log_info "Executing onosproject/model-compiler..."
@@ -291,12 +292,18 @@ deploy_cloud_native_uonos() {
 
     log_info "Deploying Atomix Controllers..."
     helm upgrade --install atomix-controller atomix/atomix-controller -n micro-onos --wait
+    
+    log_info "Extracting and manually applying Atomix Raft CRDs..."
+    helm pull atomix/atomix-raft-storage --untar
+    kubectl apply -f atomix-raft-storage/crds/ 2>/dev/null || true
+    rm -rf atomix-raft-storage
+    
     helm upgrade --install atomix-raft-storage atomix/atomix-raft-storage -n micro-onos --wait
     
     log_info "Waiting for Kubernetes to register Atomix CRDs..."
     local crds=("raftclusters.raft.atomix.io" "raftstores.raft.atomix.io" "storageprofiles.atomix.io")
     for crd in "${crds[@]}"; do
-        local retries=30
+        local retries=15
         while ! kubectl get crd "$crd" >/dev/null 2>&1; do
             sleep 2
             retries=$((retries - 1))
