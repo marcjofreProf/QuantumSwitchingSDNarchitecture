@@ -292,26 +292,26 @@ install_osm_installer() {
     log_info "Ensuring K3s local storage class is fully initialized..."
     kubectl rollout status deployment/local-path-provisioner -n kube-system --timeout=60s || true
 
-    # --- Explicit Juju Bootstrap (Mirroring Manual Steps) ---
+    # --- Explicit Juju Bootstrap with Jammy Default ---
     log_info "Registering local K3s cluster with Juju..."
     juju add-k8s k8s-cloud --client || true
 
     log_info "Launching background surgical fix for API Server..."
     (
         while ! kubectl get pod controller-0 -n controller-osm-vca 2>/dev/null | grep -qE "1/2|2/2"; do
-            sleep 2
+            sleep 1
         done
 
         while ! kubectl exec -n controller-osm-vca controller-0 -c api-server -- stat /var/lib/juju/template-ca.crt >/dev/null 2>&1; do
-            sleep 2
+            sleep 1
         done
 
         kubectl exec -n controller-osm-vca controller-0 -c api-server -- sh -c 'cp /var/lib/juju/template-ca.crt /var/lib/juju/ca.crt && cp /var/lib/juju/template-server.pem /var/lib/juju/server.pem && kill 1' 2>/dev/null || true
     ) &
     CERT_SYNC_PID=$!
 
-    log_info "Bootstrapping Juju Controller..."
-    juju bootstrap k8s-cloud osm-vca
+    log_info "Bootstrapping Juju Controller with Ubuntu 22.04 (jammy) default series..."
+    juju bootstrap k8s-cloud osm-vca --config default-series=jammy
 
     kill $CERT_SYNC_PID 2>/dev/null || true
     # --------------------------------------------------------
@@ -320,7 +320,7 @@ install_osm_installer() {
     wget https://osm-download.etsi.org/ftp/osm-14.0-fourteen/install_osm.sh -O install_osm.sh
     chmod +x install_osm.sh
     
-    log_info "Running OSM installer to deploy MANO components over the established controller..."
+    log_info "Running OSM installer to deploy MANO components..."
     ./install_osm.sh -y --charmed --k8s ~/.kube/config --vca osm-vca || log_warn "OSM installer completed with warnings."
 }
 
