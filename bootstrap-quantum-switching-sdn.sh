@@ -282,7 +282,6 @@ install_osm_installer() {
     kubectl delete namespace controller-osm-vca --force --grace-period=0 2>/dev/null || true
     kubectl delete namespace osm --force --grace-period=0 2>/dev/null || true
 
-    # Wait for namespace deletion to complete to prevent model collision
     while kubectl get namespace osm >/dev/null 2>&1; do
         log_info "Waiting for leftover 'osm' namespace to terminate..."
         sleep 2
@@ -328,12 +327,37 @@ install_osm_installer() {
     kill $CERT_SYNC_PID 2>/dev/null || true
     # --------------------------------------------------------
 
+    # --- MongoDB Overlay Injection Fix ---
+    log_info "Injecting MongoDB overlay fix for Charmhub channel compatibility..."
+    cat << 'EOF' > /tmp/mongo-fix.yaml
+applications:
+  mongodb-k8s:
+    channel: latest/edge
+EOF
+
+    sudo bash -c 'cat << "EOF" > /usr/local/bin/juju
+#!/usr/bin/bash
+REAL_JUJU=$(which -a juju | grep -v "/usr/local/bin/juju" | head -n 1)
+
+if [[ "$1" == "deploy" ]]; then
+    exec "$REAL_JUJU" deploy --overlay /tmp/mongo-fix.yaml "${@:2}"
+else
+    exec "$REAL_JUJU" "$@"
+fi
+EOF'
+    sudo chmod +x /usr/local/bin/juju
+    # -------------------------------------
+
     log_info "Downloading OSM installer..."
     wget https://osm-download.etsi.org/ftp/osm-14.0-fourteen/install_osm.sh -O install_osm.sh
     chmod +x install_osm.sh
     
     log_info "Running OSM installer to deploy MANO components..."
     ./install_osm.sh -y --charmed --k8s ~/.kube/config --vca osm-vca || log_warn "OSM installer completed with warnings."
+
+    # --- Clean Up Wrapper ---
+    sudo rm -f /usr/local/bin/juju /tmp/mongo-fix.yaml
+    # ------------------------
 }
 
 setup_sdn_python_client() {
