@@ -438,11 +438,12 @@ compile_uonos_model_plugins() {
         log_warn "YANG model $yang_target not found!"
     fi
 
-    # Added mandatory contactName field required by model-compiler
+    # Added mandatory contactName and licenseName fields required by model-compiler
     cat <<EOF > "$plugin_dir/metadata.yaml"
 name: controller-quantum-switching
 version: 1.0.0
 contactName: "SDN Architecture Team"
+licenseName: "Apache-2.0"
 artifactName: controller-quantum-switching
 goPackage: github.com/onosproject/controller-quantum-switching
 modules:
@@ -480,33 +481,22 @@ deploy_cloud_native_uonos() {
         log_info "µONOS is not currently operational. Proceeding with deployment..."
     fi
 
+    # Ensure Helm repositories are added
+    log_info "Adding Atomix and ONOS Helm repositories..."
+    helm repo add atomix https://charts.atomix.io 2>/dev/null || true
+    helm repo add onosproject https://charts.onosproject.org 2>/dev/null || true
+    helm repo update >/dev/null 2>&1 || true
+
     kubectl create namespace micro-onos --dry-run=client -o yaml | kubectl apply -f -
 
-    log_info "Installing missing Atomix Custom Resource Definitions (CRDs)..."
-    kubectl apply -f https://raw.githubusercontent.com/atomix/atomix-controller/master/deploy/crds/atomix.io_storageprofiles.yaml 2>/dev/null || true
-    kubectl apply -f https://raw.githubusercontent.com/atomix/atomix-raft-storage/master/deploy/crds/raft.atomix.io_raftclusters.yaml 2>/dev/null || true
-    kubectl apply -f https://raw.githubusercontent.com/atomix/atomix-raft-storage/master/deploy/crds/raft.atomix.io_raftstores.yaml 2>/dev/null || true
+    # Install Atomix and ONOS operators in kube-system (cluster-scoped controllers)
+    log_info "Deploying Atomix and ONOS cluster operators in 'kube-system' namespace..."
+    helm upgrade --install atomix-controller atomix/atomix-controller -n kube-system --wait || true
+    helm upgrade --install atomix-raft-storage atomix/atomix-raft-storage -n kube-system --wait || true
+    helm upgrade --install onos-operator onosproject/onos-operator -n kube-system --wait || true
 
-    log_info "Deploying Atomix Controllers..."
-    helm upgrade --install atomix-controller atomix/atomix-controller -n micro-onos --wait || true
-    
-    log_info "Deploying Atomix Raft Storage..."
-    helm upgrade --install atomix-raft-storage atomix/atomix-raft-storage -n micro-onos --wait || true
-
-    log_info "Extracting and applying secondary Atomix CRDs..."
-    helm pull atomix/atomix-controller --untar 2>/dev/null || true
-    if [ -d "atomix-controller/crds" ]; then
-        kubectl apply -f atomix-controller/crds/ 2>/dev/null || true
-        rm -rf atomix-controller
-    fi
-
-    helm pull atomix/atomix-raft-storage --untar 2>/dev/null || true
-    if [ -d "atomix-raft-storage/crds" ]; then
-        kubectl apply -f atomix-raft-storage/crds/ 2>/dev/null || true
-        rm -rf atomix-raft-storage
-    fi
-    
-    log_info "Waiting for Kubernetes API server to register Atomix CRDs..."
+    # Wait for CRD registration in Kubernetes API server
+    log_info "Waiting for Kubernetes API server to register Atomix & ONOS CRDs..."
     local crds=(
         "storageprofiles.atomix.io"
         "raftclusters.raft.atomix.io"
@@ -514,7 +504,7 @@ deploy_cloud_native_uonos() {
     )
     
     for crd in "${crds[@]}"; do
-        local retries=15
+        local retries=20
         while ! kubectl get crd "$crd" >/dev/null 2>&1; do
             sleep 2
             retries=$((retries - 1))
@@ -522,9 +512,10 @@ deploy_cloud_native_uonos() {
         done
         kubectl wait --for=condition=established crd/"$crd" --timeout=60s 2>/dev/null || true
     done
-    
-    log_info "Deploying ONOS Topology and Config..."
-    helm upgrade --install onos-topo onosproject/onos-topo -n micro-onos 
+
+    # Deploy ONOS Topology and Config into micro-onos
+    log_info "Deploying ONOS Topology and Config in 'micro-onos' namespace..."
+    helm upgrade --install onos-topo onosproject/onos-topo -n micro-onos
     helm upgrade --install onos-config onosproject/onos-config -n micro-onos
 
     log_info "Building and deploying RESTCONF Gateway Container..."
