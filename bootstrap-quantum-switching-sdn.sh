@@ -218,11 +218,9 @@ install_osm_installer() {
         wget https://osm-download.etsi.org/ftp/osm-14.0-fourteen/install_osm.sh -O install_osm.sh
         chmod +x install_osm.sh
         
-        # OSM standalone heavily conflicts with K3s on the same node. 
-        # Using --charmed deploys via Juju/MicroK8s which can be configured to coexist, 
-        # or we pass --nok8s if strictly provisioning OSM components on the existing K3s cluster.
-        log_info "Running OSM installer (bypassing redundant Kubeadm init)..."
-        ./install_osm.sh -y --k8s ~/.kube/config --nok8s || log_warn "OSM installer completed with warnings."
+        # Deploying OSM to an external Kubernetes cluster requires the Charmed distribution
+        log_info "Running OSM installer (targeting existing K3s cluster)..."
+        ./install_osm.sh -y --charmed --k8s ~/.kube/config || log_warn "OSM installer completed with warnings."
     else
         log_info "Skipping OSM installation."
     fi
@@ -274,8 +272,8 @@ compile_uonos_model_plugins() {
 
     log_info "Executing onosproject/model-compiler..."
     if command -v docker >/dev/null 2>&1; then
-        # Reverted to single-dash flags (-name, -version) for Go binary compatibility
-        docker run --rm -v "$(pwd)/${plugin_dir}:/config-model" onosproject/model-compiler:latest -name controller-quantum-switching -version 1.0.0 || log_warn "Model compiler encountered an issue."
+        # The model-compiler reads the identity from the metadata.yaml inside /config-model
+        docker run --rm -v "$(pwd)/${plugin_dir}:/config-model" onosproject/model-compiler:latest || log_warn "Model compiler encountered an issue."
         
         log_info "Building the resulting Model Plugin Docker Image..."
         if [ -f "$plugin_dir/Makefile" ]; then
@@ -289,13 +287,15 @@ deploy_cloud_native_uonos() {
     kubectl create namespace micro-onos --dry-run=client -o yaml | kubectl apply -f -
 
     log_info "Deploying Atomix Controllers..."
-    helm upgrade --install atomix-controller atomix/atomix-controller -n micro-onos
-    helm upgrade --install atomix-raft-storage atomix/atomix-raft-storage -n micro-onos
+    helm upgrade --install atomix-controller atomix/atomix-controller -n micro-onos --wait
+    helm upgrade --install atomix-raft-storage atomix/atomix-raft-storage -n micro-onos --wait
     
-    # Wait for K8s API to register the RaftCluster CRDs before triggering onos-topo
-    log_info "Waiting for Atomix CRDs to register..."
-    sleep 15 
+    log_info "Waiting for Kubernetes to establish Atomix CRDs..."
+    kubectl wait --for=condition=established crd/raftclusters.raft.atomix.io --timeout=60s || true
+    kubectl wait --for=condition=established crd/raftstores.raft.atomix.io --timeout=60s || true
+    kubectl wait --for=condition=established crd/storageprofiles.atomix.io --timeout=60s || true
     
+    log_info "Deploying ONOS Topology and Config..."
     helm upgrade --install onos-topo onosproject/onos-topo -n micro-onos 
     helm upgrade --install onos-config onosproject/onos-config -n micro-onos
 
