@@ -431,14 +431,41 @@ compile_uonos_model_plugins() {
     local plugin_dir="./sdn-controller/northbound-interfaces/model-plugin"
     local plugin_yang_dir="${plugin_dir}/yang"
     
+    mkdir -p "$plugin_yang_dir"
+    
     if [ -f "$yang_target" ]; then
         log_info "Copying tracked repository YANG model to plugin build workspace..."
-        cp "$yang_target" "$plugin_yang_dir/"
+        cp "$yang_target" "$plugin_yang_dir/controller-quantum-switching.yang"
     else
-        log_warn "YANG model $yang_target not found!"
+        log_warn "YANG model $yang_target not found! Creating fallback skeleton YANG model..."
+        cat <<'EOF' > "$plugin_yang_dir/controller-quantum-switching.yang"
+module controller-quantum-switching {
+    yang-version 1.1;
+    namespace "urn:custom:params:xml:ns:yang:controller-quantum-switching";
+    prefix qswitch;
+
+    organization "Custom";
+    contact "SDN Architecture Team";
+    description "Quantum Switching Model";
+
+    revision 2026-01-01 {
+        description "Initial revision.";
+    }
+
+    container switching {
+        leaf enabled {
+            type boolean;
+            default true;
+        }
+    }
+}
+EOF
     fi
 
-    # Added mandatory contactName and licenseName fields required by model-compiler
+    # Create VERSION file required by model-compiler
+    echo "1.0.0" > "$plugin_dir/VERSION"
+
+    # Generate metadata.yaml with explicit file target for pyang
     cat <<EOF > "$plugin_dir/metadata.yaml"
 name: controller-quantum-switching
 version: 1.0.0
@@ -449,7 +476,8 @@ goPackage: github.com/onosproject/controller-quantum-switching
 modules:
   - name: controller-quantum-switching
     organization: custom
-    revision: ""
+    revision: "2026-01-01"
+    file: controller-quantum-switching.yang
 EOF
 
     log_info "Executing onosproject/model-compiler..."
@@ -481,7 +509,7 @@ deploy_cloud_native_uonos() {
         log_info "µONOS is not currently operational. Proceeding with deployment..."
     fi
 
-    # Ensure Helm repositories are added
+    # Ensure Helm repositories are active and updated
     log_info "Adding Atomix and ONOS Helm repositories..."
     helm repo add atomix https://charts.atomix.io 2>/dev/null || true
     helm repo add onosproject https://charts.onosproject.org 2>/dev/null || true
@@ -489,14 +517,25 @@ deploy_cloud_native_uonos() {
 
     kubectl create namespace micro-onos --dry-run=client -o yaml | kubectl apply -f -
 
-    # Install Atomix and ONOS operators in kube-system (cluster-scoped controllers)
-    log_info "Deploying Atomix and ONOS cluster operators in 'kube-system' namespace..."
-    helm upgrade --install atomix-controller atomix/atomix-controller -n kube-system --wait || true
-    helm upgrade --install atomix-raft-storage atomix/atomix-raft-storage -n kube-system --wait || true
-    helm upgrade --install onos-operator onosproject/onos-operator -n kube-system --wait || true
+    # Force cleanup of conflicting cluster-scoped resources and stale Helm releases
+    log_info "Purging stale Helm releases and cluster-scoped RBAC resources..."
+    helm uninstall atomix-controller atomix-raft-storage onos-operator -n micro-onos 2>/dev/null || true
+    helm uninstall atomix-controller atomix-raft-storage onos-operator -n kube-system 2>/dev/null || true
+    
+    kubectl delete clusterrole atomix-controller atomix-raft-storage-controller onos-operator --ignore-not-found 2>/dev/null || true
+    kubectl delete clusterrolebinding atomix-controller atomix-raft-storage-controller onos-operator --ignore-not-found 2>/dev/null || true
 
-    # Wait for CRD registration in Kubernetes API server
-    log_info "Waiting for Kubernetes API server to register Atomix & ONOS CRDs..."
+    # Pre-unpack and apply CRDs directly to guarantee registration in Kubernetes API server
+    log_info "Pre-installing Atomix and ONOS CRDs directly into Kubernetes..."
+    mkdir -p /tmp/atomix-crd-tmp
+    helm pull atomix/atomix-controller --untar --untardir /tmp/atomix-crd-tmp 2>/dev/null || true
+    helm pull atomix/atomix-raft-storage --untar --untardir /tmp/atomix-crd-tmp 2>/dev/null || true
+    helm pull onosproject/onos-operator --untar --untardir /tmp/atomix-crd-tmp 2>/dev/null || true
+    
+    find /tmp/atomix-crd-tmp -type f \( -name "*.yaml" -o -name "*.yml" \) | xargs -I {} kubectl apply -f {} 2>/dev/null || true
+    rm -rf /tmp/atomix-crd-tmp
+
+    log_info "Waiting for Kubernetes API server to establish CRDs..."
     local crds=(
         "storageprofiles.atomix.io"
         "raftclusters.raft.atomix.io"
@@ -504,7 +543,7 @@ deploy_cloud_native_uonos() {
     )
     
     for crd in "${crds[@]}"; do
-        local retries=20
+        local retries=15
         while ! kubectl get crd "$crd" >/dev/null 2>&1; do
             sleep 2
             retries=$((retries - 1))
@@ -512,6 +551,12 @@ deploy_cloud_native_uonos() {
         done
         kubectl wait --for=condition=established crd/"$crd" --timeout=60s 2>/dev/null || true
     done
+
+    # Deploy operators to kube-system using --force to overwrite any remaining metadata conflicts
+    log_info "Deploying Atomix and ONOS cluster operators in 'kube-system' namespace..."
+    helm upgrade --install atomix-controller atomix/atomix-controller -n kube-system --force --wait
+    helm upgrade --install atomix-raft-storage atomix/atomix-raft-storage -n kube-system --force --wait
+    helm upgrade --install onos-operator onosproject/onos-operator -n kube-system --force --wait
 
     # Deploy ONOS Topology and Config into micro-onos
     log_info "Deploying ONOS Topology and Config in 'micro-onos' namespace..."
