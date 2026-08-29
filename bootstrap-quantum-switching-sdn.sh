@@ -233,7 +233,14 @@ install_osm_installer() {
     sudo killall -9 juju 2>/dev/null || true
     rm -rf ~/.local/share/juju ~/.cache/juju 2>/dev/null || true
 
-    # Stop K3s first to avoid Kubernetes finalizer hangs
+    # Strip Juju's global cluster footprint FIRST
+    log_info "Purging Juju cluster-wide resources..."
+    kubectl get namespace controller-osm-vca -o json 2>/dev/null | jq '.spec.finalizers=[]' | kubectl replace --raw /api/v1/namespaces/controller-osm-vca/finalize -f - 2>/dev/null || true
+    kubectl delete namespace controller-osm-vca --wait=false 2>/dev/null || true
+    kubectl get clusterrole,clusterrolebinding,mutatingwebhookconfiguration,validatingwebhookconfiguration,crd -A 2>/dev/null | grep -i juju | awk '{print $1}' | xargs -r kubectl delete 2>/dev/null || true
+    kubectl delete secret -l juju.io/controller=osm-vca -A 2>/dev/null || true
+
+    # Stop K3s engine to release storage locks
     log_info "Stopping K3s engine to release storage locks..."
     sudo systemctl stop k3s 2>/dev/null || true
 
@@ -245,9 +252,8 @@ install_osm_installer() {
     sudo systemctl start k3s 2>/dev/null || true
     until kubectl get nodes >/dev/null 2>&1; do sleep 2; done
 
-    # Strip finalizers non-blockingly
+    # Strip PV finalizers non-blockingly
     kubectl get pv -o jsonpath='{.items[*].metadata.name}' 2>/dev/null | xargs -r -n1 kubectl patch pv -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
-    kubectl delete namespace controller-osm-vca --wait=false 2>/dev/null || true
     kubectl rollout restart deployment local-path-provisioner -n kube-system >/dev/null 2>&1 || true
     # --- NON-BLOCKING DEEP PURGE END ---
 
