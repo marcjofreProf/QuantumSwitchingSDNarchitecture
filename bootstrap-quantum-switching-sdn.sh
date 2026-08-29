@@ -313,7 +313,23 @@ install_osm_installer() {
     chmod +x install_osm.sh
     
     log_info "Running OSM installer targeting local cluster..."
+    
+    # Auto-provision CA cert to prevent Juju MongoDB race conditions
+    (
+        while true; do
+            if kubectl get pod controller-0 -n controller-osm-vca 2>/dev/null | grep -q "1/2"; then
+                kubectl exec -n controller-osm-vca controller-0 -c api-server -- cp /var/lib/juju/template-ca.crt /var/lib/juju/ca.crt 2>/dev/null || true
+            fi
+            sleep 2
+        done
+    ) &
+    CERT_SYNC_PID=$!
+
+    # Execute installer
     ./install_osm.sh -y --charmed --k8s ~/.kube/config || log_warn "OSM installer completed with warnings."
+
+    # Clean up sync process
+    kill $CERT_SYNC_PID 2>/dev/null || true
 }
 
 setup_sdn_python_client() {
