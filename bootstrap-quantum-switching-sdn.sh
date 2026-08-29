@@ -250,7 +250,7 @@ install_osm_installer() {
     (
         while true; do
             if kubectl get svc controller-service -n controller-osm-vca >/dev/null 2>&1; then
-                HOST_IP=$(hostname -I | awk '{print $1}')
+                HOST_IP=$(ip route get 1.1.1.1 2>/dev/null | grep -oP 'src \K\S+')
                 if [ -n "$HOST_IP" ]; then
                     kubectl patch svc controller-service -n controller-osm-vca --type='json' -p="[{\"op\": \"replace\", \"path\": \"/spec/externalIPs\", \"value\": [\"$HOST_IP\"]}]" >/dev/null 2>&1 || true
                 fi
