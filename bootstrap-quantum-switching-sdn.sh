@@ -221,41 +221,39 @@ install_osm_installer() {
         log_info "OSM is not currently active. Proceeding with deployment..."
     fi
 
+    # --- SCORCHED EARTH K3S PURGE START ---
+    log_info "Executing nuclear cleanup of K3s and Juju environments to prevent stale state loops..."
+
+    # 1. Kill any frozen Juju processes
+    sudo killall -9 juju 2>/dev/null || true
+
+    # 2. Trigger native K3s uninstall to cleanly destroy K8s state, PVs, and networking
+    if [ -f /usr/local/bin/k3s-uninstall.sh ]; then
+        log_info "Uninstalling K3s completely..."
+        sudo /usr/local/bin/k3s-uninstall.sh
+    fi
+
+    # 3. Wipe all remaining host storage and Juju client caches
+    log_info "Wiping host storage and Juju caches..."
+    sudo rm -rf /var/lib/rancher/k3s
+    rm -rf ~/.local/share/juju ~/.cache/juju ~/.kube 2>/dev/null || true
+
+    # 4. Re-install pristine K3s cluster
+    log_info "Re-installing pristine K3s cluster..."
+    curl -sfL https://get.k3s.io | sh -s - server --disable traefik
+    sleep 10
+    
+    mkdir -p ~/.kube
+    sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
+    sudo chown $(id -u):$(id -g) ~/.kube/config
+    export KUBECONFIG=$HOME/.kube/config
+    # --- SCORCHED EARTH K3S PURGE END ---
+
     # Fix cluster DNS resolution & enable host IP forwarding
     log_info "Configuring CoreDNS upstream servers and kernel IP forwarding..."
     sudo sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 || true
     kubectl get configmap coredns -n kube-system -o json 2>/dev/null | sed 's/forward . \/etc\/resolv.conf/forward . 8.8.8.8 1.1.1.1/' | kubectl apply -f - >/dev/null 2>&1 || true
     kubectl rollout restart deployment coredns -n kube-system >/dev/null 2>&1 || true
-
-    # --- NON-BLOCKING DEEP PURGE START ---
-    log_info "Executing non-blocking deep cleanup of Juju environments and K8s storage..."
-
-    sudo killall -9 juju 2>/dev/null || true
-    rm -rf ~/.local/share/juju ~/.cache/juju 2>/dev/null || true
-
-    # Strip Juju's global cluster footprint FIRST
-    log_info "Purging Juju cluster-wide resources..."
-    kubectl get namespace controller-osm-vca -o json 2>/dev/null | jq '.spec.finalizers=[]' | kubectl replace --raw /api/v1/namespaces/controller-osm-vca/finalize -f - 2>/dev/null || true
-    kubectl delete namespace controller-osm-vca --wait=false 2>/dev/null || true
-    kubectl get clusterrole,clusterrolebinding,mutatingwebhookconfiguration,validatingwebhookconfiguration,crd -A 2>/dev/null | grep -i juju | awk '{print $1}' | xargs -r kubectl delete 2>/dev/null || true
-    kubectl delete secret -l juju.io/controller=osm-vca -A 2>/dev/null || true
-
-    # Stop K3s engine to release storage locks
-    log_info "Stopping K3s engine to release storage locks..."
-    sudo systemctl stop k3s 2>/dev/null || true
-
-    # Wipe host storage while K3s is down
-    sudo rm -rf /var/lib/rancher/k3s/storage/* 2>/dev/null || true
-
-    # Restart K3s engine and wait for readiness
-    log_info "Restarting K3s engine..."
-    sudo systemctl start k3s 2>/dev/null || true
-    until kubectl get nodes >/dev/null 2>&1; do sleep 2; done
-
-    # Strip PV finalizers non-blockingly
-    kubectl get pv -o jsonpath='{.items[*].metadata.name}' 2>/dev/null | xargs -r -n1 kubectl patch pv -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
-    kubectl rollout restart deployment local-path-provisioner -n kube-system >/dev/null 2>&1 || true
-    # --- NON-BLOCKING DEEP PURGE END ---
 
     log_info "Ensuring K3s local storage class is fully initialized..."
     kubectl rollout status deployment/local-path-provisioner -n kube-system --timeout=60s || true
