@@ -314,14 +314,25 @@ install_osm_installer() {
     
     log_info "Running OSM installer targeting local cluster..."
     
-    # Auto-provision CA cert only if missing
+    # Auto-remediation for Juju MongoDB race condition
     (
-        while true; do
-            if kubectl get pod controller-0 -n controller-osm-vca 2>/dev/null | grep -q "1/2"; then
-                kubectl exec -n controller-osm-vca controller-0 -c api-server -- sh -c '[ ! -f /var/lib/juju/ca.crt ] && cp /var/lib/juju/template-ca.crt /var/lib/juju/ca.crt' 2>/dev/null || true
-            fi
+        # 1. Wait for the pod to be accessible
+        while ! kubectl get pod controller-0 -n controller-osm-vca 2>/dev/null | grep -qE "1/2|2/2"; do
             sleep 2
         done
+
+        # 2. Wait for Juju to write the template certificates
+        while ! kubectl exec -n controller-osm-vca controller-0 -c api-server -- stat /var/lib/juju/template-ca.crt >/dev/null 2>&1; do
+            sleep 2
+        done
+
+        # 3. Copy certs and wipe the broken MongoDB state
+        kubectl exec -n controller-osm-vca controller-0 -c api-server -- cp /var/lib/juju/template-ca.crt /var/lib/juju/ca.crt
+        kubectl exec -n controller-osm-vca controller-0 -c api-server -- cp /var/lib/juju/template-server.pem /var/lib/juju/server.pem 2>/dev/null || true
+        kubectl exec -n controller-osm-vca controller-0 -c api-server -- rm -rf /var/lib/juju/db/*
+
+        # 4. Restart the pod so MongoDB boots cleanly with the certs on the persistent volume
+        kubectl delete pod controller-0 -n controller-osm-vca --wait=false
     ) &
     CERT_SYNC_PID=$!
 
