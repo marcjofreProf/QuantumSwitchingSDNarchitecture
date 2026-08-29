@@ -133,9 +133,13 @@ ensure_kubernetes_cluster() {
     
     export KUBECONFIG=${KUBECONFIG:-$HOME/.kube/config}
     
-    # Ensure K3s is running with ServiceLB enabled (no --disable servicelb flag)
-    log_info "Enforcing K3s configuration with active ServiceLB..."
-    curl -sfL https://get.k3s.io | sh -s - server --disable traefik
+    # Apply Ubuntu 24.04 AppArmor patch for Juju
+    sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 2>/dev/null || true
+    echo "kernel.apparmor_restrict_unprivileged_userns=0" | sudo tee /etc/sysctl.d/99-juju.conf >/dev/null
+    
+    # Ensure K3s is pinned to v1.26.15 (OSM 14 compatible)
+    log_info "Enforcing K3s v1.26.15 configuration with active ServiceLB..."
+    curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=v1.26.15+k3s1 sh -s - server --disable traefik
     sleep 5
     
     mkdir -p ~/.kube
