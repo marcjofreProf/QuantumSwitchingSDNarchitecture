@@ -438,10 +438,11 @@ compile_uonos_model_plugins() {
         log_warn "YANG model $yang_target not found!"
     fi
 
-    # The model-compiler requires the modules to be explicitly listed
+    # Added mandatory contactName field required by model-compiler
     cat <<EOF > "$plugin_dir/metadata.yaml"
 name: controller-quantum-switching
 version: 1.0.0
+contactName: "SDN Architecture Team"
 artifactName: controller-quantum-switching
 goPackage: github.com/onosproject/controller-quantum-switching
 modules:
@@ -481,13 +482,18 @@ deploy_cloud_native_uonos() {
 
     kubectl create namespace micro-onos --dry-run=client -o yaml | kubectl apply -f -
 
+    log_info "Installing missing Atomix Custom Resource Definitions (CRDs)..."
+    kubectl apply -f https://raw.githubusercontent.com/atomix/atomix-controller/master/deploy/crds/atomix.io_storageprofiles.yaml 2>/dev/null || true
+    kubectl apply -f https://raw.githubusercontent.com/atomix/atomix-raft-storage/master/deploy/crds/raft.atomix.io_raftclusters.yaml 2>/dev/null || true
+    kubectl apply -f https://raw.githubusercontent.com/atomix/atomix-raft-storage/master/deploy/crds/raft.atomix.io_raftstores.yaml 2>/dev/null || true
+
     log_info "Deploying Atomix Controllers..."
-    helm upgrade --install atomix-controller atomix/atomix-controller -n micro-onos --wait
+    helm upgrade --install atomix-controller atomix/atomix-controller -n micro-onos --wait || true
     
     log_info "Deploying Atomix Raft Storage..."
-    helm upgrade --install atomix-raft-storage atomix/atomix-raft-storage -n micro-onos --wait
+    helm upgrade --install atomix-raft-storage atomix/atomix-raft-storage -n micro-onos --wait || true
 
-    log_info "Extracting and applying mandatory Atomix CRDs for ONOS..."
+    log_info "Extracting and applying secondary Atomix CRDs..."
     helm pull atomix/atomix-controller --untar 2>/dev/null || true
     if [ -d "atomix-controller/crds" ]; then
         kubectl apply -f atomix-controller/crds/ 2>/dev/null || true
