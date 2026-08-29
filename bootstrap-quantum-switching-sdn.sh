@@ -280,7 +280,7 @@ install_osm_installer() {
     log_info "Purging stale Juju client cache and orphaned controllers to prevent bootstrap conflicts..."
     rm -rf ~/.local/share/juju ~/.cache/juju 2>/dev/null || true
     kubectl delete namespace controller-osm-vca --force --grace-period=0 2>/dev/null || true
-    sleep 3 # Brief pause to allow the namespace termination to register
+    sleep 3
     # --------------------------
 
     # Fix cluster DNS resolution & enable host IP forwarding if needed
@@ -298,31 +298,31 @@ install_osm_installer() {
     
     log_info "Running OSM installer targeting local cluster..."
     
-    # Auto-remediation for Juju MongoDB race condition
+    # Surgical Auto-Remediation for Juju API Server Race Condition
     (
-        # 1. Wait for the pod to be accessible
+        # 1. Wait for the controller pod to be created
         while ! kubectl get pod controller-0 -n controller-osm-vca 2>/dev/null | grep -qE "1/2|2/2"; do
             sleep 2
         done
 
-        # 2. Wait for Juju to write the template certificates
+        # 2. Wait for Juju to render the template certificates
         while ! kubectl exec -n controller-osm-vca controller-0 -c api-server -- stat /var/lib/juju/template-ca.crt >/dev/null 2>&1; do
             sleep 2
         done
 
-        # 3. Copy certs ONLY (Do not wipe the database)
-        kubectl exec -n controller-osm-vca controller-0 -c api-server -- cp /var/lib/juju/template-ca.crt /var/lib/juju/ca.crt
+        # 3. Copy the template certificates to active path
+        kubectl exec -n controller-osm-vca controller-0 -c api-server -- cp /var/lib/juju/template-ca.crt /var/lib/juju/ca.crt 2>/dev/null || true
         kubectl exec -n controller-osm-vca controller-0 -c api-server -- cp /var/lib/juju/template-server.pem /var/lib/juju/server.pem 2>/dev/null || true
 
-        # 4. Restart the pod so MongoDB boots cleanly with the certs
-        kubectl delete pod controller-0 -n controller-osm-vca --wait=false
+        # 4. Restart ONLY the api-server container (DO NOT delete the pod)
+        kubectl exec -n controller-osm-vca controller-0 -c api-server -- kill 1 2>/dev/null || true
     ) &
     CERT_SYNC_PID=$!
 
     # Execute installer
     ./install_osm.sh -y --charmed --k8s ~/.kube/config || log_warn "OSM installer completed with warnings."
 
-    # Clean up sync process
+    # Clean up background process
     kill $CERT_SYNC_PID 2>/dev/null || true
 }
 
