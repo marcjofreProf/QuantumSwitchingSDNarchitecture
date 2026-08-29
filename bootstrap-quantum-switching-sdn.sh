@@ -303,12 +303,11 @@ install_osm_installer() {
             sleep 2
         done
 
-        # 3. Copy certs and wipe the broken MongoDB state
+        # 3. Copy certs ONLY (Do not wipe the database)
         kubectl exec -n controller-osm-vca controller-0 -c api-server -- cp /var/lib/juju/template-ca.crt /var/lib/juju/ca.crt
         kubectl exec -n controller-osm-vca controller-0 -c api-server -- cp /var/lib/juju/template-server.pem /var/lib/juju/server.pem 2>/dev/null || true
-        kubectl exec -n controller-osm-vca controller-0 -c api-server -- rm -rf /var/lib/juju/db/*
 
-        # 4. Restart the pod so MongoDB boots cleanly with the certs on the persistent volume
+        # 4. Restart the pod so MongoDB boots cleanly with the certs
         kubectl delete pod controller-0 -n controller-osm-vca --wait=false
     ) &
     CERT_SYNC_PID=$!
