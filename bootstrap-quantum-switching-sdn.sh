@@ -281,7 +281,16 @@ install_osm_installer() {
     rm -rf ~/.local/share/juju ~/.cache/juju 2>/dev/null || true
     kubectl delete namespace controller-osm-vca --force --grace-period=0 2>/dev/null || true
     kubectl delete namespace osm --force --grace-period=0 2>/dev/null || true
-    sleep 3
+
+    # Wait for namespace deletion to complete to prevent model collision
+    while kubectl get namespace osm >/dev/null 2>&1; do
+        log_info "Waiting for leftover 'osm' namespace to terminate..."
+        sleep 2
+    done
+    while kubectl get namespace controller-osm-vca >/dev/null 2>&1; do
+        log_info "Waiting for leftover 'controller-osm-vca' namespace to terminate..."
+        sleep 2
+    done
     # --------------------------
 
     # Fix cluster DNS resolution & enable host IP forwarding if needed
@@ -293,7 +302,7 @@ install_osm_installer() {
     log_info "Ensuring K3s local storage class is fully initialized..."
     kubectl rollout status deployment/local-path-provisioner -n kube-system --timeout=60s || true
 
-    # --- Explicit Juju Bootstrap with Jammy Default ---
+    # --- Explicit Juju Bootstrap with Model Defaults ---
     log_info "Registering local K3s cluster with Juju..."
     juju add-k8s k8s-cloud --client || true
 
@@ -311,8 +320,10 @@ install_osm_installer() {
     ) &
     CERT_SYNC_PID=$!
 
-    log_info "Bootstrapping Juju Controller with Ubuntu 22.04 (jammy) default series..."
-    juju bootstrap k8s-cloud osm-vca --config default-series=jammy
+    log_info "Bootstrapping Juju Controller with Ubuntu 22.04 (jammy) model defaults..."
+    juju bootstrap k8s-cloud osm-vca \
+        --config default-series=jammy \
+        --model-default default-series=jammy
 
     kill $CERT_SYNC_PID 2>/dev/null || true
     # --------------------------------------------------------
