@@ -227,19 +227,19 @@ install_osm_installer() {
     sudo ufw allow 17070/tcp >/dev/null 2>&1 || true
     sudo sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 || true
 
-    # 3. Purge lingering Juju controllers, cached clouds, and deadlocked namespaces
+    # Purge lingering Juju controllers, cached clouds, and deadlocked namespaces (Guarded with timeouts)
     log_info "Purging lingering Juju controllers, cached clouds, and deadlocked namespaces..."
     if command -v juju >/dev/null 2>&1; then
-        juju kill-controller -y osm-vca 2>/dev/null || true
-        juju unregister osm-vca 2>/dev/null || true
-        juju remove-cloud k8s-cloud --client 2>/dev/null || true
+        timeout 10s juju kill-controller -y osm-vca 2>/dev/null || true
+        timeout 5s juju unregister osm-vca 2>/dev/null || true
+        timeout 5s juju remove-cloud k8s-cloud --client 2>/dev/null || true
     fi
     
     if kubectl get namespace controller-osm-vca >/dev/null 2>&1; then
         log_info "Clearing controller-osm-vca namespace and finalizers..."
-        kubectl delete namespace controller-osm-vca --wait=false 2>/dev/null || true
+        timeout 10s kubectl delete namespace controller-osm-vca --wait=false 2>/dev/null || true
         sleep 2
-        kubectl get namespace controller-osm-vca -o json 2>/dev/null | jq '.spec.finalizers=[]' | kubectl replace --raw /api/v1/namespaces/controller-osm-vca/finalize -f - 2>/dev/null || true
+        kubectl get namespace controller-osm-vca -o json 2>/dev/null | jq '.spec.finalizers=[]' | timeout 10s kubectl replace --raw /api/v1/namespaces/controller-osm-vca/finalize -f - 2>/dev/null || true
     fi
 
     # 4. Storage readiness verification
