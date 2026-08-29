@@ -206,6 +206,7 @@ install_grpc_tools() {
 install_osm_installer() {
     log_info "Phase 6: Evaluating Open Source MANO (OSM) state..."
 
+    # Check if OSM is operational; prompt only if already present
     local osm_active=false
     if kubectl get pods -n osm 2>/dev/null | grep -E 'nbi|ro|mon' | grep -q 'Running'; then
         osm_active=true
@@ -218,7 +219,7 @@ install_osm_installer() {
             return 0
         fi
     else
-        log_info "OSM is not currently active. Proceeding with automated deployment..."
+        log_info "OSM is not currently active. Proceeding with deployment..."
     fi
 
     log_info "Purging lingering Juju controllers, cached clouds, and deadlocked namespaces..."
@@ -226,7 +227,6 @@ install_osm_installer() {
     if command -v juju >/dev/null 2>&1; then
         juju kill-controller -y osm-vca 2>/dev/null || true
         juju unregister osm-vca 2>/dev/null || true
-        # FIX 1: Added --client to purge local k8s-cloud definition
         juju remove-cloud k8s-cloud --client 2>/dev/null || true
     fi
     
@@ -240,14 +240,13 @@ install_osm_installer() {
     log_info "Ensuring K3s local storage class is fully initialized..."
     kubectl rollout status deployment/local-path-provisioner -n kube-system --timeout=60s || true
 
-    # Background daemon to immediately bind host IP to controller-service when created
+    # Background daemon to assign single primary host IP to controller-service
     (
         while true; do
             if kubectl get svc controller-service -n controller-osm-vca >/dev/null 2>&1; then
-                # Cleanly isolate only the primary single IP address
                 HOST_IP=$(hostname -I | awk '{print $1}')
                 if [ -n "$HOST_IP" ]; then
-                    kubectl patch svc controller-service -n controller-osm-vca -p "{\"spec\": {\"externalIPs\": [\"$HOST_IP\"]}}" >/dev/null 2>&1 || true
+                    kubectl patch svc controller-service -n controller-osm-vca --type='json' -p="[{\"op\": \"replace\", \"path\": \"/spec/externalIPs\", \"value\": [\"$HOST_IP\"]}]" >/dev/null 2>&1 || true
                 fi
                 break
             fi
