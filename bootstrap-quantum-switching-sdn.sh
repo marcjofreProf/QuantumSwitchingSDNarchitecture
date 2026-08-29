@@ -227,50 +227,45 @@ install_osm_installer() {
     kubectl get configmap coredns -n kube-system -o json 2>/dev/null | sed 's/forward . \/etc\/resolv.conf/forward . 8.8.8.8 1.1.1.1/' | kubectl apply -f - >/dev/null 2>&1 || true
     kubectl rollout restart deployment coredns -n kube-system >/dev/null 2>&1 || true
 
-    # --- SOLID PURGE BLOCK START ---
-    log_info "Executing deep cleanup of previous Juju environments and deadlocked K8s storage..."
+    # --- NON-BLOCKING DEEP PURGE START ---
+    log_info "Executing non-blocking deep cleanup of Juju environments and K8s storage..."
 
-    # 1. Kill any frozen Juju processes
     sudo killall -9 juju 2>/dev/null || true
+    rm -rf ~/.local/share/juju ~/.cache/juju 2>/dev/null || true
 
-    # 2. Obliterate local Juju client state
-    rm -rf ~/.local/share/juju 2>/dev/null || true
+    # Stop K3s first to avoid Kubernetes finalizer hangs
+    log_info "Stopping K3s engine to release storage locks..."
+    sudo systemctl stop k3s 2>/dev/null || true
 
-    # 3. Stop running pods FIRST to unmount storage drives
-    kubectl delete statefulset --all -n controller-osm-vca --force --grace-period=0 2>/dev/null || true
-    kubectl delete pod --all -n controller-osm-vca --force --grace-period=0 2>/dev/null || true
-    sleep 3
+    # Wipe host storage while K3s is down
+    sudo rm -rf /var/lib/rancher/k3s/storage/* 2>/dev/null || true
 
-    # 4. SCORCHED EARTH: Delete host storage folders after unmounting
-    sudo rm -rf /var/lib/rancher/k3s/storage/*osm-vca* 2>/dev/null || true
-    sudo rm -rf /var/lib/rancher/k3s/storage/pvc-* 2>/dev/null || true
+    # Restart K3s engine and wait for readiness
+    log_info "Restarting K3s engine..."
+    sudo systemctl start k3s 2>/dev/null || true
+    until kubectl get nodes >/dev/null 2>&1; do sleep 2; done
 
-    # 5. Drop namespace and clear finalizers
-    kubectl delete pvc --all -n controller-osm-vca --force --grace-period=0 2>/dev/null || true
+    # Strip finalizers non-blockingly
+    kubectl get pv -o jsonpath='{.items[*].metadata.name}' 2>/dev/null | xargs -r -n1 kubectl patch pv -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
     kubectl delete namespace controller-osm-vca --wait=false 2>/dev/null || true
-    kubectl get namespace controller-osm-vca -o json 2>/dev/null | jq '.spec.finalizers=[]' | kubectl replace --raw /api/v1/namespaces/controller-osm-vca/finalize -f - 2>/dev/null || true
-
-    # 6. Restart storage provisioner
     kubectl rollout restart deployment local-path-provisioner -n kube-system >/dev/null 2>&1 || true
-    # --- SOLID PURGE BLOCK END ---
+    # --- NON-BLOCKING DEEP PURGE END ---
 
     log_info "Ensuring K3s local storage class is fully initialized..."
     kubectl rollout status deployment/local-path-provisioner -n kube-system --timeout=60s || true
 
-    # Hardened background daemon: aggressively forces a single IP and won't exit until verified
+    # Background daemon: forces single primary host IP on controller-service
     (
         for i in {1..60}; do
             if kubectl get svc controller-service -n controller-osm-vca >/dev/null 2>&1; then
                 EXT_IP_RAW=$(kubectl get svc controller-service -n controller-osm-vca -o jsonpath='{.spec.externalIPs[*]}' 2>/dev/null || true)
                 
-                # If IP string contains a space, comma, or is empty, apply the patch
                 if [[ "$EXT_IP_RAW" == *" "* ]] || [[ "$EXT_IP_RAW" == *","* ]] || [ -z "$EXT_IP_RAW" ]; then
                     HOST_IP=$(ip route get 1.1.1.1 2>/dev/null | grep -oP 'src \K\S+' | head -n1)
                     if [ -n "$HOST_IP" ]; then
                         kubectl patch svc controller-service -n controller-osm-vca --type='json' -p="[{\"op\": \"replace\", \"path\": \"/spec/externalIPs\", \"value\": [\"$HOST_IP\"]}]" >/dev/null 2>&1 || true
                     fi
                 else
-                    # Exactly one clean IP exists. Safe to exit loop.
                     break
                 fi
             fi
