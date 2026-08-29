@@ -1,0 +1,7 @@
+name: controller-quantum-switching
+version: 1.0.0
+description: "Model plugin for Quantum SDN cross-connect operations"
+modules:
+  - name: controller-quantum-switching
+    revision: 2026-08-29
+    organization: Quantum SDN Project
