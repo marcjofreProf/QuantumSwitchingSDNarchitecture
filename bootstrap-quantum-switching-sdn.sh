@@ -214,118 +214,27 @@ install_osm_installer() {
     fi
 }
 
-# --- Phase 7: Setup Python Environment, Proto & RESTCONF Gateway Files ---
+# --- Phase 7: Setup Python Environment & Proto Compilation ---
 setup_sdn_python_client() {
-    log_info "Phase 7: Provisioning Python environment, proto stubs, and RESTCONF gateway..."[cite: 5]
+    log_info "Phase 7: Provisioning Python environment and compiling Protobuf stubs..."
     local base_dir="."  
 
-    sudo apt-get install -y python3-venv python3-pip python3-flask[cite: 5]
-    sudo python3 -m venv /opt/sdn-venv[cite: 5]
-    sudo /opt/sdn-venv/bin/pip install --upgrade pip grpcio grpcio-tools grpcio-reflection ncclient xmltodict flask requests[cite: 5]
+    sudo apt-get install -y python3-venv python3-pip python3-flask
+    sudo python3 -m venv /opt/sdn-venv
+    sudo /opt/sdn-venv/bin/pip install --upgrade pip grpcio grpcio-tools grpcio-reflection ncclient xmltodict flask requests
 
-    # Generate gNOI Proto file
-    mkdir -p "$base_dir/proto"[cite: 5]
-    cat << 'EOF' > "$base_dir/proto/quantum_gnoi_switching.proto"
-syntax = "proto3";
-package quantum.gnoi;
-service SwitchingService {
-  rpc CreateCrossConnect (CrossConnectRequest) returns (CrossConnectResponse);
-  rpc GetCrossConnect (GetCrossConnectRequest) returns (CrossConnectResponse);
-  rpc DeleteCrossConnect (DeleteCrossConnectRequest) returns (CrossConnectResponse);
-}
-message CrossConnectRequest {
-  string service_id = 1; string target_node_ip = 2; int32 ingress_port = 3;
-  int32 egress_port = 4; string admin_state = 5; string sb_target = 6;
-}
-message GetCrossConnectRequest { string service_id = 1; string sb_target = 2; }
-message DeleteCrossConnectRequest { string service_id = 1; string sb_target = 2; }
-message CrossConnectResponse {
-  string status = 1; string message = 2; string service_id = 3;
-  string target_node_ip = 4; int32 ingress_port = 5; int32 egress_port = 6; string admin_state = 7;
-}
-EOF
-
+    # Compile gNOI Protobuf stubs from repository file
+    log_info "Compiling quantum_gnoi_switching.proto..."
     /opt/sdn-venv/bin/python -m grpc_tools.protoc -I"$base_dir/proto" \
         --python_out="$base_dir/proto" --grpc_python_out="$base_dir/proto" \
-        "$base_dir/proto/quantum_gnoi_switching.proto"[cite: 5]
-    touch "$base_dir/proto/__init__.py"[cite: 5]
+        "$base_dir/proto/quantum_gnoi_switching.proto"
+    touch "$base_dir/proto/__init__.py"
 
-    # Generate RESTCONF Gateway Python App & Dockerfile
-    local gw_dir="$base_dir/sdn-controller/northbound-interfaces/restconf-gateway"
-    mkdir -p "$gw_dir"
-    
-    cat << 'EOF' > "$gw_dir/gateway.py"
-import os, subprocess, json
-from flask import Flask, request, jsonify
+    # Ensure execution permissions on test scripts
+    chmod +x "$base_dir/tests/e2e-path-provisioning/test-nb-gnmi.sh" 2>/dev/null || true
+    chmod +x "$base_dir/hardware-agents/switch-drivers/gnoi-switching-client.py" 2>/dev/null || true
 
-app = Flask(__name__)
-GNMI_TARGET = os.getenv("GNMI_TARGET", "onos-config.micro-onos.svc.cluster.local:5150")
-
-@app.route('/restconf/data/controller-quantum-switching:quantum-services/cross-connect-service', methods=['POST'])
-def create_cross_connect():
-    payload = request.json
-    try:
-        service = payload.get("cross-connect-service", [{}])[0]
-        service_id = service.get("service-id")
-        gnmi_path = f"/quantum-services/cross-connect-service[service-id={service_id}]"
-        cmd = ["gnmic", "-a", GNMI_TARGET, "--insecure", "set", "--update-path", gnmi_path, "--update-value", json.dumps(service)]
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            return jsonify({"error": "gNMI Set failed", "details": result.stderr}), 500
-        return jsonify({"status": "Success", "service-id": service_id}), 201
-    except Exception as e:
-        return jsonify({"error": str(e)}), 400
-
-@app.route('/restconf/data/controller-quantum-switching:quantum-services/cross-connect-service/<service_id>', methods=['GET'])
-def get_cross_connect(service_id):
-    gnmi_path = f"/quantum-services/cross-connect-service[service-id={service_id}]"
-    cmd = ["gnmic", "-a", GNMI_TARGET, "--insecure", "get", "--path", gnmi_path]
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        return jsonify({"error": "gNMI Get failed", "details": result.stderr}), 500
-    return jsonify({"cross-connect-service": json.loads(result.stdout)}), 200
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8181)
-EOF
-
-    cat << 'EOF' > "$gw_dir/Dockerfile"
-FROM python:3.9-slim
-RUN apt-get update && apt-get install -y wget && \
-    bash -c "$(wget -qO- https://gnmic.openconfig.net/install.sh)" && \
-    apt-get clean
-WORKDIR /app
-COPY gateway.py .
-RUN pip install Flask
-EXPOSE 8181
-CMD ["python", "gateway.py"]
-EOF
-
-    # Generate Test Scripts
-    mkdir -p "$base_dir/scripts"
-    cat << 'EOF' > "$base_dir/scripts/test-nb-gnmi.sh"
-#!/bin/bash
-TARGET="localhost:5150"
-SERVICE_ID="xc-99"
-GNMI_PATH="/quantum-services/cross-connect-service[service-id=${SERVICE_ID}]"
-VALUE='{"service-id": "xc-99", "target-node-ip": "10.0.0.5", "ingress-port": 1, "egress-port": 2, "admin-state": "ENABLED"}'
-gnmic -a $TARGET --insecure set --update-path "$GNMI_PATH" --update-value "$VALUE"
-gnmic -a $TARGET --insecure get --path "$GNMI_PATH"
-EOF
-    chmod +x "$base_dir/scripts/test-nb-gnmi.sh"
-
-    cat << 'EOF' > "$base_dir/scripts/test-nb-restconf.py"
-import requests, json
-GATEWAY_URL = "http://localhost:8181/restconf/data/controller-quantum-switching:quantum-services/cross-connect-service"
-payload = {"cross-connect-service": [{"service-id": "xc-100", "target-node-ip": "192.168.100.5", "ingress-port": 10, "egress-port": 20, "admin-state": "ENABLED"}]}
-headers = {"Content-Type": "application/yang-data+json", "Accept": "application/yang-data+json"}
-response = requests.post(GATEWAY_URL, json=payload, headers=headers)
-print(f"POST Status: {response.status_code}\nBody: {response.text}")
-get_resp = requests.get(f"{GATEWAY_URL}/xc-100", headers={"Accept": "application/yang-data+json"})
-print(f"GET Status: {get_resp.status_code}\nBody: {json.dumps(get_resp.json(), indent=2)}")
-EOF
-
-    log_success "Python environment, gateway scripts, and client test scripts created."
+    log_success "Python environment and Protobuf stubs initialized."
 }
 
 # --- Phase 7.5: µONOS Model Plugin Compilation ---
