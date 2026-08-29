@@ -12,6 +12,9 @@ YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
+# Ensure KUBECONFIG is set globally for all kubectl operations
+export KUBECONFIG=${KUBECONFIG:-$HOME/.kube/config}
+
 # --- Helper Functions ---
 log_info() { echo -e "${CYAN}[INFO] $1${NC}"; }
 log_success() { echo -e "${GREEN}[SUCCESS] $1${NC}"; }
@@ -133,17 +136,16 @@ install_kubectl_and_helm() {
 
 ensure_kubernetes_cluster() {
     log_info "Verifying active Kubernetes cluster for µONOS deployment..."
-    if ! sudo kubectl cluster-info >/dev/null 2>&1; then
-        log_warn "No active Kubernetes cluster found. Deploying standalone K3s..."
+    
+    if ! kubectl cluster-info >/dev/null 2>&1; then
+        log_warn "No active Kubernetes cluster found for current user. Deploying standalone K3s..."
         
         if [ -f /usr/local/bin/k3s-uninstall.sh ]; then
             sudo /usr/local/bin/k3s-uninstall.sh >/dev/null 2>&1 || true
         fi
         
-        # Install standard K3s (containerd) without Traefik to avoid port conflicts
         curl -sfL https://get.k3s.io | sh -s - server --disable traefik --disable servicelb
         
-        # Wait a moment for the configuration file to be generated
         sleep 5
         
         mkdir -p ~/.kube
@@ -179,8 +181,9 @@ EOF
 
 # --- Phase 4: SDN Controller (µONOS) & Open5GS Repos ---
 setup_helm_repos() {
-    log_info "Phase 4: Setting up Helm repositories for µONOS (onosproject) and Open5GS (towards5gs)..."
+    log_info "Phase 4: Setting up Helm repositories for µONOS, Atomix, and Open5GS..."
     helm repo add onosproject https://charts.onosproject.org || log_warn "Failed to add onosproject repository."
+    helm repo add atomix https://charts.atomix.io || log_warn "Failed to add atomix repository."
     helm repo add towards5gs https://raw.githubusercontent.com/Orange-OpenSource/towards5gs-helm/main/repo/ || \
         helm repo add towards5gs https://cdn.jsdelivr.net/gh/Orange-OpenSource/towards5gs-helm@main/repo/
     helm repo update
@@ -267,7 +270,7 @@ compile_uonos_model_plugins() {
 
     log_info "Executing onosproject/model-compiler..."
     if command -v docker >/dev/null 2>&1; then
-        docker run --rm -v "$(pwd)/${plugin_dir}:/config-model" onosproject/model-compiler:latest || log_warn "Model compiler encountered an issue."
+        docker run --rm -v "$(pwd)/${plugin_dir}:/config-model" onosproject/model-compiler:latest -name controller-quantum-switching -version 1.0.0 || log_warn "Model compiler encountered an issue."
         
         log_info "Building the resulting Model Plugin Docker Image..."
         if [ -f "$plugin_dir/Makefile" ]; then
@@ -284,21 +287,23 @@ compile_uonos_model_plugins() {
 # --- Phase 8: Deploy Cloud-Native µONOS & RESTCONF Gateway ---
 deploy_cloud_native_uonos() {
     log_info "Phase 8: Deploying µONOS microservices and RESTCONF Gateway..."
-    export KUBECONFIG=${KUBECONFIG:-~/.kube/config}
-
+    
     kubectl create namespace micro-onos --dry-run=client -o yaml | kubectl apply -f -
 
-    log_info "Deploying Atomix Runtime, onos-topo, and onos-config..."
-    helm upgrade --install atomix-runtime onosproject/atomix-runtime -n micro-onos 
+    log_info "Deploying Atomix Controllers, onos-topo, and onos-config..."
+    
+    helm upgrade --install atomix-controller atomix/atomix-controller -n micro-onos || log_warn "Failed to deploy atomix-controller"
+    helm upgrade --install atomix-raft-storage atomix/atomix-raft-storage -n micro-onos || log_warn "Failed to deploy atomix-raft-storage"
+    
     helm upgrade --install onos-topo onosproject/onos-topo -n micro-onos 
     helm upgrade --install onos-config onosproject/onos-config -n micro-onos 
 
     log_info "Building and deploying RESTCONF Gateway Container..."
     if command -v docker >/dev/null 2>&1; then
-        (cd "./sdn-controller/northbound-interfaces/restconf-gateway" && docker build -t quantum-restconf-gateway:1.0.0 .)
+        (cd "./sdn-controller/northbound-interfaces/restconf-gateway" && docker build -t quantum-restconf-gateway:1.0.0 .) || log_warn "Skipped building Gateway image."
         
         if command -v k3s >/dev/null 2>&1; then
-            docker save quantum-restconf-gateway:1.0.0 | sudo k3s ctr images import -
+            docker save quantum-restconf-gateway:1.0.0 2>/dev/null | sudo k3s ctr images import - || true
         fi
 
         kubectl apply -n micro-onos -f - <<EOF
