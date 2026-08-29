@@ -314,11 +314,11 @@ install_osm_installer() {
     
     log_info "Running OSM installer targeting local cluster..."
     
-    # Auto-provision CA cert to prevent Juju MongoDB race conditions
+    # Auto-provision CA cert only if missing
     (
         while true; do
             if kubectl get pod controller-0 -n controller-osm-vca 2>/dev/null | grep -q "1/2"; then
-                kubectl exec -n controller-osm-vca controller-0 -c api-server -- cp /var/lib/juju/template-ca.crt /var/lib/juju/ca.crt 2>/dev/null || true
+                kubectl exec -n controller-osm-vca controller-0 -c api-server -- sh -c '[ ! -f /var/lib/juju/ca.crt ] && cp /var/lib/juju/template-ca.crt /var/lib/juju/ca.crt' 2>/dev/null || true
             fi
             sleep 2
         done
