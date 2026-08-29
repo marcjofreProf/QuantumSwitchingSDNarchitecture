@@ -308,25 +308,6 @@ install_osm_installer() {
     log_info "Ensuring K3s local storage class is fully initialized..."
     kubectl rollout status deployment/local-path-provisioner -n kube-system --timeout=60s || true
 
-    # Background daemon: forces single primary host IP on controller-service
-    (
-        for i in {1..60}; do
-            if kubectl get svc controller-service -n controller-osm-vca >/dev/null 2>&1; then
-                EXT_IP_RAW=$(kubectl get svc controller-service -n controller-osm-vca -o jsonpath='{.spec.externalIPs[*]}' 2>/dev/null || true)
-                
-                if [[ "$EXT_IP_RAW" == *" "* ]] || [[ "$EXT_IP_RAW" == *","* ]] || [ -z "$EXT_IP_RAW" ]; then
-                    HOST_IP=$(ip route get 1.1.1.1 2>/dev/null | grep -oP 'src \K\S+' | head -n1)
-                    if [ -n "$HOST_IP" ]; then
-                        kubectl patch svc controller-service -n controller-osm-vca --type='json' -p="[{\"op\": \"replace\", \"path\": \"/spec/externalIPs\", \"value\": [\"$HOST_IP\"]}]" >/dev/null 2>&1 || true
-                    fi
-                else
-                    break
-                fi
-            fi
-            sleep 2
-        done
-    ) &
-
     log_info "Downloading OSM installer..."
     wget https://osm-download.etsi.org/ftp/osm-14.0-fourteen/install_osm.sh -O install_osm.sh
     chmod +x install_osm.sh
