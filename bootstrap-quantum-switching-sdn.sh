@@ -40,15 +40,15 @@ ask_user() {
 
 # --- Phase 0: System Locks & Background Services ---
 stop_unattended_upgrades() {
-    log_info "Phase 0: Disabling unattended-upgrades to prevent APT lock conflicts..."[cite: 5]
+    log_info "Phase 0: Disabling unattended-upgrades to prevent APT lock conflicts..."
     sudo systemctl stop unattended-upgrades 2>/dev/null || true
     sudo systemctl disable unattended-upgrades 2>/dev/null || true
-    log_success "unattended-upgrades stopped and disabled."[cite: 5]
+    log_success "unattended-upgrades stopped and disabled."
 }
 
 # --- Phase 1: Repository Scaffolding ---
 create_repo_structure() {
-    log_info "Phase 1: Creating Quantum-SDN repository structure..."[cite: 5]
+    log_info "Phase 1: Ensuring repository directory structure..."
     local base_dir="."
 
     mkdir -p "$base_dir"/.github/workflows \
@@ -69,20 +69,15 @@ create_repo_structure() {
              "$base_dir"/hardware-agents/switch-drivers \
              "$base_dir"/tests/latency-benchmarks \
              "$base_dir"/tests/e2e-path-provisioning \
-             "$base_dir"/scripts \
-             "$base_dir"/proto[cite: 5]
+             "$base_dir"/proto
 
-    touch "$base_dir/README.md"
-    touch "$base_dir/LICENSE"
-    touch "$base_dir/Makefile"
-
-    log_success "Repository structure created/updated successfully."[cite: 5]
+    log_success "Repository structure verified."
 }
 
 # --- Phase 2: System Dependencies ---
 install_sys_deps() {
-    log_info "Phase 2: Checking basic system dependencies..."[cite: 5]
-    local deps="curl git wget jq build-essential python3-pip python3-venv python3-flask gpg psmisc"[cite: 5]
+    log_info "Phase 2: Checking basic system dependencies..."
+    local deps="curl git wget jq build-essential python3-pip python3-venv python3-flask gpg psmisc"
     local to_install=""
 
     for pkg in $deps; do
@@ -95,34 +90,34 @@ install_sys_deps() {
         log_info "Installing missing packages:$to_install"
         sudo DEBIAN_FRONTEND=noninteractive apt-get update -y
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y $to_install
-        log_success "System dependencies installed."[cite: 5]
+        log_success "System dependencies installed."
     else
-        log_success "All basic system dependencies are already installed."[cite: 5]
+        log_success "All basic system dependencies are already installed."
     fi
 }
 
 # --- Phase 3: Docker, Kubernetes Tools & Local K8s Cluster ---
 install_docker() {
-    log_info "Checking Docker..."[cite: 5]
+    log_info "Checking Docker..."
     if command -v docker >/dev/null 2>&1; then
-        log_success "Docker is already installed ($(docker --version))."[cite: 5]
+        log_success "Docker is already installed ($(docker --version))."
     else
         log_info "Installing Docker..."
         curl -fsSL https://get.docker.com -o get-docker.sh
         sudo sh get-docker.sh
         sudo usermod -aG docker "$USER"
         rm get-docker.sh
-        log_success "Docker installed."[cite: 5]
+        log_success "Docker installed."
     fi
 }
 
 install_kubectl_and_helm() {
-    log_info "Configuring Kubernetes APT keyring non-interactively..."[cite: 5]
+    log_info "Configuring Kubernetes APT keyring non-interactively..."
     sudo mkdir -p -m 755 /etc/apt/keyrings
     curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.28/deb/Release.key | \
-        sudo gpg --dearmor --yes -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg[cite: 5]
+        sudo gpg --dearmor --yes -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
     echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.28/deb/ /" | \
-        sudo tee /etc/apt/sources.list.d/kubernetes.list >/dev/null[cite: 5]
+        sudo tee /etc/apt/sources.list.d/kubernetes.list >/dev/null
 
     if ! command -v kubectl >/dev/null 2>&1; then
         log_info "Installing kubectl..."
@@ -131,7 +126,7 @@ install_kubectl_and_helm() {
 
     if ! command -v helm >/dev/null 2>&1; then
         log_info "Installing Helm..."
-        curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 && chmod 700 get_helm.sh && ./get_helm.sh[cite: 5]
+        curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 && chmod 700 get_helm.sh && ./get_helm.sh
         rm -f get_helm.sh
     fi
 }
@@ -152,8 +147,8 @@ ensure_kubernetes_cluster() {
 
 # --- Phase 3.5: Persistent Network & iptables Configuration ---
 setup_persistent_sdn_networking() {
-    log_info "Phase 3.5: Applying persistent iptables and kernel network configurations..."[cite: 5]
-    echo "br_netfilter" | sudo tee /etc/modules-load.d/sdn-uonos.conf >/dev/null[cite: 5]
+    log_info "Phase 3.5: Applying persistent iptables and kernel network configurations..."
+    echo "br_netfilter" | sudo tee /etc/modules-load.d/sdn-uonos.conf >/dev/null
     sudo modprobe br_netfilter
 
     sudo sed -i '/net.core.bpf_jit_limit/d' /etc/sysctl.d/*.conf /etc/sysctl.conf 2>/dev/null || true
@@ -162,33 +157,33 @@ setup_persistent_sdn_networking() {
 net.ipv4.ip_forward = 1
 net.bridge.bridge-nf-call-iptables = 1
 EOF
-    sudo sysctl -p /etc/sysctl.d/99-sdn-uonos.conf >/dev/null[cite: 5]
+    sudo sysctl -p /etc/sysctl.d/99-sdn-uonos.conf >/dev/null
     sudo iptables -P FORWARD ACCEPT
 
-    echo iptables-persistent iptables-persistent/enable-ipv4 boolean true | sudo debconf-set-selections[cite: 5]
-    echo iptables-persistent iptables-persistent/enable-ipv6 boolean true | sudo debconf-set-selections[cite: 5]
+    echo iptables-persistent iptables-persistent/enable-ipv4 boolean true | sudo debconf-set-selections
+    echo iptables-persistent iptables-persistent/enable-ipv6 boolean true | sudo debconf-set-selections
     sudo DEBIAN_FRONTEND=noninteractive apt-get install -y iptables-persistent netfilter-persistent
 
-    sudo netfilter-persistent save[cite: 5]
+    sudo netfilter-persistent save
 }
 
 # --- Phase 4: SDN Controller (µONOS) & Open5GS Repos ---
 setup_helm_repos() {
-    log_info "Phase 4: Setting up Helm repositories for µONOS (onosproject) and Open5GS (towards5gs)..."[cite: 5]
-    helm repo add onosproject https://charts.onosproject.org || log_warn "Failed to add onosproject repository."[cite: 5]
+    log_info "Phase 4: Setting up Helm repositories for µONOS (onosproject) and Open5GS (towards5gs)..."
+    helm repo add onosproject https://charts.onosproject.org || log_warn "Failed to add onosproject repository."
     helm repo add towards5gs https://raw.githubusercontent.com/Orange-OpenSource/towards5gs-helm/main/repo/ || \
-        helm repo add towards5gs https://cdn.jsdelivr.net/gh/Orange-OpenSource/towards5gs-helm@main/repo/[cite: 5]
-    helm repo update[cite: 5]
+        helm repo add towards5gs https://cdn.jsdelivr.net/gh/Orange-OpenSource/towards5gs-helm@main/repo/
+    helm repo update
 }
 
 # --- Phase 5: gRPC, gNOI & gNMI Tooling ---
 install_grpc_tools() {
-    log_info "Phase 5: Checking gRPC/protobuf tools and gnmic for gNMI..."[cite: 5]
+    log_info "Phase 5: Checking gRPC/protobuf tools and gnmic for gNMI..."
     if ! command -v protoc >/dev/null 2>&1; then
-        sudo apt-get install -y protobuf-compiler[cite: 5]
+        sudo apt-get install -y protobuf-compiler
     fi
     if ! command -v grpcurl >/dev/null 2>&1; then
-        wget https://github.com/fullstorydev/grpcurl/releases/download/v1.8.7/grpcurl_1.8.7_linux_x86_64.tar.gz[cite: 5]
+        wget https://github.com/fullstorydev/grpcurl/releases/download/v1.8.7/grpcurl_1.8.7_linux_x86_64.tar.gz
         tar -xvf grpcurl_1.8.7_linux_x86_64.tar.gz
         sudo mv grpcurl /usr/local/bin/
         rm -f grpcurl_1.8.7_linux_x86_64.tar.gz LICENSE
@@ -203,14 +198,14 @@ install_grpc_tools() {
 
 # --- Phase 6: Orchestration (OSM) ---
 install_osm_installer() {
-    log_info "Phase 6: Open Source MANO (OSM)"[cite: 5]
-    if ask_user "Do you want to download and run the OSM standalone installer now?" "N"; then[cite: 5]
+    log_info "Phase 6: Open Source MANO (OSM)"
+    if ask_user "Do you want to download and run the OSM standalone installer now?" "N"; then
         log_info "Downloading OSM installer..."
-        wget https://osm-download.etsi.org/ftp/osm-14.0-fourteen/install_osm.sh -O install_osm.sh[cite: 5]
+        wget https://osm-download.etsi.org/ftp/osm-14.0-fourteen/install_osm.sh -O install_osm.sh
         chmod +x install_osm.sh
-        ./install_osm.sh || log_warn "OSM installer completed with warnings."[cite: 5]
+        ./install_osm.sh || log_warn "OSM installer completed with warnings."
     else
-        log_info "Skipping OSM installation."[cite: 5]
+        log_info "Skipping OSM installation."
     fi
 }
 
@@ -223,16 +218,22 @@ setup_sdn_python_client() {
     sudo python3 -m venv /opt/sdn-venv
     sudo /opt/sdn-venv/bin/pip install --upgrade pip grpcio grpcio-tools grpcio-reflection ncclient xmltodict flask requests
 
-    # Compile gNOI Protobuf stubs from repository file
-    log_info "Compiling quantum_gnoi_switching.proto..."
-    /opt/sdn-venv/bin/python -m grpc_tools.protoc -I"$base_dir/proto" \
-        --python_out="$base_dir/proto" --grpc_python_out="$base_dir/proto" \
-        "$base_dir/proto/quantum_gnoi_switching.proto"
-    touch "$base_dir/proto/__init__.py"
+    # Compile gNOI Protobuf stubs from tracked repository file
+    if [ -f "$base_dir/proto/quantum_gnoi_switching.proto" ]; then
+        log_info "Compiling quantum_gnoi_switching.proto..."
+        /opt/sdn-venv/bin/python -m grpc_tools.protoc -I"$base_dir/proto" \
+            --python_out="$base_dir/proto" --grpc_python_out="$base_dir/proto" \
+            "$base_dir/proto/quantum_gnoi_switching.proto"
+        touch "$base_dir/proto/__init__.py"
+    else
+        log_warn "quantum_gnoi_switching.proto not found in ./proto/ directory!"
+    fi
 
-    # Ensure execution permissions on test scripts
-    chmod +x "$base_dir/tests/e2e-path-provisioning/test-nb-gnmi.sh" 2>/dev/null || true
-    chmod +x "$base_dir/hardware-agents/switch-drivers/gnoi-switching-client.py" 2>/dev/null || true
+    # Grant execution permissions across all test and driver scripts
+    chmod +x "$base_dir"/tests/e2e-path-provisioning/* 2>/dev/null || true
+    chmod +x "$base_dir"/hardware-agents/switch-drivers/* 2>/dev/null || true
+    chmod +x "$base_dir"/hardware-agents/gnoi-targets/* 2>/dev/null || true
+    chmod +x "$base_dir"/hardware-agents/netconf-servers/* 2>/dev/null || true
 
     log_success "Python environment and Protobuf stubs initialized."
 }
@@ -245,58 +246,19 @@ compile_uonos_model_plugins() {
     local plugin_dir="./sdn-controller/northbound-interfaces/model-plugin"
     local plugin_yang_dir="${plugin_dir}/yang"
     
-    log_info "Generating authoritative YANG data model..."
-    cat << 'EOF' > "$yang_target"
-module controller-quantum-switching {
-  yang-version 1.1;
-  namespace "urn:quantum:sdn:controller:switching";
-  prefix cqs;
+    if [ -f "$yang_target" ]; then
+        log_info "Copying tracked repository YANG model to plugin build workspace..."
+        cp "$yang_target" "$plugin_yang_dir/"
+    else
+        log_warn "YANG model $yang_target not found!"
+    fi
 
-  organization "Quantum SDN Project";
-  description "YANG model for µONOS quantum cross-connect switching services.";
-
-  revision 2026-08-29 {
-    description "Initial deployment for cloud-native µONOS integration.";
-  }
-
-  container quantum-services {
-    list cross-connect-service {
-      key "service-id";
-      leaf service-id { type string; }
-      leaf target-node-ip { type string; }
-      leaf ingress-port { type uint32; }
-      leaf egress-port { type uint32; }
-      leaf admin-state {
-        type enumeration {
-          enum ENABLED;
-          enum DISABLED;
-        }
-        default ENABLED;
-      }
-    }
-  }
-}
-EOF
-
-    # Place the YANG model inside the compiler's expected target directory
-    cp "$yang_target" "$plugin_yang_dir/"
-
-    log_info "Generating Model Plugin metadata YAML..."
-    cat << 'EOF' > "$plugin_dir/controller-quantum-switching-model.yaml"
-name: controller-quantum-switching
-version: 1.0.0
-description: "Model plugin for Quantum SDN cross-connect operations"
-modules:
-  - name: controller-quantum-switching
-    revision: 2026-08-29
-    organization: Quantum SDN Project
-EOF
-    # The ONOS model compiler explicitly looks for 'metadata.yaml'
-    cp "$plugin_dir/controller-quantum-switching-model.yaml" "$plugin_dir/metadata.yaml"
+    if [ -f "$plugin_dir/controller-quantum-switching-model.yaml" ]; then
+        cp "$plugin_dir/controller-quantum-switching-model.yaml" "$plugin_dir/metadata.yaml"
+    fi
 
     log_info "Executing onosproject/model-compiler..."
     if command -v docker >/dev/null 2>&1; then
-        # Run the compiler sidecar volume mount
         docker run --rm -v "$(pwd)/${plugin_dir}:/config-model" onosproject/model-compiler:latest || log_warn "Model compiler encountered an issue."
         
         log_info "Building the resulting Model Plugin Docker Image..."
@@ -327,7 +289,6 @@ deploy_cloud_native_uonos() {
     if command -v docker >/dev/null 2>&1; then
         (cd "./sdn-controller/northbound-interfaces/restconf-gateway" && docker build -t quantum-restconf-gateway:1.0.0 .)
         
-        # If using k3s, import the local image into k3s cache
         if command -v k3s >/dev/null 2>&1; then
             docker save quantum-restconf-gateway:1.0.0 | sudo k3s ctr images import -
         fi
@@ -372,9 +333,9 @@ EOF
 }
 
 # --- Main Execution ---
-echo -e "${CYAN}===========================================================${NC}"[cite: 5]
-echo -e "${CYAN}   Quantum-SDN Switching Architecture Environment Setup    ${NC}"[cite: 5]
-echo -e "${CYAN}===========================================================${NC}"[cite: 5]
+echo -e "${CYAN}===========================================================${NC}"
+echo -e "${CYAN}   Quantum-SDN Switching Architecture Environment Setup    ${NC}"
+echo -e "${CYAN}===========================================================${NC}"
 
 stop_unattended_upgrades
 create_repo_structure
@@ -390,8 +351,8 @@ setup_sdn_python_client
 compile_uonos_model_plugins
 deploy_cloud_native_uonos
 
-echo -e "${GREEN}====================================================${NC}"[cite: 5]
-echo -e "${GREEN} Setup Complete!${NC}"[cite: 5]
+echo -e "${GREEN}====================================================${NC}"
+echo -e "${GREEN} Setup Complete!${NC}"
 echo -e "To view your µONOS Kubernetes pods, run:"
 echo -e "  kubectl get pods -n micro-onos"
-echo -e "${GREEN}====================================================${NC}"[cite: 5]
+echo -e "${GREEN}====================================================${NC}"
