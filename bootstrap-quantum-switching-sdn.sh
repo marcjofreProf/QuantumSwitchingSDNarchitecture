@@ -141,7 +141,8 @@ ensure_kubernetes_cluster() {
             sudo /usr/local/bin/k3s-uninstall.sh >/dev/null 2>&1 || true
         fi
         
-        curl -sfL https://get.k3s.io | sh -s - server --disable traefik --disable servicelb
+        # UPDATED: Removed --disable servicelb to allow External IPs for LoadBalancers
+        curl -sfL https://get.k3s.io | sh -s - server --disable traefik
         sleep 5
         
         mkdir -p ~/.kube
