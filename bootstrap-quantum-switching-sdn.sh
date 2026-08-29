@@ -246,13 +246,17 @@ install_osm_installer() {
     log_info "Ensuring K3s local storage class is fully initialized..."
     kubectl rollout status deployment/local-path-provisioner -n kube-system --timeout=60s || true
 
-    # 5. Background daemon to cleanly assign single primary host IP to controller-service
+    # Background daemon to safely ensure a single clean host IP
     (
-        while true; do
+        for i in {1..30}; do
             if kubectl get svc controller-service -n controller-osm-vca >/dev/null 2>&1; then
-                HOST_IP=$(ip route get 1.1.1.1 2>/dev/null | grep -oP 'src \K\S+')
-                if [ -n "$HOST_IP" ]; then
-                    kubectl patch svc controller-service -n controller-osm-vca --type='json' -p="[{\"op\": \"replace\", \"path\": \"/spec/externalIPs\", \"value\": [\"$HOST_IP\"]}]" >/dev/null 2>&1 || true
+                EXT_IP=$(kubectl get svc controller-service -n controller-osm-vca -o jsonpath='{.spec.externalIPs[*]}' 2>/dev/null || true)
+                # Only patch if IP is missing or contains duplicate commas
+                if [ -z "$EXT_IP" ] || [[ "$EXT_IP" == *","* ]]; then
+                    HOST_IP=$(ip route get 1.1.1.1 2>/dev/null | grep -oP 'src \K\S+')
+                    if [ -n "$HOST_IP" ]; then
+                        kubectl patch svc controller-service -n controller-osm-vca --type='json' -p="[{\"op\": \"replace\", \"path\": \"/spec/externalIPs\", \"value\": [\"$HOST_IP\"]}]" >/dev/null 2>&1 || true
+                    fi
                 fi
                 break
             fi
