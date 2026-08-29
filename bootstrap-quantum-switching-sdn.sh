@@ -292,38 +292,40 @@ install_osm_installer() {
     log_info "Ensuring K3s local storage class is fully initialized..."
     kubectl rollout status deployment/local-path-provisioner -n kube-system --timeout=60s || true
 
-    log_info "Downloading OSM installer..."
-    wget https://osm-download.etsi.org/ftp/osm-14.0-fourteen/install_osm.sh -O install_osm.sh
-    chmod +x install_osm.sh
-    
-    log_info "Running OSM installer targeting local cluster..."
-    
-    # Surgical Auto-Remediation for Juju API Server Race Condition
+    # --- Explicit Juju Bootstrap (Mirroring Manual Steps) ---
+    log_info "Registering local K3s cluster with Juju..."
+    juju add-k8s k8s-cloud --client || true
+
+    log_info "Launching background surgical fix for API Server..."
     (
-        # 1. Wait for the controller pod to be created
+        # Wait for the controller pod to be created
         while ! kubectl get pod controller-0 -n controller-osm-vca 2>/dev/null | grep -qE "1/2|2/2"; do
             sleep 2
         done
 
-        # 2. Wait for Juju to render the template certificates
+        # Wait for Juju to render the template certificates
         while ! kubectl exec -n controller-osm-vca controller-0 -c api-server -- stat /var/lib/juju/template-ca.crt >/dev/null 2>&1; do
             sleep 2
         done
 
-        # 3. Copy the template certificates to active path
-        kubectl exec -n controller-osm-vca controller-0 -c api-server -- cp /var/lib/juju/template-ca.crt /var/lib/juju/ca.crt 2>/dev/null || true
-        kubectl exec -n controller-osm-vca controller-0 -c api-server -- cp /var/lib/juju/template-server.pem /var/lib/juju/server.pem 2>/dev/null || true
-
-        # 4. Restart ONLY the api-server container (DO NOT delete the pod)
-        kubectl exec -n controller-osm-vca controller-0 -c api-server -- kill 1 2>/dev/null || true
+        # Execute the exact one-liner used in the terminal to copy certs and restart PID 1
+        kubectl exec -n controller-osm-vca controller-0 -c api-server -- sh -c 'cp /var/lib/juju/template-ca.crt /var/lib/juju/ca.crt && cp /var/lib/juju/template-server.pem /var/lib/juju/server.pem && kill 1' 2>/dev/null || true
     ) &
     CERT_SYNC_PID=$!
 
-    # Execute installer
-    ./install_osm.sh -y --charmed --k8s ~/.kube/config || log_warn "OSM installer completed with warnings."
+    log_info "Bootstrapping Juju Controller..."
+    juju bootstrap k8s-cloud osm-vca
 
-    # Clean up background process
+    # Clean up background monitor
     kill $CERT_SYNC_PID 2>/dev/null || true
+    # --------------------------------------------------------
+
+    log_info "Downloading OSM installer..."
+    wget https://osm-download.etsi.org/ftp/osm-14.0-fourteen/install_osm.sh -O install_osm.sh
+    chmod +x install_osm.sh
+    
+    log_info "Running OSM installer to deploy MANO components over the established controller..."
+    ./install_osm.sh -y --charmed --k8s ~/.kube/config || log_warn "OSM installer completed with warnings."
 }
 
 setup_sdn_python_client() {
