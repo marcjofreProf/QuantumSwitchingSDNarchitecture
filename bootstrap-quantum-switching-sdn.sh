@@ -221,17 +221,17 @@ install_osm_installer() {
         log_info "OSM is not currently active. Proceeding with automated deployment..."
     fi
 
-    log_info "Checking for lingering Juju VCA controllers, clouds, and deadlocked namespaces..."
+    log_info "Purging lingering Juju controllers, cached clouds, and deadlocked namespaces..."
     
     if command -v juju >/dev/null 2>&1; then
-        log_info "Force-killing existing osm-vca Juju controller and clearing local cloud definition..."
         juju kill-controller -y osm-vca 2>/dev/null || true
         juju unregister osm-vca 2>/dev/null || true
-        juju remove-cloud -y k8s-cloud 2>/dev/null || true
+        # FIX 1: Added --client to purge local k8s-cloud definition
+        juju remove-cloud k8s-cloud --client 2>/dev/null || true
     fi
     
     if kubectl get namespace controller-osm-vca >/dev/null 2>&1; then
-        log_info "Forcefully clearing controller-osm-vca namespace and finalizers..."
+        log_info "Clearing controller-osm-vca namespace and finalizers..."
         kubectl delete namespace controller-osm-vca --wait=false 2>/dev/null || true
         sleep 2
         kubectl get namespace controller-osm-vca -o json 2>/dev/null | jq '.spec.finalizers=[]' | kubectl replace --raw /api/v1/namespaces/controller-osm-vca/finalize -f - 2>/dev/null || true
@@ -240,22 +240,24 @@ install_osm_installer() {
     log_info "Ensuring K3s local storage class is fully initialized..."
     kubectl rollout status deployment/local-path-provisioner -n kube-system --timeout=60s || true
 
+    # FIX 2: Background daemon to immediately bind host IP to controller-service when created
+    (
+        while true; do
+            if kubectl get svc controller-service -n controller-osm-vca >/dev/null 2>&1; then
+                HOST_IP=$(ip route get 1.1.1.1 2>/dev/null | grep -oP 'src \K\S+' || hostname -I | awk '{print $1}')
+                if [ -n "$HOST_IP" ]; then
+                    kubectl patch svc controller-service -n controller-osm-vca -p "{\"spec\": {\"externalIPs\": [\"$HOST_IP\"]}}" >/dev/null 2>&1 || true
+                fi
+                break
+            fi
+            sleep 2
+        done
+    ) &
+
     log_info "Downloading OSM installer..."
     wget https://osm-download.etsi.org/ftp/osm-14.0-fourteen/install_osm.sh -O install_osm.sh
     chmod +x install_osm.sh
     
-    # Background worker to automatically assign host IP to Juju LoadBalancer if stuck
-    (
-        for i in {1..30}; do
-            if kubectl get svc controller-service -n controller-osm-vca >/dev/null 2>&1; then
-                HOST_IP=$(hostname -I | awk '{print $1}')
-                kubectl patch svc controller-service -n controller-osm-vca -p "{\"spec\": {\"externalIPs\": [\"$HOST_IP\"]}}" 2>/dev/null || true
-                break
-            fi
-            sleep 5
-        done
-    ) &
-
     log_info "Running OSM installer targeting local cluster..."
     ./install_osm.sh -y --charmed --k8s ~/.kube/config || log_warn "OSM installer completed with warnings."
 }
