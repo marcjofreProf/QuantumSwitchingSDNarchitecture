@@ -339,11 +339,12 @@ install_osm_installer() {
         wget -q https://raw.githubusercontent.com/charmed-osm/osm-operators/main/devops/charmed/bundles/osm/bundle.yaml -O /tmp/osm-bundle.yaml
     fi
 
-    log_info "Applying inline Python patch to transform bundle to Juju 3 base syntax..."
+    log_info "Applying Juju 3 bundle patches (base syntax, mongodb channel, and ingress quota split)..."
     python3 - << 'EOF'
 with open('/tmp/osm-bundle.yaml', 'r') as f:
-    lines = f.read().splitlines()
+    text = f.read()
 
+lines = text.splitlines()
 out = []
 in_mongo = False
 mongo_has_base = False
@@ -375,8 +376,21 @@ for line in lines:
 if in_mongo and not mongo_has_base:
     out.append('    base: ubuntu@22.04')
 
+full_text = '\n'.join(out) + '\n'
+
+# Split ingress relation quota limit issue by adding a dedicated nbi-ingress app
+nbi_ingress_app = """  nbi-ingress:
+    charm: nginx-ingress-integrator
+    channel: latest/stable
+    base: ubuntu@22.04
+    scale: 1\n"""
+
+full_text = full_text.replace('relations:', nbi_ingress_app + 'relations:')
+full_text = full_text.replace('- nbi:ingress\n  - ingress:ingress', '- nbi:ingress\n  - nbi-ingress:ingress')
+full_text = full_text.replace('- nbi:ingress\n    - ingress:ingress', '- nbi:ingress\n    - nbi-ingress:ingress')
+
 with open('/tmp/osm-bundle.yaml', 'w') as f:
-    f.write('\n'.join(out) + '\n')
+    f.write(full_text)
 EOF
 
     log_info "Deploying patched OSM bundle to model 'osm'..."
