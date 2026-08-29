@@ -240,11 +240,12 @@ install_osm_installer() {
     log_info "Ensuring K3s local storage class is fully initialized..."
     kubectl rollout status deployment/local-path-provisioner -n kube-system --timeout=60s || true
 
-    # FIX 2: Background daemon to immediately bind host IP to controller-service when created
+    # Background daemon to immediately bind host IP to controller-service when created
     (
         while true; do
             if kubectl get svc controller-service -n controller-osm-vca >/dev/null 2>&1; then
-                HOST_IP=$(ip route get 1.1.1.1 2>/dev/null | grep -oP 'src \K\S+' || hostname -I | awk '{print $1}')
+                # Cleanly isolate only the primary single IP address
+                HOST_IP=$(hostname -I | awk '{print $1}')
                 if [ -n "$HOST_IP" ]; then
                     kubectl patch svc controller-service -n controller-osm-vca -p "{\"spec\": {\"externalIPs\": [\"$HOST_IP\"]}}" >/dev/null 2>&1 || true
                 fi
