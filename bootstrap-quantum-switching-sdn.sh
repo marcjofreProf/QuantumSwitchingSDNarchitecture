@@ -219,9 +219,9 @@ install_osm_installer() {
         wget https://osm-download.etsi.org/ftp/osm-14.0-fourteen/install_osm.sh -O install_osm.sh
         chmod +x install_osm.sh
         
-        # Deploying OSM to an external Kubernetes cluster requires the Charmed distribution
+        # Added --vca osm-vca to handle existing controller conflicts gracefully
         log_info "Running OSM installer (targeting existing K3s cluster)..."
-        ./install_osm.sh -y --charmed --k8s ~/.kube/config || log_warn "OSM installer completed with warnings."
+        ./install_osm.sh -y --charmed --k8s ~/.kube/config --vca osm-vca || log_warn "OSM installer completed with warnings."
     else
         log_info "Skipping OSM installation."
     fi
@@ -267,13 +267,15 @@ compile_uonos_model_plugins() {
         log_warn "YANG model $yang_target not found!"
     fi
 
-    if [ -f "$plugin_dir/controller-quantum-switching-model.yaml" ]; then
-        cp "$plugin_dir/controller-quantum-switching-model.yaml" "$plugin_dir/metadata.yaml"
-    fi
+    # Dynamically generate a valid metadata.yaml to satisfy mandatory compiler fields
+    cat <<EOF > "$plugin_dir/metadata.yaml"
+name: controller-quantum-switching
+version: 1.0.0
+artifactName: controller-quantum-switching
+EOF
 
     log_info "Executing onosproject/model-compiler..."
     if command -v docker >/dev/null 2>&1; then
-        # The model-compiler reads the identity from the metadata.yaml inside /config-model
         docker run --rm -v "$(pwd)/${plugin_dir}:/config-model" onosproject/model-compiler:latest || log_warn "Model compiler encountered an issue."
         
         log_info "Building the resulting Model Plugin Docker Image..."
@@ -291,10 +293,17 @@ deploy_cloud_native_uonos() {
     helm upgrade --install atomix-controller atomix/atomix-controller -n micro-onos --wait
     helm upgrade --install atomix-raft-storage atomix/atomix-raft-storage -n micro-onos --wait
     
-    log_info "Waiting for Kubernetes to establish Atomix CRDs..."
-    kubectl wait --for=condition=established crd/raftclusters.raft.atomix.io --timeout=60s || true
-    kubectl wait --for=condition=established crd/raftstores.raft.atomix.io --timeout=60s || true
-    kubectl wait --for=condition=established crd/storageprofiles.atomix.io --timeout=60s || true
+    log_info "Waiting for Kubernetes to register Atomix CRDs..."
+    local crds=("raftclusters.raft.atomix.io" "raftstores.raft.atomix.io" "storageprofiles.atomix.io")
+    for crd in "${crds[@]}"; do
+        local retries=30
+        while ! kubectl get crd "$crd" >/dev/null 2>&1; do
+            sleep 2
+            retries=$((retries - 1))
+            if [ $retries -le 0 ]; then break; fi
+        done
+        kubectl wait --for=condition=established crd/"$crd" --timeout=60s || true
+    done
     
     log_info "Deploying ONOS Topology and Config..."
     helm upgrade --install onos-topo onosproject/onos-topo -n micro-onos 
