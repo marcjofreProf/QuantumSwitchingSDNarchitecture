@@ -46,6 +46,52 @@ stop_unattended_upgrades() {
     log_success "unattended-upgrades stopped and disabled."
 }
 
+ensure_sufficient_memory() {
+    log_info "Phase 0.5: Checking system RAM and configuring Swap..."
+    
+    # Extract total RAM in MB
+    local total_ram_mb
+    total_ram_mb=$(free -m | awk '/^Mem:/{print $2}')
+    local min_ram_mb=8000 # 8GB threshold
+    
+    log_info "Detected physical RAM: ${total_ram_mb} MB"
+    
+    if [ "$total_ram_mb" -lt "$min_ram_mb" ]; then
+        log_warn "System RAM (${total_ram_mb}MB) is below recommended ${min_ram_mb}MB."
+        
+        # Check existing active swap space in MB
+        local total_swap_mb
+        total_swap_mb=$(free -m | awk '/^Swap:/{print $2}')
+        
+        if [ "$total_swap_mb" -ge 4000 ]; then
+            log_success "Sufficient Swap space (${total_swap_mb} MB) is already configured."
+        else
+            log_info "Configuring an 8GB swap file to prevent OOM errors during Juju/K3s bootstrap..."
+            
+            sudo swapoff -a 2>/dev/null || true
+            
+            # Allocate 8GB swap file using fallocate with a dd fallback
+            if ! sudo fallocate -l 8G /swapfile 2>/dev/null; then
+                log_info "fallocate failed, using dd to allocate swap..."
+                sudo dd if=/dev/zero of=/swapfile bs=1M count=8192 status=progress
+            fi
+            
+            sudo chmod 600 /swapfile
+            sudo mkswap /swapfile
+            sudo swapon /swapfile
+            
+            # Make swap persistent across reboots
+            if ! grep -q '/swapfile' /etc/fstab; then
+                echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab >/dev/null
+            fi
+            
+            log_success "8GB swap file successfully enabled and configured in /etc/fstab."
+        fi
+    else
+        log_success "Sufficient physical RAM detected."
+    fi
+}
+
 create_repo_structure() {
     log_info "Phase 1: Ensuring repository directory structure..."
     local base_dir="."
@@ -329,7 +375,6 @@ compile_uonos_model_plugins() {
         log_warn "YANG model $yang_target not found!"
     fi
 
-    # Added goPackage to satisfy mandatory compiler fields
     cat <<EOF > "$plugin_dir/metadata.yaml"
 name: controller-quantum-switching
 version: 1.0.0
@@ -351,7 +396,6 @@ EOF
 deploy_cloud_native_uonos() {
     log_info "Phase 8: Evaluating µONOS deployment state..."
     
-    # Check if µONOS pods are active and operational
     local uonos_active=false
     if kubectl get pods -n micro-onos 2>/dev/null | grep -E 'onos-topo|onos-config' | grep -q 'Running'; then
         uonos_active=true
@@ -450,6 +494,7 @@ echo -e "${CYAN}   Quantum-SDN Switching Architecture Environment Setup    ${NC}
 echo -e "${CYAN}===========================================================${NC}"
 
 stop_unattended_upgrades
+ensure_sufficient_memory
 create_repo_structure
 install_sys_deps
 install_docker
