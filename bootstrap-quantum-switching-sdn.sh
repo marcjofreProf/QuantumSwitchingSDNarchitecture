@@ -243,10 +243,9 @@ setup_helm_repos() {
     log_info "Phase 4: Setting up Helm repositories for µONOS, Atomix, and Open5GS..."
     helm repo add onosproject https://charts.onosproject.org || log_warn "Failed to add onosproject repository."
     
-    # Force the modern GitHub Pages endpoint first to prevent pulling stale CRD versions from charts.atomix.io
+    # Cleaned up to only use the active Atomix endpoints
     helm repo remove atomix 2>/dev/null || true
-    helm repo add atomix https://atomix.github.io/atomix-helm || \
-        helm repo add atomix https://atomix.github.io/atomix-helm-charts || \
+    helm repo add atomix https://atomix.github.io/charts.atomix.io || \
         helm repo add atomix https://charts.atomix.io || \
         log_warn "Failed to add atomix repository from all known endpoints."
         
