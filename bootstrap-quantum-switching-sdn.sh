@@ -584,9 +584,11 @@ deploy_cloud_native_uonos() {
     log_info "Extracting and pre-installing synchronized Atomix and ONOS CRDs directly into Kubernetes..."
     mkdir -p /tmp/onos-crd-extract && cd /tmp/onos-crd-extract
     
-    # Pull from the consolidated onosproject repository
-    helm pull onosproject/atomix-controller --untar 2>/dev/null || true
-    helm pull onosproject/atomix-raft-storage --untar 2>/dev/null || true
+    # Clone the Atomix charts locally (bypassing the dead remote Helm repo)
+    log_info "Cloning local Atomix Helm charts source..."
+    git clone https://github.com/atomix/atomix-helm-charts.git 2>/dev/null || true
+
+    # Pull the ONOS operator from the working onosproject repository
     helm pull onosproject/onos-operator --untar 2>/dev/null || true
 
     find . -type f -name "*.yaml" 2>/dev/null | while read -r file; do
@@ -611,9 +613,6 @@ deploy_cloud_native_uonos() {
     # Filter out K8s-unsupported 'deprecated' schema fields and Server-Side Apply
     done | sed '/deprecated: true/d' | kubectl apply --server-side --force-conflicts -f - || log_warn "Encountered issues applying some extracted CRDs."
 
-    cd - >/dev/null
-    rm -rf /tmp/onos-crd-extract
-
     log_info "Waiting for Kubernetes API server to establish CRDs..."
     local crds=(
         "storageprofiles.atomix.io"
@@ -632,10 +631,15 @@ deploy_cloud_native_uonos() {
     done
 
     log_info "Deploying Atomix and ONOS cluster operators in 'kube-system' namespace..."
-    # Install from the consolidated onosproject repository
-    helm upgrade --install atomix-controller onosproject/atomix-controller -n kube-system --force --wait
-    helm upgrade --install atomix-raft-storage onosproject/atomix-raft-storage -n kube-system --force --wait
+    # Install Atomix resources directly from the cloned local directories
+    helm upgrade --install atomix-controller ./atomix-helm-charts/atomix-controller -n kube-system --force --wait
+    helm upgrade --install atomix-raft-storage ./atomix-helm-charts/atomix-raft-storage -n kube-system --force --wait
+    # Install ONOS operator from the remote repository
     helm upgrade --install onos-operator onosproject/onos-operator -n kube-system --force --wait
+
+    # Clean up the temporary CRD/clone extraction workspace
+    cd - >/dev/null
+    rm -rf /tmp/onos-crd-extract
 
     log_info "Deploying ONOS Topology and Config in 'micro-onos' namespace..."
     helm upgrade --install onos-topo onosproject/onos-topo -n micro-onos
