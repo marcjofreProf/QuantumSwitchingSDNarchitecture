@@ -35,3 +35,8 @@ OSM-ETSI-Release-key.gpg
 *_pb2_grpc.py
 *_pb2.pyi
 proto/__init__.py
+
+# Dynamically Generated µONOS Model Plugin Artifacts
+sdn-controller/northbound-interfaces/model-plugin/VERSION
+sdn-controller/northbound-interfaces/model-plugin/metadata.yaml
+sdn-controller/northbound-interfaces/model-plugin/yang/controller-quantum-switching.yang
