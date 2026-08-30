@@ -597,16 +597,20 @@ spec:
     singular: raftcluster
   scope: Namespaced
   versions:
-  - name: v1beta3
+  - name: v2beta2
     served: true
     storage: true
+    subresources:
+      status: {}
     schema:
       openAPIV3Schema:
         type: object
         x-kubernetes-preserve-unknown-fields: true
-  - name: v2beta2
+  - name: v1beta3
     served: true
     storage: false
+    subresources:
+      status: {}
     schema:
       openAPIV3Schema:
         type: object
@@ -625,16 +629,89 @@ spec:
     singular: raftstore
   scope: Namespaced
   versions:
-  - name: v1beta3
+  - name: v2beta2
     served: true
     storage: true
+    subresources:
+      status: {}
     schema:
       openAPIV3Schema:
         type: object
         x-kubernetes-preserve-unknown-fields: true
-  - name: v2beta2
+  - name: v1beta3
     served: true
     storage: false
+    subresources:
+      status: {}
+    schema:
+      openAPIV3Schema:
+        type: object
+        x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: raftprotocols.raft.atomix.io
+spec:
+  group: raft.atomix.io
+  names:
+    kind: RaftProtocol
+    listKind: RaftProtocolList
+    plural: raftprotocols
+    singular: raftprotocol
+  scope: Namespaced
+  versions:
+  - name: v2beta2
+    served: true
+    storage: true
+    subresources:
+      status: {}
+    schema:
+      openAPIV3Schema:
+        type: object
+        x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: raftgroups.raft.atomix.io
+spec:
+  group: raft.atomix.io
+  names:
+    kind: RaftGroup
+    listKind: RaftGroupList
+    plural: raftgroups
+    singular: raftgroup
+  scope: Namespaced
+  versions:
+  - name: v2beta2
+    served: true
+    storage: true
+    subresources:
+      status: {}
+    schema:
+      openAPIV3Schema:
+        type: object
+        x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: raftmembers.raft.atomix.io
+spec:
+  group: raft.atomix.io
+  names:
+    kind: RaftMember
+    listKind: RaftMemberList
+    plural: raftmembers
+    singular: raftmember
+  scope: Namespaced
+  versions:
+  - name: v2beta2
+    served: true
+    storage: true
+    subresources:
+      status: {}
     schema:
       openAPIV3Schema:
         type: object
@@ -656,6 +733,8 @@ spec:
   - name: v3beta4
     served: true
     storage: true
+    subresources:
+      status: {}
     schema:
       openAPIV3Schema:
         type: object
@@ -663,6 +742,8 @@ spec:
   - name: v2beta1
     served: true
     storage: false
+    subresources:
+      status: {}
     schema:
       openAPIV3Schema:
         type: object
@@ -684,6 +765,8 @@ spec:
   - name: v2beta1
     served: true
     storage: true
+    subresources:
+      status: {}
     schema:
       openAPIV3Schema:
         type: object
@@ -691,6 +774,8 @@ spec:
   - name: v2beta2
     served: true
     storage: false
+    subresources:
+      status: {}
     schema:
       openAPIV3Schema:
         type: object
@@ -712,6 +797,8 @@ spec:
   - name: v1beta3
     served: true
     storage: true
+    subresources:
+      status: {}
     schema:
       openAPIV3Schema:
         type: object
@@ -719,6 +806,8 @@ spec:
   - name: v1beta2
     served: true
     storage: false
+    subresources:
+      status: {}
     schema:
       openAPIV3Schema:
         type: object
@@ -740,6 +829,8 @@ spec:
   - name: v1beta3
     served: true
     storage: true
+    subresources:
+      status: {}
     schema:
       openAPIV3Schema:
         type: object
@@ -761,6 +852,8 @@ spec:
   - name: v1beta3
     served: true
     storage: true
+    subresources:
+      status: {}
     schema:
       openAPIV3Schema:
         type: object
@@ -782,6 +875,8 @@ spec:
   - name: v1beta3
     served: true
     storage: true
+    subresources:
+      status: {}
     schema:
       openAPIV3Schema:
         type: object
