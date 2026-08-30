@@ -1,50 +1,30 @@
 module controller-quantum-switching {
-  yang-version 1.1;
-  namespace "urn:quantum:sdn:controller:switching";
-  prefix cqs;
+    yang-version 1.1;
+    namespace "urn:custom:params:xml:ns:yang:controller-quantum-switching";
+    prefix qswitch;
 
-  organization "Quantum SDN Project";
-  description "YANG model for µONOS quantum cross-connect switching services.";
+    organization "Custom";
+    contact "SDN Architecture Team <sdn@example.com>";
+    description "Quantum Switching Model";
 
-  revision 2026-08-29 {
-    description "Initial deployment for cloud-native µONOS integration.";
-  }
-
-  container quantum-services {
-    description "Top-level container for all quantum networking services.";
-    
-    list cross-connect-service {
-      key "service-id";
-      description "A list of provisioned cross-connects on the physical or virtual quantum switch.";
-      
-      leaf service-id {
-        type string;
-        description "Unique identifier for the cross-connect path.";
-      }
-      
-      leaf target-node-ip {
-        type string;
-        description "IP address of the southbound hardware or agent executing the switch.";
-      }
-      
-      leaf ingress-port {
-        type uint32;
-        description "Physical or logical input port.";
-      }
-      
-      leaf egress-port {
-        type uint32;
-        description "Physical or logical output port.";
-      }
-      
-      leaf admin-state {
-        type enumeration {
-          enum ENABLED;
-          enum DISABLED;
-        }
-        default ENABLED;
-        description "Administrative state of the cross-connect.";
-      }
+    revision 2026-01-01 {
+        description "Initial revision.";
+        reference "RFC 8407 Compliance";
     }
-  }
+
+    container switching {
+        description "Top-level container for switching configurations.";
+        leaf state {
+            type enumeration {
+                enum enabled {
+                    description "Enable switching.";
+                }
+                enum disabled {
+                    description "Disable switching.";
+                }
+            }
+            default enabled;
+            description "Switching operational state.";
+        }
+    }
 }
