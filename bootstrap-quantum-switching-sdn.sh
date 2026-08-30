@@ -243,14 +243,16 @@ setup_helm_repos() {
     log_info "Phase 4: Setting up Helm repositories for µONOS, Atomix, and Open5GS..."
     helm repo add onosproject https://charts.onosproject.org || log_warn "Failed to add onosproject repository."
     
-    # Fallback structure to bypass the charts.atomix.io DNS lookup error
-    helm repo add atomix https://charts.atomix.io || \
-        helm repo add atomix https://atomix.github.io/atomix-helm || \
+    # Force the modern GitHub Pages endpoint first to prevent pulling stale CRD versions from charts.atomix.io
+    helm repo remove atomix 2>/dev/null || true
+    helm repo add atomix https://atomix.github.io/atomix-helm || \
         helm repo add atomix https://atomix.github.io/atomix-helm-charts || \
+        helm repo add atomix https://charts.atomix.io || \
         log_warn "Failed to add atomix repository from all known endpoints."
         
     helm repo add towards5gs https://raw.githubusercontent.com/Orange-OpenSource/towards5gs-helm/main/repo/ || \
         helm repo add towards5gs https://cdn.jsdelivr.net/gh/Orange-OpenSource/towards5gs-helm@main/repo/
+    
     helm repo update
 }
 
@@ -536,10 +538,19 @@ modules:
 EOF
 
     log_info "Executing onosproject/model-compiler..."
-    if command -v docker >/dev/null 2>&1; then
-        docker run --rm -v "$(pwd)/${plugin_dir}:/config-model" onosproject/model-compiler:latest || log_warn "Model compiler encountered an issue."
-        
-        log_info "Building the resulting Model Plugin Docker Image..."
+    # (Your existing docker run command for the model-compiler goes here)
+    docker run --rm -v "$(pwd)/sdn-controller/northbound-interfaces/model-plugin:/config-model" \
+        onosproject/model-compiler:latest \
+        -name quantum-switching -version 1.0.0 \
+        -build-path /config-model -output-path /config-model
+
+    # --- ADD THIS LINE TO FIX PERMISSIONS ---
+    # The Docker container runs as root and outputs files owned by root. 
+    # This reverts ownership to the user executing the script so 'go mod tidy' can run.
+    sudo chown -R $USER:$USER ./sdn-controller/northbound-interfaces/model-plugin
+
+    log_info "Building the resulting Model Plugin Docker Image..."
+    (cd ./sdn-controller/northbound-interfaces/model-plugin && make image) || log_error "Failed to build the model plugin image."
         if [ -f "$plugin_dir/Makefile" ]; then
             (cd "$plugin_dir" && make image) || log_warn "Failed to build the model plugin image."
         fi
@@ -564,12 +575,6 @@ deploy_cloud_native_uonos() {
         log_info "µONOS is not currently operational. Proceeding with deployment..."
     fi
 
-    # Ensure Helm repositories are active and updated
-    log_info "Adding Atomix and ONOS Helm repositories..."
-    helm repo add atomix https://charts.atomix.io 2>/dev/null || true
-    helm repo add onosproject https://charts.onosproject.org 2>/dev/null || true
-    helm repo update >/dev/null 2>&1 || true
-
     kubectl create namespace micro-onos --dry-run=client -o yaml | kubectl apply -f -
 
     # Force cleanup of conflicting cluster-scoped resources and stale Helm releases
@@ -580,11 +585,26 @@ deploy_cloud_native_uonos() {
     kubectl delete clusterrole atomix-controller atomix-raft-storage-controller onos-operator --ignore-not-found 2>/dev/null || true
     kubectl delete clusterrolebinding atomix-controller atomix-raft-storage-controller onos-operator --ignore-not-found 2>/dev/null || true
 
-    # Extract and explicitly apply CRDs using native Helm commands
-    log_info "Pre-installing Atomix and ONOS CRDs directly into Kubernetes..."
-    helm show crds atomix/atomix-controller | kubectl apply -f - || log_warn "Failed to apply atomix-controller CRDs."
-    helm show crds atomix/atomix-raft-storage | kubectl apply -f - || log_warn "Failed to apply atomix-raft-storage CRDs."
-    helm show crds onosproject/onos-operator | kubectl apply -f - || log_warn "Failed to apply onos-operator CRDs."
+    # Extract and explicitly apply CRDs to resolve API version mismatches
+    log_info "Extracting and pre-installing Atomix and ONOS CRDs directly into Kubernetes..."
+    mkdir -p /tmp/onos-crd-extract && cd /tmp/onos-crd-extract
+    
+    helm pull atomix/atomix-controller --untar 2>/dev/null || true
+    helm pull atomix/atomix-raft-storage --untar 2>/dev/null || true
+    helm pull onosproject/onos-operator --untar 2>/dev/null || true
+
+    # Parse all YAML files and extract only CustomResourceDefinitions to bypass template/ folder limitations
+    find . -type f -name "*.yaml" 2>/dev/null | while read -r file; do
+        awk '
+            /^---$/ { if(flag) print; next }
+            /^kind: CustomResourceDefinition/ { flag=1; print "---"; print; next }
+            /^kind: / && !/^kind: CustomResourceDefinition/ { flag=0; next }
+            flag { print }
+        ' "$file"
+    done | kubectl apply -f - || log_warn "Encountered issues applying some extracted CRDs."
+
+    cd - >/dev/null
+    rm -rf /tmp/onos-crd-extract
 
     log_info "Waiting for Kubernetes API server to establish CRDs..."
     local crds=(
