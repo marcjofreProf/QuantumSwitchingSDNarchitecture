@@ -242,7 +242,7 @@ setup_helm_repos() {
     log_info "Phase 4: Setting up Helm repositories for µONOS and Open5GS..."
     
     helm repo add onosproject https://charts.onosproject.org || log_warn "Failed to add onosproject repository."
-    helm repo add atomix https://charts.atomix.io || log_warn "Failed to add atomix repository."
+    helm repo add atomix https://atomix.github.io/atomix-helm || log_warn "Failed to add atomix repository."
     
     helm repo add towards5gs https://raw.githubusercontent.com/Orange-OpenSource/towards5gs-helm/main/repo/ || \
         helm repo add towards5gs https://cdn.jsdelivr.net/gh/Orange-OpenSource/towards5gs-helm@main/repo/
@@ -264,8 +264,8 @@ install_grpc_tools() {
     fi
     if ! command -v gnmic >/dev/null 2>&1; then
         log_info "Installing gnmic CLI tool..."
-        bash -c "$(curl -sLO https://gnmic.openconfig.net/install.sh && chmod +x install.sh && ./install.sh)" || \
-        sudo bash -c "$(wget -qO- https://gnmic.openconfig.net/install.sh)"
+        # Use the correct, updated installer URL
+        bash -c "$(curl -sL https://get-gnmic.openconfig.net)"
         log_success "gnmic installed successfully."
     fi
 }
