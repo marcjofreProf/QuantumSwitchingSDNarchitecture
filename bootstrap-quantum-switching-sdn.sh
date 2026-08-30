@@ -542,8 +542,8 @@ EOF
     log_info "Executing onosproject/model-compiler..."
     docker run --rm -v "$(pwd)/sdn-controller/northbound-interfaces/model-plugin:/config-model" \
         onosproject/model-compiler:latest \
-        -name quantum-switching -version 1.0.0 \
-        -build-path /config-model -output-path /config-model
+        --name quantum-switching --version 1.0.0 \
+        --build-path /config-model --output-path /config-model
 
     # The Docker container runs as root and outputs files owned by root. 
     # This reverts ownership to the user executing the script so 'go mod tidy' can run.
