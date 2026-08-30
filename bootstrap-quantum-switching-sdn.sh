@@ -571,6 +571,7 @@ deploy_cloud_native_uonos() {
     kubectl create namespace micro-onos --dry-run=client -o yaml | kubectl apply -f -
 
     helm repo add atomix https://atomix.github.io/charts.atomix.io
+    helm repo add onos https://charts.onosproject.org
     helm repo update
 
     log_info "Purging stale Helm releases..."
@@ -660,9 +661,11 @@ EOF
         crd/storageprofiles.atomix.io \
         --timeout=30s 2>/dev/null || true
 
-    log_info "Installing v1beta3-compatible Atomix controllers..."
+    log_info "Installing v1beta3-compatible Atomix controllers and onos controllers..."
     helm install atomix-controller atomix/atomix-controller -n kube-system
     helm install atomix-raft-storage atomix/atomix-raft-storage -n kube-system --version 0.1.15
+    helm install onos-topo onos/onos-topo -n micro-onos
+    helm install onos-config onos/onos-config -n micro-onos
 
     log_info "Building and deploying RESTCONF Gateway Container..."
     if command -v docker >/dev/null 2>&1; then
