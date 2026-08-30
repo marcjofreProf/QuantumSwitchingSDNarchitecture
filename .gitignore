@@ -12,11 +12,12 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# Downloaded installation scripts & temp archives
+# Downloaded installation scripts, temp archives & local clones
 get-docker.sh
 get_helm.sh
 install_osm.sh
 helm-*-linux-amd64.tar.gz
+atomix-helm-charts/
 
 # Downloaded binaries and archives
 kubectl
