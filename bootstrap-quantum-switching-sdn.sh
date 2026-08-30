@@ -131,7 +131,8 @@ create_repo_structure() {
 
 install_sys_deps() {
     log_info "Phase 2: Checking basic system dependencies..."
-    local deps="curl git wget jq build-essential python3-pip python3-venv python3-flask gpg psmisc"
+    # Added golang-go to the dependency list
+    local deps="curl git wget jq build-essential python3-pip python3-venv python3-flask gpg psmisc golang-go"
     local to_install=""
 
     for pkg in $deps; do
