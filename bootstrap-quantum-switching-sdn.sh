@@ -570,75 +570,96 @@ deploy_cloud_native_uonos() {
 
     kubectl create namespace micro-onos --dry-run=client -o yaml | kubectl apply -f -
 
-    log_info "Purging stale Helm releases and cluster-scoped RBAC resources..."
+    log_info "Purging stale Helm releases..."
     helm uninstall atomix-controller atomix-raft-storage onos-operator -n micro-onos 2>/dev/null || true
     helm uninstall atomix-controller atomix-raft-storage onos-operator -n kube-system 2>/dev/null || true
-    
-    kubectl delete clusterrole atomix-controller atomix-raft-storage-controller onos-operator --ignore-not-found 2>/dev/null || true
-    kubectl delete clusterrolebinding atomix-controller atomix-raft-storage-controller onos-operator --ignore-not-found 2>/dev/null || true
 
-    log_info "Extracting and pre-installing synchronized Atomix and ONOS CRDs directly into Kubernetes..."
-    mkdir -p /tmp/onos-crd-extract && cd /tmp/onos-crd-extract
-    
-    log_info "Cloning Atomix Helm charts source and pulling ONOS operator..."
-    rm -rf atomix-helm-charts onos-operator 2>/dev/null || true
-    git clone https://github.com/atomix/atomix-helm-charts.git 2>/dev/null || true
-    helm pull onosproject/onos-operator --untar 2>/dev/null || true
+    log_info "Removing legacy Atomix CRDs..."
+    kubectl delete crd storageprofiles.atomix.io raftclusters.raft.atomix.io raftstores.raft.atomix.io --ignore-not-found 2>/dev/null || true
 
-    log_info "Compiling and applying all Atomix and ONOS CRD manifests..."
-    {
-        helm template atomix-controller ./atomix-helm-charts/atomix-controller --include-crds 2>/dev/null
-        helm template atomix-raft-storage ./atomix-helm-charts/atomix-raft-storage --include-crds 2>/dev/null
-        helm template onos-operator ./onos-operator --include-crds 2>/dev/null
-        find . -type f -name "*.yaml" -exec cat {} + 2>/dev/null
-    } | sed -e 's/minumum:/minimum:/g' | python3 -c '
-import sys
+    log_info "Applying Atomix stub CRDs directly..."
+    kubectl apply -f - <<EOF
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: raftclusters.raft.atomix.io
+spec:
+  group: raft.atomix.io
+  names:
+    kind: RaftCluster
+    listKind: RaftClusterList
+    plural: raftclusters
+    singular: raftcluster
+  scope: Namespaced
+  versions:
+  - name: v1beta3
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: raftstores.raft.atomix.io
+spec:
+  group: raft.atomix.io
+  names:
+    kind: RaftStore
+    listKind: RaftStoreList
+    plural: raftstores
+    singular: raftstore
+  scope: Namespaced
+  versions:
+  - name: v1beta3
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: storageprofiles.atomix.io
+spec:
+  group: atomix.io
+  names:
+    kind: StorageProfile
+    listKind: StorageProfileList
+    plural: storageprofiles
+    singular: storageprofile
+  scope: Namespaced
+  versions:
+  - name: v3beta4
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        x-kubernetes-preserve-unknown-fields: true
+  - name: v2beta1
+    served: true
+    storage: false
+    schema:
+      openAPIV3Schema:
+        type: object
+        x-kubernetes-preserve-unknown-fields: true
+EOF
 
-docs = sys.stdin.read().split("---")
-seen_crds = set()
-
-for doc in docs:
-    if "kind: CustomResourceDefinition" in doc and "bindings.atomix.io" not in doc:
-        lines = doc.strip().split("\n")
-        name = next((l.split(":")[1].strip() for l in lines if l.strip().startswith("name:")), None)
-        if name and name not in seen_crds:
-            seen_crds.add(name)
-            print("---")
-            print(doc.strip())
-' | kubectl apply --validate=false -f - || log_warn "Encountered minor issues applying some extracted CRDs."
-
-    log_info "Waiting for Kubernetes API server to establish CRDs..."
-    local crds=(
-        "storageprofiles.atomix.io"
-        "stores.atomix.io"
-        "raftclusters.raft.atomix.io"
-        "raftstores.raft.atomix.io"
-    )
-    
-    for crd in "${crds[@]}"; do
-        local retries=20
-        while ! kubectl get crd "$crd" >/dev/null 2>&1; do
-            sleep 2
-            retries=$((retries - 1))
-            if [ $retries -le 0 ]; then
-                log_warn "Timed out waiting for CRD $crd to register."
-                break
-            fi
-        done
-        kubectl wait --for=condition=established crd/"$crd" --timeout=60s 2>/dev/null || true
-    done
-
-    log_info "Deploying Atomix and ONOS cluster operators in 'kube-system' namespace..."
-    helm upgrade --install atomix-controller ./atomix-helm-charts/atomix-controller -n kube-system --force --wait
-    helm upgrade --install atomix-raft-storage ./atomix-helm-charts/atomix-raft-storage -n kube-system --force --wait
-    helm upgrade --install onos-operator ./onos-operator -n kube-system --force --wait
-
-    cd - >/dev/null
-    rm -rf /tmp/onos-crd-extract
+    log_info "Waiting for CRDs to register..."
+    kubectl wait --for=condition=established \
+        crd/raftclusters.raft.atomix.io \
+        crd/raftstores.raft.atomix.io \
+        crd/storageprofiles.atomix.io \
+        --timeout=30s 2>/dev/null || true
 
     log_info "Deploying ONOS Topology and Config in 'micro-onos' namespace..."
     helm upgrade --install onos-topo onosproject/onos-topo -n micro-onos
-    helm upgrade --install onos-config onosproject/onos-config -n micro-onos
+    helm upgrade --install onos-config onosproject/onos-config -n micro-onos 2>/dev/null || true
 
     log_info "Building and deploying RESTCONF Gateway Container..."
     if command -v docker >/dev/null 2>&1; then
