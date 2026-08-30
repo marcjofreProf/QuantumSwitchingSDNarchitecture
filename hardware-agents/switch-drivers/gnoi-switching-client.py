@@ -2,28 +2,39 @@
 import os
 import sys
 
-# Define this first so it's always available!
 current_dir = os.path.dirname(os.path.abspath(__file__))
 
-# --- ELEGANT VENV AUTO-DISCOVERY ---
+# --- ELEGANT VENV AUTO-DISCOVERY & RE-EXECUTION ---
 try:
     import grpc
 except ModuleNotFoundError:
-    venv_python = os.path.abspath(os.path.join(current_dir, '../.venv/bin/python3'))
-    if os.path.exists(venv_python):
-        os.execl(venv_python, venv_python, *sys.argv) # Relaunch self inside venv
-    else:
-        print("[ERROR] 'grpc' missing and '.venv' not found. Run the bootstrap script first.")
-        sys.exit(1)
+    venv_candidates = [
+        "/opt/sdn-venv/bin/python3",
+        os.path.abspath(os.path.join(current_dir, "../../.venv/bin/python3")),
+        os.path.abspath(os.path.join(current_dir, "../.venv/bin/python3")),
+    ]
+    for venv_python in venv_candidates:
+        if os.path.exists(venv_python):
+            os.execl(venv_python, venv_python, *sys.argv)
+    print("[ERROR] 'grpc' missing and no virtual environment found. Run the bootstrap script first.")
+    sys.exit(1)
 
 import argparse
 
-# Ensure the proto directory is discoverable relative to this script
-proto_dir = os.path.abspath(os.path.join(current_dir, '../proto'))
-sys.path.append(proto_dir)
+# Resolve repository root and proto directory (2 levels up from hardware-agents/switch-drivers)
+repo_root = os.path.abspath(os.path.join(current_dir, "../.."))
+proto_dir = os.path.join(repo_root, "proto")
 
-import quantum_gnoi_switching_pb2 as gnoi_pb2
-import quantum_gnoi_switching_pb2_grpc as gnoi_pb2_grpc
+if proto_dir not in sys.path:
+    sys.path.insert(0, proto_dir)
+
+try:
+    import quantum_gnoi_switching_pb2 as gnoi_pb2
+    import quantum_gnoi_switching_pb2_grpc as gnoi_pb2_grpc
+except ModuleNotFoundError as e:
+    print(f"[ERROR] Could not import Protobuf stubs from '{proto_dir}': {e}")
+    print("[HINT] Ensure the bootstrap script has successfully compiled the .proto files.")
+    sys.exit(1)
 
 class QuantumSDNClient:
     def __init__(self, host, port=50051):
