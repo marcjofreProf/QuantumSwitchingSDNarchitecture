@@ -166,23 +166,27 @@ install_docker() {
 }
 
 install_kubectl_and_helm() {
-    log_info "Configuring Kubernetes APT keyring non-interactively..."
-    sudo mkdir -p -m 755 /etc/apt/keyrings
-    curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.28/deb/Release.key | \
-        sudo gpg --dearmor --yes -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-    echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.28/deb/ /" | \
-        sudo tee /etc/apt/sources.list.d/kubernetes.list >/dev/null
-
     if ! command -v kubectl >/dev/null 2>&1; then
+        log_info "Configuring Kubernetes APT keyring non-interactively..."
+        sudo mkdir -p -m 755 /etc/apt/keyrings
+        curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.28/deb/Release.key | \
+            sudo gpg --dearmor --yes -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+        echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.28/deb/ /" | \
+            sudo tee /etc/apt/sources.list.d/kubernetes.list >/dev/null
+
         log_info "Installing kubectl..."
         wait_for_apt_lock
         sudo DEBIAN_FRONTEND=noninteractive apt-get update -y && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y kubectl
+    else
+        log_success "kubectl is already installed."
     fi
 
     if ! command -v helm >/dev/null 2>&1; then
         log_info "Installing Helm..."
         curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 && chmod 700 get_helm.sh && ./get_helm.sh
         rm -f get_helm.sh
+    else
+        log_success "Helm is already installed."
     fi
 }
 
@@ -217,6 +221,12 @@ ensure_kubernetes_cluster() {
 
 setup_persistent_sdn_networking() {
     log_info "Phase 3.5: Applying persistent iptables and kernel network configurations..."
+    
+    if [ -f "/etc/sysctl.d/99-sdn-uonos.conf" ] && dpkg -l | grep -qw iptables-persistent; then
+        log_success "Persistent SDN networking is already configured."
+        return 0
+    fi
+
     echo "br_netfilter" | sudo tee /etc/modules-load.d/sdn-uonos.conf >/dev/null
     sudo modprobe br_netfilter
 
@@ -241,6 +251,11 @@ EOF
 setup_helm_repos() {
     log_info "Phase 4: Setting up Helm repositories for µONOS and Open5GS..."
     
+    if helm repo list 2>/dev/null | grep -q "onosproject" && helm repo list 2>/dev/null | grep -q "towards5gs"; then
+        log_success "Helm repositories are already configured."
+        return 0
+    fi
+
     helm repo add onosproject https://charts.onosproject.org || log_warn "Failed to add onosproject repository."
     
     helm repo add towards5gs https://raw.githubusercontent.com/Orange-OpenSource/towards5gs-helm/main/repo/ || \
@@ -263,7 +278,6 @@ install_grpc_tools() {
     fi
     if ! command -v gnmic >/dev/null 2>&1; then
         log_info "Installing gnmic CLI tool..."
-        # Use the correct, updated installer URL
         bash -c "$(curl -sL https://get-gnmic.openconfig.net)"
         log_success "gnmic installed successfully."
     fi
@@ -413,6 +427,11 @@ setup_sdn_python_client() {
     log_info "Phase 7: Provisioning Python environment and compiling Protobuf stubs..."
     local base_dir="."  
 
+    if [ -d "/opt/sdn-venv" ] && [ -f "$base_dir/proto/__init__.py" ]; then
+         log_success "Python environment and Protobuf stubs are already initialized."
+         return 0
+    fi
+
     wait_for_apt_lock
     sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3-venv python3-pip python3-flask
     
@@ -439,6 +458,11 @@ setup_sdn_python_client() {
 
 compile_uonos_model_plugins() {
     log_info "Phase 7.5: Compiling µONOS YANG Model Plugins..."
+    
+    if command -v docker >/dev/null 2>&1 && docker images --format "{{.Repository}}:{{.Tag}}" | grep -q "onosproject/controller-quantum-switching:1.0.0-controller-quantum-switching-1.0.0"; then
+        log_success "µONOS YANG Model Plugin image is already compiled."
+        return 0
+    fi
     
     local yang_target="./orchestration/yang-models/controller-quantum-switching.yang"
     local plugin_dir="./sdn-controller/northbound-interfaces/model-plugin"
