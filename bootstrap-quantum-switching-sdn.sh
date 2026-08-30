@@ -131,7 +131,6 @@ create_repo_structure() {
 
 install_sys_deps() {
     log_info "Phase 2: Checking basic system dependencies..."
-    # Added golang-go to the dependency list
     local deps="curl git wget jq build-essential python3-pip python3-venv python3-flask gpg psmisc golang-go"
     local to_install=""
 
@@ -243,7 +242,7 @@ setup_helm_repos() {
     log_info "Phase 4: Setting up Helm repositories for µONOS and Open5GS..."
     
     helm repo add onosproject https://charts.onosproject.org || log_warn "Failed to add onosproject repository."
-    helm repo remove atomix 2>/dev/null || true
+    helm repo add atomix https://charts.atomix.io || log_warn "Failed to add atomix repository."
     
     helm repo add towards5gs https://raw.githubusercontent.com/Orange-OpenSource/towards5gs-helm/main/repo/ || \
         helm repo add towards5gs https://cdn.jsdelivr.net/gh/Orange-OpenSource/towards5gs-helm@main/repo/
@@ -586,9 +585,9 @@ deploy_cloud_native_uonos() {
     log_info "Extracting and pre-installing synchronized Atomix and ONOS CRDs directly into Kubernetes..."
     mkdir -p /tmp/onos-crd-extract && cd /tmp/onos-crd-extract
     
-    # Switch to the onosproject repository for Atomix charts
-    helm pull onosproject/atomix-controller --untar 2>/dev/null || true
-    helm pull onosproject/atomix-raft-storage --untar 2>/dev/null || true
+    # Switch to the atomix repository for Atomix charts
+    helm pull atomix/atomix-controller --untar 2>/dev/null || true
+    helm pull atomix/atomix-raft-storage --untar 2>/dev/null || true
     helm pull onosproject/onos-operator --untar 2>/dev/null || true
 
     find . -type f -name "*.yaml" 2>/dev/null | while read -r file; do
@@ -633,9 +632,9 @@ deploy_cloud_native_uonos() {
     done
 
     log_info "Deploying Atomix and ONOS cluster operators in 'kube-system' namespace..."
-    # Switch to the onosproject repository for Atomix installations
-    helm upgrade --install atomix-controller onosproject/atomix-controller -n kube-system --force --wait
-    helm upgrade --install atomix-raft-storage onosproject/atomix-raft-storage -n kube-system --force --wait
+    # Switch to the atomix repository for Atomix installations
+    helm upgrade --install atomix-controller atomix/atomix-controller -n kube-system --force --wait
+    helm upgrade --install atomix-raft-storage atomix/atomix-raft-storage -n kube-system --force --wait
     helm upgrade --install onos-operator onosproject/onos-operator -n kube-system --force --wait
 
     log_info "Deploying ONOS Topology and Config in 'micro-onos' namespace..."
@@ -711,6 +710,7 @@ deploy_cloud_native_uonos
 
 echo -e "${GREEN}====================================================${NC}"
 echo -e "${GREEN} Setup Complete!${NC}"
-echo -e "To view your µONOS Kubernetes pods, run:"
+echo -e "To view your µONOS Kubernetes pods and juju services, run:"
 echo -e "  kubectl get pods -n micro-onos"
+echo -e "  juju status --watch 5s"
 echo -e "${GREEN}====================================================${NC}"
