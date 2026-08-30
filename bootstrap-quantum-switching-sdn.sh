@@ -569,7 +569,10 @@ deploy_cloud_native_uonos() {
     fi
 
     kubectl create namespace micro-onos --dry-run=client -o yaml | kubectl apply -f -
-    
+
+    helm repo add atomix https://atomix.github.io/charts.atomix.io
+    helm repo update
+
     log_info "Purging stale Helm releases..."
     helm uninstall atomix-controller atomix-raft-storage onos-operator -n micro-onos 2>/dev/null || true
     helm uninstall atomix-controller atomix-raft-storage onos-operator -n kube-system 2>/dev/null || true
