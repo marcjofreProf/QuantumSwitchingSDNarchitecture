@@ -667,14 +667,43 @@ spec:
       openAPIV3Schema:
         type: object
         x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: multiraftprotocols.storage.atomix.io
+spec:
+  group: storage.atomix.io
+  names:
+    kind: MultiRaftProtocol
+    listKind: MultiRaftProtocolList
+    plural: multiraftprotocols
+    singular: multiraftprotocol
+  scope: Namespaced
+  versions:
+  - name: v2beta1
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        x-kubernetes-preserve-unknown-fields: true
+  - name: v2beta2
+    served: true
+    storage: false
+    schema:
+      openAPIV3Schema:
+        type: object
+        x-kubernetes-preserve-unknown-fields: true
 EOF
 
     log_info "Waiting for CRDs to register..."
     kubectl wait --for=condition=established \
-        crd/raftclusters.raft.atomix.io \
-        crd/raftstores.raft.atomix.io \
-        crd/storageprofiles.atomix.io \
-        --timeout=30s 2>/dev/null || true
+    crd/raftclusters.raft.atomix.io \
+    crd/raftstores.raft.atomix.io \
+    crd/storageprofiles.atomix.io \
+    crd/multiraftprotocols.storage.atomix.io \
+    --timeout=30s 2>/dev/null || true
 
     log_info "Installing v1beta3-compatible Atomix controllers and onos controllers..."
     helm install atomix-controller atomix/atomix-controller -n kube-system --version 0.6.9
