@@ -596,14 +596,26 @@ deploy_cloud_native_uonos() {
     helm pull atomix/atomix-raft-storage --untar 2>/dev/null || true
     helm pull onosproject/onos-operator --untar 2>/dev/null || true
 
-    # Parse all YAML files and extract only CustomResourceDefinitions to bypass template/ folder limitations
+    # Robustly parse YAML documents, capturing the entire block (including apiVersion) for CRDs
     find . -type f -name "*.yaml" 2>/dev/null | while read -r file; do
         awk '
-            /^---$/ { if(flag) print; next }
-            /^kind: CustomResourceDefinition/ { flag=1; print "---"; print; next }
-            /^kind: / && !/^kind: CustomResourceDefinition/ { flag=0; next }
-            flag { print }
-        ' "$file"
+        /^---$/ {
+            if (buf ~ /kind: CustomResourceDefinition/) {
+                print "---"
+                print buf
+            }
+            buf = ""
+            next
+        }
+        {
+            buf = buf (buf=="" ? "" : "\n") $0
+        }
+        END {
+            if (buf ~ /kind: CustomResourceDefinition/) {
+                print "---"
+                print buf
+            }
+        }' "$file"
     done | kubectl apply -f - || log_warn "Encountered issues applying some extracted CRDs."
 
     cd - >/dev/null
