@@ -537,23 +537,29 @@ modules:
     file: controller-quantum-switching.yang
 EOF
 
+    local plugin_dir="./sdn-controller/northbound-interfaces/model-plugin"
+
     log_info "Executing onosproject/model-compiler..."
-    # (Your existing docker run command for the model-compiler goes here)
     docker run --rm -v "$(pwd)/sdn-controller/northbound-interfaces/model-plugin:/config-model" \
         onosproject/model-compiler:latest \
         -name quantum-switching -version 1.0.0 \
         -build-path /config-model -output-path /config-model
 
-    # --- ADD THIS LINE TO FIX PERMISSIONS ---
     # The Docker container runs as root and outputs files owned by root. 
     # This reverts ownership to the user executing the script so 'go mod tidy' can run.
-    sudo chown -R $USER:$USER ./sdn-controller/northbound-interfaces/model-plugin
+    sudo chown -R $USER:$USER "$plugin_dir"
 
     log_info "Building the resulting Model Plugin Docker Image..."
-    (cd ./sdn-controller/northbound-interfaces/model-plugin && make image) || log_error "Failed to build the model plugin image."
-        if [ -f "$plugin_dir/Makefile" ]; then
-            (cd "$plugin_dir" && make image) || log_warn "Failed to build the model plugin image."
+    if [ -f "$plugin_dir/Makefile" ]; then
+        (cd "$plugin_dir" && make image) || log_error "Failed to build the model plugin image."
+        
+        # Import the freshly built model plugin into K3s so the ONOS pods can pull it locally
+        if command -v docker >/dev/null 2>&1 && command -v k3s >/dev/null 2>&1; then
+            log_info "Importing model plugin image into K3s containerd..."
+            docker save onosproject/controller-quantum-switching:1.0.0-controller-quantum-switching-1.0.0 2>/dev/null | sudo k3s ctr images import - || true
         fi
+    else
+        log_warn "Makefile not found in $plugin_dir. Model compilation may have failed."
     fi
 }
 
