@@ -562,15 +562,11 @@ deploy_cloud_native_uonos() {
     kubectl delete clusterrole atomix-controller atomix-raft-storage-controller onos-operator --ignore-not-found 2>/dev/null || true
     kubectl delete clusterrolebinding atomix-controller atomix-raft-storage-controller onos-operator --ignore-not-found 2>/dev/null || true
 
-    # Pre-unpack and apply CRDs directly to guarantee registration in Kubernetes API server
+    # Extract and explicitly apply CRDs using native Helm commands
     log_info "Pre-installing Atomix and ONOS CRDs directly into Kubernetes..."
-    mkdir -p /tmp/atomix-crd-tmp
-    helm pull atomix/atomix-controller --untar --untardir /tmp/atomix-crd-tmp 2>/dev/null || true
-    helm pull atomix/atomix-raft-storage --untar --untardir /tmp/atomix-crd-tmp 2>/dev/null || true
-    helm pull onosproject/onos-operator --untar --untardir /tmp/atomix-crd-tmp 2>/dev/null || true
-    
-    find /tmp/atomix-crd-tmp -type f \( -name "*.yaml" -o -name "*.yml" \) | xargs -I {} kubectl apply -f {} 2>/dev/null || true
-    rm -rf /tmp/atomix-crd-tmp
+    helm show crds atomix/atomix-controller | kubectl apply -f - || log_warn "Failed to apply atomix-controller CRDs."
+    helm show crds atomix/atomix-raft-storage | kubectl apply -f - || log_warn "Failed to apply atomix-raft-storage CRDs."
+    helm show crds onosproject/onos-operator | kubectl apply -f - || log_warn "Failed to apply onos-operator CRDs."
 
     log_info "Waiting for Kubernetes API server to establish CRDs..."
     local crds=(
