@@ -24,8 +24,11 @@ kubectl
 grpcurl_*.tar.gz
 grpcurl
 
-# Keys and credentials
+# Keys, certificates, and credentials
 OSM-ETSI-Release-key.gpg
+*.gpg
+*.pem
+*.crt
 
 # Standard OS hidden files
 .DS_Store
@@ -41,3 +44,9 @@ proto/__init__.py
 sdn-controller/northbound-interfaces/model-plugin/VERSION
 sdn-controller/northbound-interfaces/model-plugin/metadata.yaml
 sdn-controller/northbound-interfaces/model-plugin/yang/controller-quantum-switching.yang
+sdn-controller/northbound-interfaces/model-plugin/build/
+sdn-controller/northbound-interfaces/model-plugin/Makefile
+sdn-controller/northbound-interfaces/model-plugin/go.mod
+sdn-controller/northbound-interfaces/model-plugin/go.sum
+sdn-controller/northbound-interfaces/model-plugin/*.go
+sdn-controller/northbound-interfaces/model-plugin/proto/
