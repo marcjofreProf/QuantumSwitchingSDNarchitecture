@@ -240,15 +240,11 @@ EOF
 }
 
 setup_helm_repos() {
-    log_info "Phase 4: Setting up Helm repositories for µONOS, Atomix, and Open5GS..."
-    helm repo add onosproject https://charts.onosproject.org || log_warn "Failed to add onosproject repository."
+    log_info "Phase 4: Setting up Helm repositories for µONOS and Open5GS..."
     
-    # Cleaned up to only use the active Atomix endpoints
+    helm repo add onosproject https://charts.onosproject.org || log_warn "Failed to add onosproject repository."
     helm repo remove atomix 2>/dev/null || true
-    helm repo add atomix https://atomix.github.io/charts.atomix.io || \
-        helm repo add atomix https://charts.atomix.io || \
-        log_warn "Failed to add atomix repository from all known endpoints."
-        
+    
     helm repo add towards5gs https://raw.githubusercontent.com/Orange-OpenSource/towards5gs-helm/main/repo/ || \
         helm repo add towards5gs https://cdn.jsdelivr.net/gh/Orange-OpenSource/towards5gs-helm@main/repo/
     
@@ -580,7 +576,6 @@ deploy_cloud_native_uonos() {
 
     kubectl create namespace micro-onos --dry-run=client -o yaml | kubectl apply -f -
 
-    # Force cleanup of conflicting cluster-scoped resources and stale Helm releases
     log_info "Purging stale Helm releases and cluster-scoped RBAC resources..."
     helm uninstall atomix-controller atomix-raft-storage onos-operator -n micro-onos 2>/dev/null || true
     helm uninstall atomix-controller atomix-raft-storage onos-operator -n kube-system 2>/dev/null || true
@@ -588,15 +583,14 @@ deploy_cloud_native_uonos() {
     kubectl delete clusterrole atomix-controller atomix-raft-storage-controller onos-operator --ignore-not-found 2>/dev/null || true
     kubectl delete clusterrolebinding atomix-controller atomix-raft-storage-controller onos-operator --ignore-not-found 2>/dev/null || true
 
-    # Extract and explicitly apply CRDs to resolve API version mismatches
-    log_info "Extracting and pre-installing Atomix and ONOS CRDs directly into Kubernetes..."
+    log_info "Extracting and pre-installing synchronized Atomix and ONOS CRDs directly into Kubernetes..."
     mkdir -p /tmp/onos-crd-extract && cd /tmp/onos-crd-extract
     
-    helm pull atomix/atomix-controller --untar 2>/dev/null || true
-    helm pull atomix/atomix-raft-storage --untar 2>/dev/null || true
+    # Switch to the onosproject repository for Atomix charts
+    helm pull onosproject/atomix-controller --untar 2>/dev/null || true
+    helm pull onosproject/atomix-raft-storage --untar 2>/dev/null || true
     helm pull onosproject/onos-operator --untar 2>/dev/null || true
 
-    # Robustly parse YAML documents, capturing the entire block (including apiVersion) for CRDs
     find . -type f -name "*.yaml" 2>/dev/null | while read -r file; do
         awk '
         /^---$/ {
@@ -638,13 +632,12 @@ deploy_cloud_native_uonos() {
         kubectl wait --for=condition=established crd/"$crd" --timeout=60s 2>/dev/null || true
     done
 
-    # Deploy operators to kube-system using --force to overwrite any remaining metadata conflicts
     log_info "Deploying Atomix and ONOS cluster operators in 'kube-system' namespace..."
-    helm upgrade --install atomix-controller atomix/atomix-controller -n kube-system --force --wait
-    helm upgrade --install atomix-raft-storage atomix/atomix-raft-storage -n kube-system --force --wait
+    # Switch to the onosproject repository for Atomix installations
+    helm upgrade --install atomix-controller onosproject/atomix-controller -n kube-system --force --wait
+    helm upgrade --install atomix-raft-storage onosproject/atomix-raft-storage -n kube-system --force --wait
     helm upgrade --install onos-operator onosproject/onos-operator -n kube-system --force --wait
 
-    # Deploy ONOS Topology and Config into micro-onos
     log_info "Deploying ONOS Topology and Config in 'micro-onos' namespace..."
     helm upgrade --install onos-topo onosproject/onos-topo -n micro-onos
     helm upgrade --install onos-config onosproject/onos-config -n micro-onos
