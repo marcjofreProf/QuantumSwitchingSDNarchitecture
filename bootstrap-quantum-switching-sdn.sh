@@ -242,7 +242,6 @@ setup_helm_repos() {
     log_info "Phase 4: Setting up Helm repositories for µONOS and Open5GS..."
     
     helm repo add onosproject https://charts.onosproject.org || log_warn "Failed to add onosproject repository."
-    helm repo add atomix https://atomix.github.io/atomix-helm || log_warn "Failed to add atomix repository."
     
     helm repo add towards5gs https://raw.githubusercontent.com/Orange-OpenSource/towards5gs-helm/main/repo/ || \
         helm repo add towards5gs https://cdn.jsdelivr.net/gh/Orange-OpenSource/towards5gs-helm@main/repo/
@@ -585,9 +584,9 @@ deploy_cloud_native_uonos() {
     log_info "Extracting and pre-installing synchronized Atomix and ONOS CRDs directly into Kubernetes..."
     mkdir -p /tmp/onos-crd-extract && cd /tmp/onos-crd-extract
     
-    # Switch to the atomix repository for Atomix charts
-    helm pull atomix/atomix-controller --untar 2>/dev/null || true
-    helm pull atomix/atomix-raft-storage --untar 2>/dev/null || true
+    # Pull from the consolidated onosproject repository
+    helm pull onosproject/atomix-controller --untar 2>/dev/null || true
+    helm pull onosproject/atomix-raft-storage --untar 2>/dev/null || true
     helm pull onosproject/onos-operator --untar 2>/dev/null || true
 
     find . -type f -name "*.yaml" 2>/dev/null | while read -r file; do
@@ -632,9 +631,9 @@ deploy_cloud_native_uonos() {
     done
 
     log_info "Deploying Atomix and ONOS cluster operators in 'kube-system' namespace..."
-    # Switch to the atomix repository for Atomix installations
-    helm upgrade --install atomix-controller atomix/atomix-controller -n kube-system --force --wait
-    helm upgrade --install atomix-raft-storage atomix/atomix-raft-storage -n kube-system --force --wait
+    # Install from the consolidated onosproject repository
+    helm upgrade --install atomix-controller onosproject/atomix-controller -n kube-system --force --wait
+    helm upgrade --install atomix-raft-storage onosproject/atomix-raft-storage -n kube-system --force --wait
     helm upgrade --install onos-operator onosproject/onos-operator -n kube-system --force --wait
 
     log_info "Deploying ONOS Topology and Config in 'micro-onos' namespace..."
