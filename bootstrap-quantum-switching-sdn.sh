@@ -603,6 +603,13 @@ spec:
       openAPIV3Schema:
         type: object
         x-kubernetes-preserve-unknown-fields: true
+  - name: v2beta2
+    served: true
+    storage: false
+    schema:
+      openAPIV3Schema:
+        type: object
+        x-kubernetes-preserve-unknown-fields: true
 ---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
@@ -620,6 +627,13 @@ spec:
   - name: v1beta3
     served: true
     storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        x-kubernetes-preserve-unknown-fields: true
+  - name: v2beta2
+    served: true
+    storage: false
     schema:
       openAPIV3Schema:
         type: object
