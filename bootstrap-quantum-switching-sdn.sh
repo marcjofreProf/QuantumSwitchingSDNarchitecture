@@ -39,6 +39,16 @@ ask_user() {
     fi
 }
 
+wait_for_apt_lock() {
+    log_info "Checking for dpkg/apt locks..."
+    while sudo fuser /var/lib/dpkg/lock >/dev/null 2>&1 || \
+          sudo fuser /var/lib/apt/lists/lock >/dev/null 2>&1 || \
+          sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do
+        log_info "Waiting for background updates to release the apt lock..."
+        sleep 5
+    done
+}
+
 stop_unattended_upgrades() {
     log_info "Phase 0: Disabling unattended-upgrades to prevent APT lock conflicts..."
     sudo systemctl stop unattended-upgrades 2>/dev/null || true
@@ -132,6 +142,7 @@ install_sys_deps() {
 
     if [ -n "$to_install" ]; then
         log_info "Installing missing packages:$to_install"
+        wait_for_apt_lock
         sudo DEBIAN_FRONTEND=noninteractive apt-get update -y
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y $to_install
         log_success "System dependencies installed."
@@ -164,6 +175,7 @@ install_kubectl_and_helm() {
 
     if ! command -v kubectl >/dev/null 2>&1; then
         log_info "Installing kubectl..."
+        wait_for_apt_lock
         sudo DEBIAN_FRONTEND=noninteractive apt-get update -y && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y kubectl
     fi
 
@@ -219,6 +231,8 @@ EOF
 
     echo iptables-persistent iptables-persistent/enable-ipv4 boolean true | sudo debconf-set-selections
     echo iptables-persistent iptables-persistent/enable-ipv6 boolean true | sudo debconf-set-selections
+    
+    wait_for_apt_lock
     sudo DEBIAN_FRONTEND=noninteractive apt-get install -y iptables-persistent netfilter-persistent
 
     sudo netfilter-persistent save
@@ -242,7 +256,8 @@ setup_helm_repos() {
 install_grpc_tools() {
     log_info "Phase 5: Checking gRPC/protobuf tools and gnmic for gNMI..."
     if ! command -v protoc >/dev/null 2>&1; then
-        sudo apt-get install -y protobuf-compiler
+        wait_for_apt_lock
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y protobuf-compiler
     fi
     if ! command -v grpcurl >/dev/null 2>&1; then
         wget https://github.com/fullstorydev/grpcurl/releases/download/v1.8.7/grpcurl_1.8.7_linux_x86_64.tar.gz
@@ -402,7 +417,9 @@ setup_sdn_python_client() {
     log_info "Phase 7: Provisioning Python environment and compiling Protobuf stubs..."
     local base_dir="."  
 
-    sudo apt-get install -y python3-venv python3-pip python3-flask
+    wait_for_apt_lock
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3-venv python3-pip python3-flask
+    
     sudo python3 -m venv /opt/sdn-venv
     sudo /opt/sdn-venv/bin/pip install --upgrade pip grpcio grpcio-tools grpcio-reflection ncclient xmltodict flask requests
 
