@@ -206,8 +206,9 @@ clean_temp_scripts() {
 
     rm -f get-docker.sh get_helm.sh install_osm.sh grpcurl_*.tar.gz LICENSE
     rm -f /tmp/osm-bundle.yaml
-    rm -rf /tmp/atomix-crd-tmp
-    log_success "Temporary installer files removed."
+    rm -rf /tmp/onos-crd-extract
+    rm -rf ./atomix-helm-charts
+    log_success "Temporary installer files and local chart clones removed."
 }
 
 # --- Phase 8: Repository Scaffolding & Workspace Wipe ---
