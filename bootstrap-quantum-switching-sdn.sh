@@ -59,7 +59,6 @@ stop_unattended_upgrades() {
 ensure_sufficient_memory() {
     log_info "Phase 0.5: Checking system RAM and configuring Swap..."
     
-    # Extract total RAM in MB
     local total_ram_mb
     total_ram_mb=$(free -m | awk '/^Mem:/{print $2}')
     local min_ram_mb=8000 # 8GB threshold
@@ -69,18 +68,16 @@ ensure_sufficient_memory() {
     if [ "$total_ram_mb" -lt "$min_ram_mb" ]; then
         log_warn "System RAM (${total_ram_mb}MB) is below recommended ${min_ram_mb}MB."
         
-        # Check existing active swap space in MB
         local total_swap_mb
         total_swap_mb=$(free -m | awk '/^Swap:/{print $2}')
         
         if [ "$total_swap_mb" -ge 4000 ]; then
             log_success "Sufficient Swap space (${total_swap_mb} MB) is already configured."
         else
-            log_info "Configuring an 8GB swap file to prevent OOM errors during Juju/K3s bootstrap..."
+            log_info "Configuring an 8GB swap file to prevent OOM errors..."
             
             sudo swapoff -a 2>/dev/null || true
             
-            # Allocate 8GB swap file using fallocate with a dd fallback
             if ! sudo fallocate -l 8G /swapfile 2>/dev/null; then
                 log_info "fallocate failed, using dd to allocate swap..."
                 sudo dd if=/dev/zero of=/swapfile bs=1M count=8192 status=progress
@@ -90,12 +87,11 @@ ensure_sufficient_memory() {
             sudo mkswap /swapfile
             sudo swapon /swapfile
             
-            # Make swap persistent across reboots
             if ! grep -q '/swapfile' /etc/fstab; then
                 echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab >/dev/null
             fi
             
-            log_success "8GB swap file successfully enabled and configured in /etc/fstab."
+            log_success "8GB swap file successfully enabled and configured."
         fi
     else
         log_success "Sufficient physical RAM detected."
@@ -195,11 +191,9 @@ ensure_kubernetes_cluster() {
     
     export KUBECONFIG=${KUBECONFIG:-$HOME/.kube/config}
     
-    # Apply Ubuntu 24.04 AppArmor patch for Juju
     sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 2>/dev/null || true
     echo "kernel.apparmor_restrict_unprivileged_userns=0" | sudo tee /etc/sysctl.d/99-juju.conf >/dev/null
     
-    # Check if a healthy Kubernetes cluster is already running
     if kubectl cluster-info >/dev/null 2>&1; then
         log_success "Kubernetes cluster is already running and accessible. Skipping K3s re-installation."
         return 0
@@ -220,12 +214,11 @@ ensure_kubernetes_cluster() {
 }
 
 setup_persistent_sdn_networking() {
-    log_info "Phase 3.5: Applying persistent iptables and kernel network configurations..."
-    
     if [ -f "/etc/sysctl.d/99-sdn-uonos.conf" ] && dpkg -l | grep -qw iptables-persistent; then
         log_success "Persistent SDN networking is already configured."
         return 0
     fi
+    log_info "Phase 3.5: Applying persistent iptables and kernel network configurations..."
 
     echo "br_netfilter" | sudo tee /etc/modules-load.d/sdn-uonos.conf >/dev/null
     sudo modprobe br_netfilter
@@ -249,15 +242,13 @@ EOF
 }
 
 setup_helm_repos() {
-    log_info "Phase 4: Setting up Helm repositories for µONOS and Open5GS..."
-    
     if helm repo list 2>/dev/null | grep -q "onosproject" && helm repo list 2>/dev/null | grep -q "towards5gs"; then
         log_success "Helm repositories are already configured."
         return 0
     fi
-
-    helm repo add onosproject https://charts.onosproject.org || log_warn "Failed to add onosproject repository."
+    log_info "Phase 4: Setting up Helm repositories for µONOS and Open5GS..."
     
+    helm repo add onosproject https://charts.onosproject.org || log_warn "Failed to add onosproject repository."
     helm repo add towards5gs https://raw.githubusercontent.com/Orange-OpenSource/towards5gs-helm/main/repo/ || \
         helm repo add towards5gs https://cdn.jsdelivr.net/gh/Orange-OpenSource/towards5gs-helm@main/repo/
     
@@ -301,7 +292,6 @@ install_osm_installer() {
         log_info "OSM is not currently active. Proceeding with deployment..."
     fi
 
-    # --- Pre-Flight Cleanup ---
     log_info "Purging stale Juju client cache, orphaned controllers, and leftover namespaces..."
     juju destroy-model osm -y --destroy-storage --force 2>/dev/null || true
     rm -rf ~/.local/share/juju ~/.cache/juju 2>/dev/null || true
@@ -316,9 +306,7 @@ install_osm_installer() {
         log_info "Waiting for leftover 'controller-osm-vca' namespace to terminate..."
         sleep 2
     done
-    # --------------------------
 
-    # Fix cluster DNS resolution & enable host IP forwarding if needed
     log_info "Configuring CoreDNS upstream servers and kernel IP forwarding..."
     sudo sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 || true
     kubectl get configmap coredns -n kube-system -o json 2>/dev/null | sed 's/forward . \/etc\/resolv.conf/forward . 8.8.8.8 1.1.1.1/' | kubectl apply -f - >/dev/null 2>&1 || true
@@ -327,7 +315,6 @@ install_osm_installer() {
     log_info "Ensuring K3s local storage class is fully initialized..."
     kubectl rollout status deployment/local-path-provisioner -n kube-system --timeout=60s || true
 
-    # --- Register Cloud and Bootstrap Juju ---
     log_info "Registering local K3s cluster with Juju..."
     juju add-k8s k8s-cloud --client || true
 
@@ -351,9 +338,7 @@ install_osm_installer() {
         --model-default default-series=jammy || true
 
     kill $CERT_SYNC_PID 2>/dev/null || true
-    # --------------------------------------------------------
 
-    # --- Model Creation and Juju 3 Bundle Patching ---
     log_info "Adding 'osm' model on k8s-cloud..."
     juju add-model osm k8s-cloud
 
@@ -403,7 +388,6 @@ if in_mongo and not mongo_has_base:
 
 full_text = '\n'.join(out) + '\n'
 
-# Split ingress relation quota limit issue by adding a dedicated nbi-ingress app
 nbi_ingress_app = """  nbi-ingress:
     charm: nginx-ingress-integrator
     channel: latest/stable
@@ -424,13 +408,12 @@ EOF
 }
 
 setup_sdn_python_client() {
-    log_info "Phase 7: Provisioning Python environment and compiling Protobuf stubs..."
     local base_dir="."  
-
     if [ -d "/opt/sdn-venv" ] && [ -f "$base_dir/proto/__init__.py" ]; then
          log_success "Python environment and Protobuf stubs are already initialized."
          return 0
     fi
+    log_info "Phase 7: Provisioning Python environment and compiling Protobuf stubs..."
 
     wait_for_apt_lock
     sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3-venv python3-pip python3-flask
@@ -457,12 +440,11 @@ setup_sdn_python_client() {
 }
 
 compile_uonos_model_plugins() {
-    log_info "Phase 7.5: Compiling µONOS YANG Model Plugins..."
-    
     if command -v docker >/dev/null 2>&1 && docker images --format "{{.Repository}}:{{.Tag}}" | grep -q "onosproject/controller-quantum-switching:1.0.0-controller-quantum-switching-1.0.0"; then
         log_success "µONOS YANG Model Plugin image is already compiled."
         return 0
     fi
+    log_info "Phase 7.5: Compiling µONOS YANG Model Plugins..."
     
     local yang_target="./orchestration/yang-models/controller-quantum-switching.yang"
     local plugin_dir="./sdn-controller/northbound-interfaces/model-plugin"
@@ -509,7 +491,6 @@ module controller-quantum-switching {
 EOF
     fi
 
-    # Sanitize copied YANG model to satisfy pyang RFC 8407 linting rules
     log_info "Sanitizing YANG model for pyang RFC 8407 compliance..."
     python3 - << 'EOF'
 import re
@@ -518,15 +499,12 @@ yang_file = "./sdn-controller/northbound-interfaces/model-plugin/yang/controller
 with open(yang_file, "r") as f:
     content = f.read()
 
-# Fix missing contact statement
 if "contact" not in content:
     content = re.sub(r'(organization\s+[^;]+;)', r'\1\n    contact "SDN Architecture Team <sdn@example.com>";', content)
 
-# Fix missing revision reference
 if "reference" not in content:
     content = re.sub(r'(revision\s+[0-9\-]+\s*\{[^}]*description\s+[^;]+;)', r'\1\n        reference "RFC 8407 Compliance";', content)
 
-# Convert uppercase enums (ENABLED/DISABLED) to lowercase hyphenated names and inject descriptions
 content = re.sub(r'enum\s+ENABLED\s*;', 'enum enabled {\n            description "Enabled state.";\n        }', content)
 content = re.sub(r'enum\s+DISABLED\s*;', 'enum disabled {\n            description "Disabled state.";\n        }', content)
 content = re.sub(r'enum\s+ENABLED\s*\{', 'enum enabled {\n            description "Enabled state.";', content)
@@ -536,10 +514,8 @@ with open(yang_file, "w") as f:
     f.write(content)
 EOF
 
-    # Create VERSION file required by model-compiler
     echo "1.0.0" > "$plugin_dir/VERSION"
 
-    # Generate metadata.yaml with explicit file target for pyang
     cat <<EOF > "$plugin_dir/metadata.yaml"
 name: controller-quantum-switching
 version: 1.0.0
@@ -557,18 +533,14 @@ EOF
     local plugin_dir="./sdn-controller/northbound-interfaces/model-plugin"
 
     log_info "Executing onosproject/model-compiler..."
-    # The compiler automatically reads configuration from the mounted metadata.yaml
     docker run --rm -v "$(pwd)/$plugin_dir:/config-model" onosproject/model-compiler:latest
 
-    # The Docker container runs as root and outputs files owned by root. 
-    # This reverts ownership to the user executing the script so 'go mod tidy' can run.
     sudo chown -R $USER:$USER "$plugin_dir"
 
     log_info "Building the resulting Model Plugin Docker Image..."
     if [ -f "$plugin_dir/Makefile" ]; then
         (cd "$plugin_dir" && make image) || log_error "Failed to build the model plugin image."
         
-        # Import the freshly built model plugin into K3s so the ONOS pods can pull it locally
         if command -v docker >/dev/null 2>&1 && command -v k3s >/dev/null 2>&1; then
             log_info "Importing model plugin image into K3s containerd..."
             docker save onosproject/controller-quantum-switching:1.0.0-controller-quantum-switching-1.0.0 2>/dev/null | sudo k3s ctr images import - || true
@@ -608,17 +580,16 @@ deploy_cloud_native_uonos() {
     log_info "Extracting and pre-installing synchronized Atomix and ONOS CRDs directly into Kubernetes..."
     mkdir -p /tmp/onos-crd-extract && cd /tmp/onos-crd-extract
     
-    # Clone the Atomix charts locally (bypassing the dead remote Helm repo)
     log_info "Cloning local Atomix Helm charts source..."
     git clone https://github.com/atomix/atomix-helm-charts.git 2>/dev/null || true
-
-    # Pull the ONOS operator from the working onosproject repository
     helm pull onosproject/onos-operator --untar 2>/dev/null || true
 
+    # Filter out K8s-unsupported schemas (bindings schema is severely broken; dropped entirely)
+    # Correct typographical validation errors on raftgroups.
     find . -type f -name "*.yaml" 2>/dev/null | while read -r file; do
         awk '
         /^---$/ {
-            if (buf ~ /kind: CustomResourceDefinition/) {
+            if (buf ~ /kind: CustomResourceDefinition/ && buf !~ /name: bindings.atomix.io/) {
                 print "---"
                 print buf
             }
@@ -629,13 +600,12 @@ deploy_cloud_native_uonos() {
             buf = buf (buf=="" ? "" : "\n") $0
         }
         END {
-            if (buf ~ /kind: CustomResourceDefinition/) {
+            if (buf ~ /kind: CustomResourceDefinition/ && buf !~ /name: bindings.atomix.io/) {
                 print "---"
                 print buf
             }
         }' "$file"
-    # Filter out K8s-unsupported 'deprecated' schema fields and Server-Side Apply
-    done | sed '/deprecated: true/d' | kubectl apply --server-side --force-conflicts -f - || log_warn "Encountered issues applying some extracted CRDs."
+    done | sed -e '/deprecated: true/d' -e 's/minumum:/minimum:/g' | kubectl apply --server-side --force-conflicts -f - || log_warn "Encountered issues applying some extracted CRDs."
 
     log_info "Waiting for Kubernetes API server to establish CRDs..."
     local crds=(
@@ -655,13 +625,10 @@ deploy_cloud_native_uonos() {
     done
 
     log_info "Deploying Atomix and ONOS cluster operators in 'kube-system' namespace..."
-    # Install Atomix resources directly from the cloned local directories
     helm upgrade --install atomix-controller ./atomix-helm-charts/atomix-controller -n kube-system --force --wait
     helm upgrade --install atomix-raft-storage ./atomix-helm-charts/atomix-raft-storage -n kube-system --force --wait
-    # Install ONOS operator from the remote repository
     helm upgrade --install onos-operator onosproject/onos-operator -n kube-system --force --wait
 
-    # Clean up the temporary CRD/clone extraction workspace
     cd - >/dev/null
     rm -rf /tmp/onos-crd-extract
 
