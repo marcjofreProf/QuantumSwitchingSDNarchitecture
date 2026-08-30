@@ -47,6 +47,30 @@ if ! ask_user "Are you sure you want to uninstall tools and clean this repositor
     exit 0
 fi
 
+# --- Phase 0: System Configurations (Swap, Sysctl, Upgrades) ---
+revert_system_configs() {
+    log_info "Phase 0: Reverting System Configurations (Swap, Sysctl, Unattended-upgrades)..."
+    if ask_user "Do you want to remove the 8GB swap file and revert sysctl/apparmor network rules?" "N"; then
+        log_info "Disabling and removing /swapfile..."
+        sudo swapoff /swapfile 2>/dev/null || true
+        sudo rm -f /swapfile
+        sudo sed -i '/\/swapfile/d' /etc/fstab
+
+        log_info "Removing kernel configurations..."
+        sudo rm -f /etc/sysctl.d/99-juju.conf
+        sudo rm -f /etc/sysctl.d/99-sdn-uonos.conf
+        sudo rm -f /etc/modules-load.d/sdn-uonos.conf
+        sudo sysctl --system >/dev/null 2>&1 || true
+        log_success "System configurations reverted."
+    fi
+
+    if ask_user "Do you want to re-enable unattended-upgrades?" "Y"; then
+        sudo systemctl enable unattended-upgrades 2>/dev/null || true
+        sudo systemctl start unattended-upgrades 2>/dev/null || true
+        log_success "unattended-upgrades re-enabled."
+    fi
+}
+
 # --- Phase 1: Python Virtual Environment & Stubs Cleanup ---
 uninstall_python_env() {
     log_info "Phase 1: Removing Python virtual environment (/opt/sdn-venv) and compiled stubs..."
@@ -73,13 +97,11 @@ uninstall_python_env() {
 clean_virtual_interfaces() {
     log_info "Phase 1.5: Cleaning up virtual network interfaces..."
 
-    # Prune unused Docker networks if Docker is running
     if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
         log_info "Pruning unused Docker networks..."
         docker network prune -f 2>/dev/null || true
     fi
 
-    # Detect and remove orphaned virtual interface bridges and veth pairs
     local v_ifaces
     v_ifaces=$(ip -o link show | awk -F': ' '{print $2}' | grep -E '^(veth|br-|cni|dummy|virbr)')
 
@@ -98,17 +120,34 @@ clean_virtual_interfaces() {
     fi
 }
 
-# --- Phase 2: Helm, Kubernetes Namespaces & Tooling ---
-uninstall_helm_and_repos() {
-    log_info "Phase 2: Cleaning up Kubernetes namespaces, Helm repos, and binaries..."
+# --- Phase 2: K3s, Juju & OSM Teardown ---
+uninstall_k3s_juju() {
+    log_info "Phase 2: Tearing down K3s, Juju controllers, and OSM data..."
+    if ask_user "Do you want to completely uninstall K3s, destroy Juju controllers, and remove OSM?" "N"; then
+        
+        if command -v juju >/dev/null 2>&1; then
+            log_info "Destroying Juju controllers..."
+            juju destroy-controller osm-vca --destroy-all-models -y 2>/dev/null || true
+            sudo rm -rf ~/.local/share/juju ~/.cache/juju 2>/dev/null || true
+        fi
 
-    if command -v kubectl >/dev/null 2>&1; then
-        log_info "Deleting micro-onos Kubernetes namespace..."
-        kubectl delete namespace micro-onos 2>/dev/null || true
+        if command -v k3s-uninstall.sh >/dev/null 2>&1; then
+            log_info "Running native K3s uninstall script..."
+            /usr/local/bin/k3s-uninstall.sh || true
+            sudo rm -rf ~/.kube
+            sed -i '/export KUBECONFIG/d' ~/.bashrc
+            log_success "K3s cluster destroyed."
+        fi
     fi
+}
+
+# --- Phase 3: Helm, Kubernetes Namespaces & Tooling ---
+uninstall_helm_and_repos() {
+    log_info "Phase 3: Cleaning up Helm repos and standalone binaries..."
 
     if command -v helm >/dev/null 2>&1; then
         helm repo remove onosproject 2>/dev/null || true
+        helm repo remove atomix 2>/dev/null || true
         helm repo remove towards5gs 2>/dev/null || true
         log_success "Removed Helm repositories."
     fi
@@ -122,9 +161,9 @@ uninstall_helm_and_repos() {
     fi
 }
 
-# --- Phase 3: Protocol Buffers & Development Tools ---
+# --- Phase 4: Protocol Buffers & Development Tools ---
 uninstall_grpc_tools() {
-    log_info "Phase 3: Reversing gRPC/protobuf tools..."
+    log_info "Phase 4: Reversing gRPC/protobuf tools..."
 
     if ask_user "Do you want to purge protobuf-compiler?" "N"; then
         sudo apt-get purge -y protobuf-compiler || true
@@ -133,9 +172,9 @@ uninstall_grpc_tools() {
     fi
 }
 
-# --- Phase 4: Docker Uninstallation (Optional) ---
+# --- Phase 5: Docker Uninstallation (Optional) ---
 uninstall_docker() {
-    log_info "Phase 4: Docker environment check..."
+    log_info "Phase 5: Docker environment check..."
 
     if ask_user "Do you want to uninstall Docker completely from this machine?" "N"; then
         log_warn "Uninstalling Docker engine..."
@@ -148,12 +187,12 @@ uninstall_docker() {
     fi
 }
 
-# --- Phase 5: System APT Packages Clean-up ---
+# --- Phase 6: System APT Packages Clean-up ---
 uninstall_sys_deps() {
-    log_info "Phase 5: Cleaning up system packages..."
+    log_info "Phase 6: Cleaning up system packages..."
 
-    if ask_user "Do you want to purge extra build dependencies installed by bootstrap (jq, python3-venv, python3-pip, build-essential)?" "N"; then
-        sudo apt-get purge -y jq python3-venv python3-pip build-essential || true
+    if ask_user "Do you want to purge extra build dependencies installed by bootstrap (jq, python3-venv, python3-pip, build-essential, iptables-persistent)?" "N"; then
+        sudo apt-get purge -y jq python3-venv python3-pip build-essential iptables-persistent netfilter-persistent || true
         sudo apt-get autoremove -y
         log_success "System build dependencies removed."
     else
@@ -161,17 +200,19 @@ uninstall_sys_deps() {
     fi
 }
 
-# --- Phase 6: OSM Installer & Temporary Script Cleanup ---
+# --- Phase 7: OSM Installer & Temporary Script Cleanup ---
 clean_temp_scripts() {
-    log_info "Phase 6: Removing temporary downloads and installers..."
+    log_info "Phase 7: Removing temporary downloads and installers..."
 
     rm -f get-docker.sh get_helm.sh install_osm.sh grpcurl_*.tar.gz LICENSE
+    rm -f /tmp/osm-bundle.yaml
+    rm -rf /tmp/atomix-crd-tmp
     log_success "Temporary installer files removed."
 }
 
-# --- Phase 7: Repository Scaffolding & Workspace Wipe ---
+# --- Phase 8: Repository Scaffolding & Workspace Wipe ---
 clean_repo_structure() {
-    log_info "Phase 7: Cleaning local repository directory..."
+    log_info "Phase 8: Cleaning local repository directory..."
     local base_dir="."
 
     if ask_user "Do you want to completely clean non-tracked directory structure and scaffolding?" "Y"; then
@@ -202,8 +243,10 @@ clean_repo_structure() {
 }
 
 # --- Main Execution ---
+revert_system_configs
 uninstall_python_env
 clean_virtual_interfaces
+uninstall_k3s_juju
 uninstall_helm_and_repos
 uninstall_grpc_tools
 uninstall_docker
