@@ -695,6 +695,97 @@ spec:
       openAPIV3Schema:
         type: object
         x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: databases.cloud.atomix.io
+spec:
+  group: cloud.atomix.io
+  names:
+    kind: Database
+    listKind: DatabaseList
+    plural: databases
+    singular: database
+  scope: Namespaced
+  versions:
+  - name: v1beta3
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        x-kubernetes-preserve-unknown-fields: true
+  - name: v1beta2
+    served: true
+    storage: false
+    schema:
+      openAPIV3Schema:
+        type: object
+        x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: partitionsets.cloud.atomix.io
+spec:
+  group: cloud.atomix.io
+  names:
+    kind: PartitionSet
+    listKind: PartitionSetList
+    plural: partitionsets
+    singular: partitionset
+  scope: Namespaced
+  versions:
+  - name: v1beta3
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: partitions.cloud.atomix.io
+spec:
+  group: cloud.atomix.io
+  names:
+    kind: Partition
+    listKind: PartitionList
+    plural: partitions
+    singular: partition
+  scope: Namespaced
+  versions:
+  - name: v1beta3
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: members.cloud.atomix.io
+spec:
+  group: cloud.atomix.io
+  names:
+    kind: Member
+    listKind: MemberList
+    plural: members
+    singular: member
+  scope: Namespaced
+  versions:
+  - name: v1beta3
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        x-kubernetes-preserve-unknown-fields: true
 EOF
 
     log_info "Waiting for CRDs to register..."
@@ -703,6 +794,10 @@ EOF
     crd/raftstores.raft.atomix.io \
     crd/storageprofiles.atomix.io \
     crd/multiraftprotocols.storage.atomix.io \
+    crd/databases.cloud.atomix.io \
+    crd/partitionsets.cloud.atomix.io \
+    crd/partitions.cloud.atomix.io \
+    crd/members.cloud.atomix.io \
     --timeout=30s 2>/dev/null || true
 
     log_info "Installing v1beta3-compatible Atomix controllers and onos controllers..."
