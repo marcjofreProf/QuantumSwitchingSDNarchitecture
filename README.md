@@ -68,23 +68,23 @@ Use the CLI client to test individual connections to a node using its IP address
 ```bash
 ## Check gNOI
 # Check if the hardware node is connected or disconnected
-python3 scripts/gnoi-switching-client.py <NODE_IP> status
+python3 ./hardware-agents/switch-drivers/gnoi-switching-client.py <NODE_IP> status
 
 # Force the physical switch to connect (cross-connect)
-python3 scripts/gnoi-switching-client.py <NODE_IP> connect
+python3 ./hardware-agents/switch-drivers/gnoi-switching-client.py <NODE_IP> connect
 
 # Force the physical switch to disconnect
-python3 scripts/gnoi-switching-client.py <NODE_IP> disconnect
+python3 ./hardware-agents/switch-drivers/gnoi-switching-client.py <NODE_IP> disconnect
 
 ## Check NETCONF
 # Check if the hardware node is connected or disconnected
-python3 scripts/netconf-switching-client.py <NODE_IP> status
+python3 ./hardware-agents/switch-drivers/netconf-switching-client.py <NODE_IP> status
 
 # Force the physical switch to connect (cross-connect)
-python3 scripts/netconf-switching-client.py <NODE_IP> connect
+python3 ./hardware-agents/switch-drivers/netconf-switching-client.py <NODE_IP> connect
 
 # Force the physical switch to disconnect
-python3 scripts/netconf-switching-client.py <NODE_IP> disconnect
+python3 ./hardware-agents/switch-drivers/netconf-switching-client.py <NODE_IP> disconnect
 
 ## Automated Hardware Tests
 To validate a node's full connection lifecycle, use the automated test scripts. These execute a sequence of actions (Status ➔ Connect ➔ Status ➔ Disconnect ➔ Status) with built-in delays to verify that the physical switch properly actuates under protocol commands.
