@@ -3,18 +3,23 @@ import sys
 import os
 import argparse
 
-# --- VENV AUTO-DISCOVERY ---
+current_dir = os.path.dirname(os.path.abspath(__file__))
+
+# --- ELEGANT VENV AUTO-DISCOVERY & RE-EXECUTION ---
 try:
     from ncclient import manager
     from lxml import etree
 except ModuleNotFoundError:
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    venv_python = os.path.abspath(os.path.join(current_dir, '../.venv/bin/python3'))
-    if os.path.exists(venv_python):
-        os.execl(venv_python, venv_python, *sys.argv)
-    else:
-        print("[ERROR] 'ncclient' missing and '.venv' not found. Run bootstrap script first.")
-        sys.exit(1)
+    venv_candidates = [
+        "/opt/sdn-venv/bin/python3",
+        os.path.abspath(os.path.join(current_dir, "../../.venv/bin/python3")),
+        os.path.abspath(os.path.join(current_dir, "../.venv/bin/python3")),
+    ]
+    for venv_python in venv_candidates:
+        if os.path.exists(venv_python):
+            os.execl(venv_python, venv_python, *sys.argv)
+    print("[ERROR] 'ncclient' or 'lxml' missing and no virtual environment found. Run the bootstrap script first.")
+    sys.exit(1)
 
 # NETCONF Agent configuration matching BeagleBone
 NETCONF_PORT = 8300
@@ -45,7 +50,6 @@ def send_rpc(host, command):
                 '''
                 response = m.get(filter=('subtree', filter_xml))
                 
-                # Parse XML to extract exact values
                 root = etree.fromstring(response.xml.encode('utf-8'))
                 state = root.xpath('//*[local-name()="switch-state"]/text()')
                 s_type = root.xpath('//*[local-name()="switch-type"]/text()')
@@ -63,7 +67,6 @@ def send_rpc(host, command):
                 state.text = target_state
                 response = m.dispatch(rpc)
                 
-                # Parse XML result message
                 root = etree.fromstring(response.xml.encode('utf-8'))
                 msg = root.xpath('//*[local-name()="message"]/text()')
                 msg_val = msg[0] if msg else f"State updated to {target_state}"
