@@ -580,46 +580,50 @@ deploy_cloud_native_uonos() {
     log_info "Extracting and pre-installing synchronized Atomix and ONOS CRDs directly into Kubernetes..."
     mkdir -p /tmp/onos-crd-extract && cd /tmp/onos-crd-extract
     
-    log_info "Cloning local Atomix Helm charts source..."
+    log_info "Cloning Atomix Helm charts source and pulling ONOS operator..."
+    rm -rf atomix-helm-charts onos-operator 2>/dev/null || true
     git clone https://github.com/atomix/atomix-helm-charts.git 2>/dev/null || true
     helm pull onosproject/onos-operator --untar 2>/dev/null || true
 
-    # Filter out K8s-unsupported schemas (bindings schema is severely broken; dropped entirely)
-    # Correct typographical validation errors on raftgroups.
-    find . -type f -name "*.yaml" 2>/dev/null | while read -r file; do
-        awk '
-        /^---$/ {
-            if (buf ~ /kind: CustomResourceDefinition/ && buf !~ /name: bindings.atomix.io/) {
-                print "---"
-                print buf
-            }
-            buf = ""
-            next
-        }
-        {
-            buf = buf (buf=="" ? "" : "\n") $0
-        }
-        END {
-            if (buf ~ /kind: CustomResourceDefinition/ && buf !~ /name: bindings.atomix.io/) {
-                print "---"
-                print buf
-            }
-        }' "$file"
-    done | sed -e '/deprecated: true/d' -e 's/minumum:/minimum:/g' | kubectl apply --server-side --force-conflicts -f - || log_warn "Encountered issues applying some extracted CRDs."
+    log_info "Compiling and applying all Atomix and ONOS CRD manifests..."
+    {
+        helm template atomix-controller ./atomix-helm-charts/atomix-controller --include-crds 2>/dev/null
+        helm template atomix-raft-storage ./atomix-helm-charts/atomix-raft-storage --include-crds 2>/dev/null
+        helm template onos-operator ./onos-operator --include-crds 2>/dev/null
+        find . -type f -name "*.yaml" -exec cat {} + 2>/dev/null
+    } | sed -e 's/minumum:/minimum:/g' | python3 -c '
+import sys
+
+docs = sys.stdin.read().split("---")
+seen_crds = set()
+
+for doc in docs:
+    if "kind: CustomResourceDefinition" in doc and "bindings.atomix.io" not in doc:
+        lines = doc.strip().split("\n")
+        name = next((l.split(":")[1].strip() for l in lines if l.strip().startswith("name:")), None)
+        if name and name not in seen_crds:
+            seen_crds.add(name)
+            print("---")
+            print(doc.strip())
+' | kubectl apply --validate=false -f - || log_warn "Encountered minor issues applying some extracted CRDs."
 
     log_info "Waiting for Kubernetes API server to establish CRDs..."
     local crds=(
         "storageprofiles.atomix.io"
+        "stores.atomix.io"
         "raftclusters.raft.atomix.io"
         "raftstores.raft.atomix.io"
     )
     
     for crd in "${crds[@]}"; do
-        local retries=15
+        local retries=20
         while ! kubectl get crd "$crd" >/dev/null 2>&1; do
             sleep 2
             retries=$((retries - 1))
-            if [ $retries -le 0 ]; then break; fi
+            if [ $retries -le 0 ]; then
+                log_warn "Timed out waiting for CRD $crd to register."
+                break
+            fi
         done
         kubectl wait --for=condition=established crd/"$crd" --timeout=60s 2>/dev/null || true
     done
@@ -627,7 +631,7 @@ deploy_cloud_native_uonos() {
     log_info "Deploying Atomix and ONOS cluster operators in 'kube-system' namespace..."
     helm upgrade --install atomix-controller ./atomix-helm-charts/atomix-controller -n kube-system --force --wait
     helm upgrade --install atomix-raft-storage ./atomix-helm-charts/atomix-raft-storage -n kube-system --force --wait
-    helm upgrade --install onos-operator onosproject/onos-operator -n kube-system --force --wait
+    helm upgrade --install onos-operator ./onos-operator -n kube-system --force --wait
 
     cd - >/dev/null
     rm -rf /tmp/onos-crd-extract
