@@ -608,8 +608,8 @@ deploy_cloud_native_uonos() {
                 print buf
             }
         }' "$file"
-    # Use Server-Side Apply to bypass client strict validation and annotation limits
-    done | kubectl apply --server-side --force-conflicts -f - || log_warn "Encountered issues applying some extracted CRDs."
+    # Filter out K8s-unsupported 'deprecated' schema fields and Server-Side Apply
+    done | sed '/deprecated: true/d' | kubectl apply --server-side --force-conflicts -f - || log_warn "Encountered issues applying some extracted CRDs."
 
     cd - >/dev/null
     rm -rf /tmp/onos-crd-extract
