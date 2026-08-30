@@ -608,7 +608,8 @@ deploy_cloud_native_uonos() {
                 print buf
             }
         }' "$file"
-    done | kubectl apply -f - || log_warn "Encountered issues applying some extracted CRDs."
+    # Use Server-Side Apply to bypass client strict validation and annotation limits
+    done | kubectl apply --server-side --force-conflicts -f - || log_warn "Encountered issues applying some extracted CRDs."
 
     cd - >/dev/null
     rm -rf /tmp/onos-crd-extract
