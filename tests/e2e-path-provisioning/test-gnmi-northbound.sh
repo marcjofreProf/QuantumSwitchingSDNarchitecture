@@ -1,5 +1,6 @@
 #!/bin/bash
 # Test direct gNMI Northbound Interface against onos-config via K8s ClusterIP
+# execution as: ./tests/e2e-path-provisioning/test-gnmi-northbound.sh
 
 # --- ROUTE CHECK & INJECTION ---
 if ! ip route | grep -q "10.43.0.0/16"; then
