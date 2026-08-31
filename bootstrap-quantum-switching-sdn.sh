@@ -375,7 +375,10 @@ install_osm_installer() {
     juju deploy nginx-ingress-integrator nbi-ingress --channel latest/stable --base ubuntu@22.04 --trust
 
     log_info "Integrating OSM microservices..."
-    until ! juju status | grep -q "allocating"
+    until ! juju status | grep -q "allocating"; do
+        echo "Waiting for Juju allocation to finish..."
+        sleep 30
+    done
     
     # Core Infrastructure Relations
     juju integrate zookeeper-k8s:zookeeper kafka-k8s:zookeeper
