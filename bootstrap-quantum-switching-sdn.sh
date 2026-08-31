@@ -360,7 +360,7 @@ install_osm_installer() {
     juju deploy kafka-k8s --channel 3/stable --base ubuntu@22.04 --trust
     juju deploy mongodb-k8s --channel 6/stable --base ubuntu@22.04 --trust
     juju deploy charmed-osm-mariadb-k8s mariadb-k8s --channel latest/stable --base ubuntu@20.04 --trust
-    juju deploy osm-prometheus prometheus-k8s --channel 14.0/stable --base ubuntu@22.04 --trust
+    juju deploy osm-prometheus prometheus-k8s --channel 14.0/stable --base ubuntu@20.04 --trust
 
     # OSM Core Services
     juju deploy osm-keystone keystone-k8s --channel 10.0/stable --base ubuntu@22.04 --resource keystone-image=opensourcemano/keystone:10.0.3 --trust
