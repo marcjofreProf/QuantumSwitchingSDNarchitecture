@@ -355,6 +355,8 @@ install_osm_installer() {
 
     log_info "Generating Juju 3 compatible OSM bundle locally for base ${JUJU_BASE}..."
     cat <<EOF > /tmp/osm-bundle.yaml
+bundle: kubernetes
+name: osm
 description: Single instance Charmed OSM
 applications:
   zookeeper-k8s:
