@@ -357,14 +357,14 @@ install_osm_installer() {
     juju deploy kafka-k8s --channel 3/stable --base ubuntu@22.04 --trust
     juju deploy mongodb-k8s --channel 6/stable --base ubuntu@22.04 --trust
 
-    # OSM Core Services (Using 10.0/stable for ubuntu@22.04 support)
-    juju deploy osm-keystone keystone-k8s --channel 10.0/stable --base ubuntu@22.04 --trust
-    juju deploy osm-nbi nbi-k8s --channel 10.0/stable --base ubuntu@22.04 --trust
-    juju deploy osm-lcm lcm-k8s --channel 10.0/stable --base ubuntu@22.04 --trust
-    juju deploy osm-ro ro-k8s --channel 10.0/stable --base ubuntu@22.04 --trust
-    juju deploy osm-mon mon-k8s --channel 10.0/stable --base ubuntu@22.04 --trust
-    juju deploy osm-pol pol-k8s --channel 10.0/stable --base ubuntu@22.04 --trust
-    juju deploy osm-ng-ui ng-ui-k8s --channel 10.0/stable --base ubuntu@22.04 --trust
+    # OSM Core Services (Using 14.0/stable for ubuntu@22.04 compatibility)
+    juju deploy osm-keystone keystone-k8s --channel 14.0/stable --base ubuntu@22.04 --trust || true
+    juju deploy osm-nbi nbi-k8s --channel 14.0/stable --base ubuntu@22.04 --trust
+    juju deploy osm-lcm lcm-k8s --channel 14.0/stable --base ubuntu@22.04 --trust
+    juju deploy osm-ro ro-k8s --channel 14.0/stable --base ubuntu@22.04 --trust
+    juju deploy osm-mon mon-k8s --channel 14.0/stable --base ubuntu@22.04 --trust
+    juju deploy osm-pol pol-k8s --channel 14.0/stable --base ubuntu@22.04 --trust
+    juju deploy osm-ng-ui ng-ui-k8s --channel 14.0/stable --base ubuntu@22.04 --trust
 
     # Ingress Controller
     juju deploy nginx-ingress-integrator nbi-ingress --channel latest/stable --base ubuntu@22.04 --trust
