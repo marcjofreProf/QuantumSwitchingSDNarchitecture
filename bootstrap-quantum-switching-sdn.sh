@@ -618,7 +618,7 @@ deploy_cloud_native_uonos() {
     log_info "Purging stale Helm releases..."
     helm uninstall atomix-controller atomix-raft-storage onos-operator -n micro-onos 2>/dev/null || true
     helm uninstall atomix-controller atomix-raft-storage onos-operator -n kube-system 2>/dev/null || true
-    helm uninstall onos-topo onos-config -n micro-onos
+    helm uninstall onos-topo onos-config -n micro-onos 2>/dev/null || true
 
     log_info "Removing legacy Atomix CRDs..."
     kubectl delete crd storageprofiles.atomix.io raftclusters.raft.atomix.io raftstores.raft.atomix.io --ignore-not-found 2>/dev/null || true
