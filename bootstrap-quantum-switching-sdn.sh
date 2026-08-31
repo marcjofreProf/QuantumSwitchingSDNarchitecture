@@ -176,7 +176,7 @@ install_docker() {
     
     # Add user to docker group
     sudo usermod -aG docker "$CURRENT_USER"
-    sg docker "$0"
+    #sg docker "$0"
 }
 
 install_kubectl_and_helm() {
