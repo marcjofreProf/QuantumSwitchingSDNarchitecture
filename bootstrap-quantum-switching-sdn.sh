@@ -353,37 +353,85 @@ install_osm_installer() {
     log_info "Adding 'osm' model on k8s-cloud..."
     juju add-model osm k8s-cloud
 
-    log_info "Retrieving OSM bundle definition..."
-    if [ -f "/usr/share/osm-devops/installers/charm/bundles/osm/bundle.yaml" ]; then
-        cp /usr/share/osm-devops/installers/charm/bundles/osm/bundle.yaml /tmp/osm-bundle.yaml
-    else
-        log_info "Downloading bundle from official ETSI repository..."
-        curl -sS -f -L "https://osm.etsi.org/gitlab/osm/devops/-/raw/master/installers/charm/bundles/osm/bundle.yaml" -o /tmp/osm-bundle.yaml || {
-            log_error "Failed to download bundle.yaml from ETSI repository."
-            exit 1
-        }
-    fi
-    
-    log_info "Ensuring PyYAML dependency is installed..."
-    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3-yaml >/dev/null 2>&1
-    
-    log_info "Patching bundle for Juju 3 compatibility..."
-    python3 -c '
-    import yaml
-    
-    with open("/tmp/osm-bundle.yaml", "r") as f:
-        bundle = yaml.safe_load(f)
-    
-    if "applications" in bundle:
-        for app, cfg in bundle["applications"].items():
-            if "series" in cfg and cfg["series"] == "kubernetes":
-                del cfg["series"]
-    
-    with open("/tmp/osm-bundle.yaml", "w") as f:
-        yaml.dump(bundle, f, default_flow_style=False)
-    '
-    
-    log_info "Deploying OSM bundle..."
+    log_info "Generating Juju 3 compatible OSM bundle locally for base ${JUJU_BASE}..."
+    cat <<EOF > /tmp/osm-bundle.yaml
+description: Single instance Charmed OSM
+applications:
+  zookeeper-k8s:
+    charm: zookeeper-k8s
+    channel: latest/stable
+    scale: 1
+    base: ${JUJU_BASE}
+  kafka-k8s:
+    charm: kafka-k8s
+    channel: latest/stable
+    scale: 1
+    base: ${JUJU_BASE}
+  mongodb-k8s:
+    charm: mongodb-k8s
+    channel: 6/stable
+    scale: 1
+    base: ${JUJU_BASE}
+  keystone-k8s:
+    charm: osm-keystone
+    channel: latest/stable
+    scale: 1
+    base: ${JUJU_BASE}
+  nbi-k8s:
+    charm: osm-nbi
+    channel: latest/stable
+    scale: 1
+    base: ${JUJU_BASE}
+  lcm-k8s:
+    charm: osm-lcm
+    channel: latest/stable
+    scale: 1
+    base: ${JUJU_BASE}
+  ro-k8s:
+    charm: osm-ro
+    channel: latest/stable
+    scale: 1
+    base: ${JUJU_BASE}
+  mon-k8s:
+    charm: osm-mon
+    channel: latest/stable
+    scale: 1
+    base: ${JUJU_BASE}
+  pol-k8s:
+    charm: osm-pol
+    channel: latest/stable
+    scale: 1
+    base: ${JUJU_BASE}
+  ng-ui-k8s:
+    charm: osm-ng-ui
+    channel: latest/stable
+    scale: 1
+    base: ${JUJU_BASE}
+  nbi-ingress:
+    charm: nginx-ingress-integrator
+    channel: latest/stable
+    scale: 1
+    base: ${JUJU_BASE}
+relations:
+  - ["kafka-k8s:zookeeper", "zookeeper-k8s:zookeeper"]
+  - ["nbi-k8s:mongodb", "mongodb-k8s:database"]
+  - ["lcm-k8s:mongodb", "mongodb-k8s:database"]
+  - ["ro-k8s:mongodb", "mongodb-k8s:database"]
+  - ["mon-k8s:mongodb", "mongodb-k8s:database"]
+  - ["pol-k8s:mongodb", "mongodb-k8s:database"]
+  - ["nbi-k8s:kafka", "kafka-k8s:kafka"]
+  - ["lcm-k8s:kafka", "kafka-k8s:kafka"]
+  - ["mon-k8s:kafka", "kafka-k8s:kafka"]
+  - ["pol-k8s:kafka", "kafka-k8s:kafka"]
+  - ["nbi-k8s:keystone", "keystone-k8s:keystone"]
+  - ["nbi-k8s:ro", "ro-k8s:ro"]
+  - ["lcm-k8s:ro", "ro-k8s:ro"]
+  - ["lcm-k8s:nbi", "nbi-k8s:nbi"]
+  - ["mon-k8s:nbi", "nbi-k8s:nbi"]
+  - ["nbi-k8s:ingress", "nbi-ingress:ingress"]
+EOF
+
+    log_info "Deploying OSM bundle to model 'osm'..."
     juju deploy /tmp/osm-bundle.yaml --trust
     log_success "OSM bundle deployment initiated successfully."
 }
