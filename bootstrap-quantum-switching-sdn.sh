@@ -596,98 +596,15 @@ deploy_cloud_native_uonos() {
     helm install atomix-controller atomix/atomix-controller -n kube-system --version 0.6.9  2>/dev/null || true
     helm install atomix-raft-storage atomix/atomix-raft-storage -n kube-system --version 0.1.8  2>/dev/null || true
 
-    # NOTE: Manual kubectl run commands (commented - working solution)
+    # NOTE: Manual kubectl run commands (working solution)
     # kubectl run onos-operator -n micro-onos --image=onosproject/onos-operator:latest --restart=Never
     # helm install onos-operator onosproject/onos-operator -n micro-onos 2>/dev/null || true
-    # kubectl run onos-topo -n micro-onos --image=onosproject/onos-topo:v1.0.3 --restart=Never -- --bind-port=5150 --no-tls 2>/dev/null || true
+    kubectl run onos-topo -n micro-onos --image=onosproject/onos-topo:v1.0.3 --restart=Never -- --bind-port=5150 --no-tls 2>/dev/null || true
     # helm install onos-topo onosproject/onos-topo -n micro-onos 2>/dev/null || true
-    # kubectl run onos-config -n micro-onos --image=onosproject/onos-config:latest --restart=Never 2>/dev/null || true
+    kubectl run onos-config -n micro-onos --image=onosproject/onos-config:latest --restart=Never 2>/dev/null || true
     # helm install onos-config onosproject/onos-config -n micro-onos 2>/dev/null || true
 
-    # Deploy ONOS services as persistent Deployments (auto-restart on failure/reboot)
-    log_info "Deploying ONOS services as persistent Deployments..."
     
-    # Deploy onos-topo as Deployment
-    cat <<EOF | kubectl apply -f -
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: onos-topo
-  namespace: micro-onos
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: onos-topo
-  template:
-    metadata:
-      labels:
-        app: onos-topo
-    spec:
-      containers:
-      - name: onos-topo
-        image: onosproject/onos-topo:v1.0.3
-        args:
-        - --bind-port=5150
-        - --no-tls
-        ports:
-        - containerPort: 5150
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: onos-topo
-  namespace: micro-onos
-spec:
-  selector:
-    app: onos-topo
-  ports:
-  - port: 5150
-    targetPort: 5150
-EOF
-
-    # Deploy onos-config as Deployment
-    cat <<EOF | kubectl apply -f -
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: onos-config
-  namespace: micro-onos
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: onos-config
-  template:
-    metadata:
-      labels:
-        app: onos-config
-    spec:
-      containers:
-      - name: onos-config
-        image: onosproject/onos-config:latest
-        args:
-        - --bind-port=5150
-        - --no-tls
-        ports:
-        - containerPort: 5150
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: onos-config
-  namespace: micro-onos
-spec:
-  selector:
-    app: onos-config
-  ports:
-  - port: 5150
-    targetPort: 5150
-EOF
-
-    log_info "Waiting for ONOS deployments to be ready..."
-    kubectl wait --for=condition=ready pod -l app=onos-topo -n micro-onos --timeout=120s 2>/dev/null || true
-    kubectl wait --for=condition=ready pod -l app=onos-config -n micro-onos --timeout=120s 2>/dev/null || true
 
     log_info "Building and deploying RESTCONF Gateway Container..."
     if command -v docker >/dev/null 2>&1; then
