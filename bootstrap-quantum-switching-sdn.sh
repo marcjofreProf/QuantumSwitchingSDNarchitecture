@@ -906,8 +906,8 @@ EOF
     --timeout=30s 2>/dev/null || true
 
     log_info "Installing v1beta3-compatible Atomix controllers and onos controllers..."
-    helm install atomix-controller atomix/atomix-controller -n kube-system --version 0.6.9
-    helm install atomix-raft-storage atomix/atomix-raft-storage -n kube-system --version 0.1.8
+    helm install atomix-controller atomix/atomix-controller -n micro-onos --version 0.6.9
+    helm install atomix-raft-storage atomix/atomix-raft-storage -n micro-onos --version 0.1.8
 
     helm install onos-operator onosproject/onos-operator -n micro-onos 2>/dev/null || true
     helm install onos-topo onosproject/onos-topo -n micro-onos 2>/dev/null || true
