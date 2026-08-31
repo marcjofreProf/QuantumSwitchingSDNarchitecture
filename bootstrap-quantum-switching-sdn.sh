@@ -376,7 +376,7 @@ install_osm_installer() {
 
     log_info "Integrating OSM microservices..."
     until ! juju status | grep -q "allocating"; do
-        echo "Waiting for Juju allocation to finish..."
+        echo "Waiting for Juju allocation to finish...(to check: juju status -m osm --watch 5s)"
         sleep 30
     done
     
