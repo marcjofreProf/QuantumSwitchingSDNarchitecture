@@ -337,8 +337,8 @@ install_osm_installer() {
     ) &
     CERT_SYNC_PID=$!
 
-    # Set Juju base to 20.04 to match published Charmhub artifacts
-    JUJU_BASE="ubuntu@20.04"
+    # Standardize on ubuntu@22.04 for Juju 3 + K8s Charmhub compatibility
+    JUJU_BASE="ubuntu@22.04"
 
     log_info "Bootstrapping Juju Controller with base ${JUJU_BASE}..."
     juju bootstrap k8s-cloud osm-vca \
@@ -371,25 +371,30 @@ install_osm_installer() {
 
     log_info "Integrating OSM microservices..."
 
-    juju integrate kafka-k8s:zookeeper zookeeper-k8s:zookeeper
-    juju integrate nbi-k8s:mongodb mongodb-k8s:database
-    juju integrate lcm-k8s:mongodb mongodb-k8s:database
-    juju integrate ro-k8s:mongodb mongodb-k8s:database
-    juju integrate mon-k8s:mongodb mongodb-k8s:database
-    juju integrate pol-k8s:mongodb mongodb-k8s:database
-    
-    # Updated Kafka relations using the kafka-client interface
-    juju integrate nbi-k8s:kafka kafka-k8s:kafka-client
-    juju integrate lcm-k8s:kafka kafka-k8s:kafka-client
-    juju integrate mon-k8s:kafka kafka-k8s:kafka-client
-    juju integrate pol-k8s:kafka kafka-k8s:kafka-client
+    # Infrastructure
+    juju integrate kafka-k8s zookeeper-k8s
 
-    juju integrate nbi-k8s:keystone keystone-k8s:keystone
-    juju integrate nbi-k8s:ro ro-k8s:ro
-    juju integrate lcm-k8s:ro ro-k8s:ro
-    juju integrate lcm-k8s:nbi nbi-k8s:nbi
-    juju integrate mon-k8s:nbi nbi-k8s:nbi
-    juju integrate nbi-k8s:ingress nbi-ingress:ingress
+    # Database
+    juju integrate nbi-k8s mongodb-k8s
+    juju integrate lcm-k8s mongodb-k8s
+    juju integrate ro-k8s mongodb-k8s
+    juju integrate mon-k8s mongodb-k8s
+    juju integrate pol-k8s mongodb-k8s
+
+    # Kafka
+    juju integrate nbi-k8s kafka-k8s
+    juju integrate lcm-k8s kafka-k8s
+    juju integrate mon-k8s kafka-k8s
+    juju integrate pol-k8s kafka-k8s
+
+    # Core OSM & UI Inter-service Relations
+    juju integrate nbi-k8s keystone-k8s
+    juju integrate nbi-k8s ro-k8s
+    juju integrate lcm-k8s ro-k8s
+    juju integrate lcm-k8s nbi-k8s
+    juju integrate mon-k8s nbi-k8s
+    juju integrate ng-ui-k8s nbi-k8s
+    juju integrate nbi-k8s nbi-ingress
 
     log_success "OSM deployment and integrations initiated successfully."
 }
