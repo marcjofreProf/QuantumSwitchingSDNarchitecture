@@ -360,61 +360,57 @@ install_osm_installer() {
         wget -q https://raw.githubusercontent.com/charmed-osm/osm-operators/main/devops/charmed/bundles/osm/bundle.yaml -O /tmp/osm-bundle.yaml
     fi
 
+    log_info "Ensuring PyYAML dependency is installed..."
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3-yaml >/dev/null 2>&1
+
     log_info "Applying Juju 3 bundle patches (base syntax, mongodb channel, and ingress quota split)..."
     python3 - << 'EOF'
 import os
+import yaml
 
 juju_base = os.environ.get('JUJU_BASE', 'ubuntu@26.04')
 
 with open('/tmp/osm-bundle.yaml', 'r') as f:
-    text = f.read()
+    bundle = yaml.safe_load(f) or {}
 
-lines = text.splitlines()
-out = []
-in_mongo = False
-mongo_has_base = False
+apps = bundle.get('applications', {})
 
-for line in lines:
-    stripped = line.strip()
-    if line.startswith('  ') and not line.startswith('    ') and stripped.endswith(':'):
-        if in_mongo and not mongo_has_base:
-            out.append(f'    base: {juju_base}')
-        in_mongo = ('mongo' in stripped)
-        mongo_has_base = False
+# Update base/series and mongodb channel for all applications
+for app_name, app_config in apps.items():
+    if isinstance(app_config, dict):
+        if 'series' in app_config:
+            del app_config['series']
+        app_config['base'] = juju_base
         
-    if 'charm:' in line and 'mongodb' in line:
-        in_mongo = True
-        
-    if in_mongo and ('base:' in line or 'series:' in line):
-        mongo_has_base = True
-        
-    if 'series:' in line:
-        indent = line[:line.find('series:')]
-        line = f'{indent}base: {juju_base}'
-        
-    if in_mongo and 'channel:' in line:
-        indent = line[:line.find('channel:')]
-        line = f'{indent}channel: "6/stable"'
-        
-    out.append(line)
+        if 'mongodb' in app_name or 'mongodb' in str(app_config.get('charm', '')):
+            app_config['channel'] = '6/stable'
 
-if in_mongo and not mongo_has_base:
-    out.append(f'    base: {juju_base}')
+# Add nbi-ingress application if missing
+if 'nbi-ingress' not in apps:
+    apps['nbi-ingress'] = {
+        'charm': 'nginx-ingress-integrator',
+        'channel': 'latest/stable',
+        'base': juju_base,
+        'scale': 1
+    }
 
-full_text = '\n'.join(out) + '\n'
+# Remap ingress relations to point to nbi-ingress
+relations = bundle.get('relations', [])
+updated_relations = []
+for rel in relations:
+    if isinstance(rel, list):
+        new_rel = [
+            'nbi-ingress:ingress' if endpoint == 'ingress:ingress' else endpoint
+            for endpoint in rel
+        ]
+        updated_relations.append(new_rel)
+    else:
+        updated_relations.append(rel)
 
-nbi_ingress_app = f"""  nbi-ingress:
-    charm: nginx-ingress-integrator
-    channel: latest/stable
-    base: {juju_base}
-    scale: 1\n"""
-
-full_text = full_text.replace('relations:', nbi_ingress_app + 'relations:')
-full_text = full_text.replace('- nbi:ingress\n  - ingress:ingress', '- nbi:ingress\n  - nbi-ingress:ingress')
-full_text = full_text.replace('- nbi:ingress\n    - ingress:ingress', '- nbi:ingress\n    - nbi-ingress:ingress')
+bundle['relations'] = updated_relations
 
 with open('/tmp/osm-bundle.yaml', 'w') as f:
-    f.write(full_text)
+    yaml.dump(bundle, f, default_flow_style=False, sort_keys=False)
 EOF
 
     log_info "Deploying patched OSM bundle to model 'osm'..."
