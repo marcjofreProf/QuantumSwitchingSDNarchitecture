@@ -357,7 +357,7 @@ install_osm_installer() {
 
     # Infrastructure Services
     juju deploy zookeeper-k8s --channel 3/stable --base ubuntu@22.04 --trust
-    juju deploy kafka-k8s --channel 3/stable --base ubuntu@22.04 --trust
+    juju deploy ch:kafka-k8s --channel latest/stable --base ubuntu@20.04 --trust
     juju deploy mongodb-k8s --channel 6/stable --base ubuntu@22.04 --trust
     juju deploy charmed-osm-mariadb-k8s mariadb-k8s --channel latest/stable --base ubuntu@20.04 --trust
     juju deploy osm-prometheus prometheus-k8s --channel 14.0/stable --base ubuntu@20.04 --trust
@@ -395,11 +395,9 @@ install_osm_installer() {
     juju integrate mongodb-k8s:database pol-k8s:mongodb
 
     # Kafka Relations
-    juju integrate kafka-k8s:kafka-client nbi-k8s:kafka
-    juju integrate kafka-k8s:kafka-client lcm-k8s:kafka
-    juju integrate kafka-k8s:kafka-client ro-k8s:kafka
-    juju integrate kafka-k8s:kafka-client mon-k8s:kafka
-    juju integrate kafka-k8s:kafka-client pol-k8s:kafka
+    juju integrate kafka-k8s:kafka nbi-k8s:kafka
+    juju integrate kafka-k8s:kafka lcm-k8s:kafka
+    juju integrate kafka-k8s:kafka mon-k8s:kafka
 
     # Prometheus Relations
     juju integrate prometheus-k8s:prometheus mon-k8s:prometheus
@@ -409,8 +407,6 @@ install_osm_installer() {
     juju integrate keystone-k8s:keystone nbi-k8s:keystone
     juju integrate keystone-k8s:keystone mon-k8s:keystone
     juju integrate ro-k8s:ro lcm-k8s:ro
-    juju integrate nbi-k8s:nbi lcm-k8s:nbi
-    juju integrate nbi-k8s:nbi mon-k8s:nbi
     juju integrate nbi-k8s:nbi ng-ui-k8s:nbi
     juju integrate nbi-k8s:ingress nbi-ingress:ingress
 
