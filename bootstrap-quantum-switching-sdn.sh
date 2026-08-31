@@ -357,63 +357,33 @@ install_osm_installer() {
     if [ -f "/usr/share/osm-devops/installers/charm/bundles/osm/bundle.yaml" ]; then
         cp /usr/share/osm-devops/installers/charm/bundles/osm/bundle.yaml /tmp/osm-bundle.yaml
     else
-        wget -q https://raw.githubusercontent.com/charmed-osm/osm-operators/main/devops/charmed/bundles/osm/bundle.yaml -O /tmp/osm-bundle.yaml
+        log_info "Downloading bundle from official ETSI repository..."
+        curl -sS -f -L "https://osm.etsi.org/gitlab/osm/devops/-/raw/master/installers/charm/bundles/osm/bundle.yaml" -o /tmp/osm-bundle.yaml || {
+            log_error "Failed to download bundle.yaml from ETSI repository."
+            exit 1
+        }
     fi
-
+    
     log_info "Ensuring PyYAML dependency is installed..."
     sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3-yaml >/dev/null 2>&1
-
-    log_info "Applying Juju 3 bundle patches (base syntax, mongodb channel, and ingress quota split)..."
-    python3 - << 'EOF'
-import os
-import yaml
-
-juju_base = os.environ.get('JUJU_BASE', 'ubuntu@26.04')
-
-with open('/tmp/osm-bundle.yaml', 'r') as f:
-    bundle = yaml.safe_load(f) or {}
-
-apps = bundle.get('applications', {})
-
-# Update base/series and mongodb channel for all applications
-for app_name, app_config in apps.items():
-    if isinstance(app_config, dict):
-        if 'series' in app_config:
-            del app_config['series']
-        app_config['base'] = juju_base
-        
-        if 'mongodb' in app_name or 'mongodb' in str(app_config.get('charm', '')):
-            app_config['channel'] = '6/stable'
-
-# Add nbi-ingress application if missing
-if 'nbi-ingress' not in apps:
-    apps['nbi-ingress'] = {
-        'charm': 'nginx-ingress-integrator',
-        'channel': 'latest/stable',
-        'base': juju_base,
-        'scale': 1
-    }
-
-# Remap ingress relations to point to nbi-ingress
-relations = bundle.get('relations', [])
-updated_relations = []
-for rel in relations:
-    if isinstance(rel, list):
-        new_rel = [
-            'nbi-ingress:ingress' if endpoint == 'ingress:ingress' else endpoint
-            for endpoint in rel
-        ]
-        updated_relations.append(new_rel)
-    else:
-        updated_relations.append(rel)
-
-bundle['relations'] = updated_relations
-
-with open('/tmp/osm-bundle.yaml', 'w') as f:
-    yaml.dump(bundle, f, default_flow_style=False, sort_keys=False)
-EOF
-
-    log_info "Deploying patched OSM bundle to model 'osm'..."
+    
+    log_info "Patching bundle for Juju 3 compatibility..."
+    python3 -c '
+    import yaml
+    
+    with open("/tmp/osm-bundle.yaml", "r") as f:
+        bundle = yaml.safe_load(f)
+    
+    if "applications" in bundle:
+        for app, cfg in bundle["applications"].items():
+            if "series" in cfg and cfg["series"] == "kubernetes":
+                del cfg["series"]
+    
+    with open("/tmp/osm-bundle.yaml", "w") as f:
+        yaml.dump(bundle, f, default_flow_style=False)
+    '
+    
+    log_info "Deploying OSM bundle..."
     juju deploy /tmp/osm-bundle.yaml --trust
     log_success "OSM bundle deployment initiated successfully."
 }
