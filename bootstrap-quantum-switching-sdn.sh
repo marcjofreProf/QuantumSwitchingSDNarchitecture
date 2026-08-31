@@ -358,7 +358,7 @@ install_osm_installer() {
     juju deploy mongodb-k8s --channel 6/stable --base ubuntu@22.04 --trust
     juju deploy charmed-osm-mariadb-k8s mariadb-k8s --channel latest/stable --base ubuntu@20.04 --trust
 
-    # OSM Core Services (Keystone uses 10.0/stable, all others use 14.0/stable)
+    # OSM Core Services
     juju deploy osm-keystone keystone-k8s --channel 10.0/stable --base ubuntu@22.04 --trust
     juju deploy osm-nbi nbi-k8s --channel 14.0/stable --base ubuntu@22.04 --trust
     juju deploy osm-lcm lcm-k8s --channel 14.0/stable --base ubuntu@22.04 --trust
@@ -375,8 +375,8 @@ install_osm_installer() {
     # Core Infrastructure Relations
     juju integrate zookeeper-k8s:zookeeper kafka-k8s:zookeeper
 
-    # MariaDB Relations
-    juju integrate mariadb-k8s:mysql keystone-k8s:mysql
+    # MariaDB Relations (Keystone endpoint is 'db')
+    juju integrate mariadb-k8s:mysql keystone-k8s:db
     juju integrate mariadb-k8s:mysql pol-k8s:mysql
 
     # MongoDB Relations
