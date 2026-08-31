@@ -348,7 +348,7 @@ install_osm_installer() {
     kill $CERT_SYNC_PID 2>/dev/null || true
     
     log_info "Adding 'osm' model on k8s-cloud with forced default base..."
-    juju add-model osm k8s-cloud --config default-base=ubuntu@22.04
+    juju add-model osm k8s-cloud --config default-base=$JUJU_BASE
 
     log_info "Deploying Charmed OSM microservices with charm-specific bases..."
 
@@ -356,6 +356,7 @@ install_osm_installer() {
     juju deploy zookeeper-k8s --channel 3/stable --base ubuntu@22.04 --trust
     juju deploy kafka-k8s --channel 3/stable --base ubuntu@22.04 --trust
     juju deploy mongodb-k8s --channel 6/stable --base ubuntu@22.04 --trust
+    juju deploy charmed-osm-mariadb-k8s mariadb-k8s --channel 14.0/stable --base ubuntu@22.04 --trust
 
     # OSM Core Services
     juju deploy osm-keystone keystone-k8s --channel 10.0/stable --base ubuntu@22.04 --trust
@@ -371,30 +372,35 @@ install_osm_installer() {
 
     log_info "Integrating OSM microservices..."
 
-    # Infrastructure
-    juju integrate kafka-k8s zookeeper-k8s
+    # Infrastructure Relations
+    juju integrate zookeeper-k8s:zookeeper kafka-k8s:zookeeper
+    
+    # MariaDB Relations
+    juju integrate mariadb-k8s:mysql keystone-k8s:mysql
+    juju integrate mariadb-k8s:mysql pol-k8s:mysql
 
-    # Database
-    juju integrate nbi-k8s mongodb-k8s
-    juju integrate lcm-k8s mongodb-k8s
-    juju integrate ro-k8s mongodb-k8s
-    juju integrate mon-k8s mongodb-k8s
-    juju integrate pol-k8s mongodb-k8s
+    # MongoDB Relations
+    juju integrate mongodb-k8s:database nbi-k8s:mongodb
+    juju integrate mongodb-k8s:database lcm-k8s:mongodb
+    juju integrate mongodb-k8s:database ro-k8s:mongodb
+    juju integrate mongodb-k8s:database mon-k8s:mongodb
+    juju integrate mongodb-k8s:database pol-k8s:mongodb
 
-    # Kafka
-    juju integrate nbi-k8s kafka-k8s
-    juju integrate lcm-k8s kafka-k8s
-    juju integrate mon-k8s kafka-k8s
-    juju integrate pol-k8s kafka-k8s
+    # Kafka Relations
+    juju integrate kafka-k8s:kafka-client lcm-k8s:kafka
+    juju integrate kafka-k8s:kafka-client mon-k8s:kafka
+    juju integrate kafka-k8s:kafka-client nbi-k8s:kafka
+    juju integrate kafka-k8s:kafka-client pol-k8s:kafka
+    juju integrate kafka-k8s:kafka-client ro-k8s:kafka
 
-    # Core OSM & UI Inter-service Relations
-    juju integrate nbi-k8s keystone-k8s
-    juju integrate nbi-k8s ro-k8s
-    juju integrate lcm-k8s ro-k8s
-    juju integrate lcm-k8s nbi-k8s
-    juju integrate mon-k8s nbi-k8s
-    juju integrate ng-ui-k8s nbi-k8s
-    juju integrate nbi-k8s nbi-ingress
+    # Keystone & Microservice Relations
+    juju integrate keystone-k8s:keystone nbi-k8s:keystone
+    juju integrate keystone-k8s:keystone mon-k8s:keystone
+    juju integrate ro-k8s:ro lcm-k8s:ro
+    juju integrate nbi-k8s:nbi lcm-k8s:nbi
+    juju integrate nbi-k8s:nbi mon-k8s:nbi
+    juju integrate nbi-k8s:nbi ng-ui-k8s:nbi
+    juju integrate nbi-k8s:ingress nbi-ingress:ingress
 
     log_success "OSM deployment and integrations initiated successfully."
 }
