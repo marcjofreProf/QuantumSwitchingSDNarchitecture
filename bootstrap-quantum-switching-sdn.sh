@@ -337,8 +337,8 @@ install_osm_installer() {
     ) &
     CERT_SYNC_PID=$!
 
-    # Set Juju base to 22.04 to match published Charmhub artifacts
-    JUJU_BASE="ubuntu@22.04"
+    # Set Juju base to 20.04 to match published Charmhub artifacts
+    JUJU_BASE="ubuntu@20.04"
 
     log_info "Bootstrapping Juju Controller with base ${JUJU_BASE}..."
     juju bootstrap k8s-cloud osm-vca \
