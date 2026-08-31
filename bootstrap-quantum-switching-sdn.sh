@@ -357,8 +357,8 @@ install_osm_installer() {
     juju deploy kafka-k8s --channel 3/stable --base ubuntu@22.04 --trust
     juju deploy mongodb-k8s --channel 6/stable --base ubuntu@22.04 --trust
 
-    # OSM Core Services (Using 14.0/stable for ubuntu@22.04 compatibility)
-    juju deploy osm-keystone keystone-k8s --channel 14.0/stable --base ubuntu@22.04 --trust || true
+    # OSM Core Services
+    juju deploy osm-keystone keystone-k8s --channel 10.0/stable --base ubuntu@22.04 --trust
     juju deploy osm-nbi nbi-k8s --channel 14.0/stable --base ubuntu@22.04 --trust
     juju deploy osm-lcm lcm-k8s --channel 14.0/stable --base ubuntu@22.04 --trust
     juju deploy osm-ro ro-k8s --channel 14.0/stable --base ubuntu@22.04 --trust
@@ -377,10 +377,13 @@ install_osm_installer() {
     juju integrate ro-k8s:mongodb mongodb-k8s:database
     juju integrate mon-k8s:mongodb mongodb-k8s:database
     juju integrate pol-k8s:mongodb mongodb-k8s:database
-    juju integrate nbi-k8s:kafka kafka-k8s:kafka
-    juju integrate lcm-k8s:kafka kafka-k8s:kafka
-    juju integrate mon-k8s:kafka kafka-k8s:kafka
-    juju integrate pol-k8s:kafka kafka-k8s:kafka
+    
+    # Updated Kafka relations using the kafka-client interface
+    juju integrate nbi-k8s:kafka kafka-k8s:kafka-client
+    juju integrate lcm-k8s:kafka kafka-k8s:kafka-client
+    juju integrate mon-k8s:kafka kafka-k8s:kafka-client
+    juju integrate pol-k8s:kafka kafka-k8s:kafka-client
+
     juju integrate nbi-k8s:keystone keystone-k8s:keystone
     juju integrate nbi-k8s:ro ro-k8s:ro
     juju integrate lcm-k8s:ro ro-k8s:ro
