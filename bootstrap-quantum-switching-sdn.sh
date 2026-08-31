@@ -633,21 +633,6 @@ spec:
         ports:
         - containerPort: 5150
 ---
-apiVersion: v1
-kind: Service
-metadata:
-  name: onos-topo
-  namespace: micro-onos
-spec:
-  selector:
-    app: onos-topo
-  ports:
-  - port: 5150
-    targetPort: 5150
-EOF
-
-    # Deploy onos-config as Deployment
-    cat <<EOF | kubectl apply -f -
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -671,18 +656,6 @@ spec:
         - --no-tls
         ports:
         - containerPort: 5150
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: onos-config
-  namespace: micro-onos
-spec:
-  selector:
-    app: onos-config
-  ports:
-  - port: 5150
-    targetPort: 5150
 EOF
 
     log_info "Waiting for ONOS deployments to be ready..."
