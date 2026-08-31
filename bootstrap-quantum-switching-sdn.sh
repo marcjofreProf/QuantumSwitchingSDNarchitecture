@@ -145,6 +145,11 @@ install_sys_deps() {
     else
         log_success "All basic system dependencies are already installed."
     fi
+
+    if ! command -v juju >/dev/null 2>&1; then
+        log_info "Installing Juju CLI..."
+        sudo snap install juju --classic
+    fi
 }
 
 install_docker() {
