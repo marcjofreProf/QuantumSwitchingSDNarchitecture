@@ -337,10 +337,16 @@ install_osm_installer() {
     ) &
     CERT_SYNC_PID=$!
 
-    log_info "Bootstrapping Juju Controller..."
+    if ask_user "Do you want to deploy OSM using Ubuntu 26.04 (Noble)? (Selecting 'N' defaults to 22.04 Jammy)" "Y"; then
+        export JUJU_BASE="ubuntu@26.04"
+    else
+        export JUJU_BASE="ubuntu@22.04"
+    fi
+
+    log_info "Bootstrapping Juju Controller with base ${JUJU_BASE}..."
     juju bootstrap k8s-cloud osm-vca \
-        --config default-series=jammy \
-        --model-default default-series=jammy || true
+        --config default-base=$JUJU_BASE \
+        --model-default default-base=$JUJU_BASE || true
 
     kill $CERT_SYNC_PID 2>/dev/null || true
 
@@ -356,6 +362,10 @@ install_osm_installer() {
 
     log_info "Applying Juju 3 bundle patches (base syntax, mongodb channel, and ingress quota split)..."
     python3 - << 'EOF'
+import os
+
+juju_base = os.environ.get('JUJU_BASE', 'ubuntu@26.04')
+
 with open('/tmp/osm-bundle.yaml', 'r') as f:
     text = f.read()
 
@@ -368,7 +378,7 @@ for line in lines:
     stripped = line.strip()
     if line.startswith('  ') and not line.startswith('    ') and stripped.endswith(':'):
         if in_mongo and not mongo_has_base:
-            out.append('    base: ubuntu@22.04')
+            out.append(f'    base: {juju_base}')
         in_mongo = ('mongo' in stripped)
         mongo_has_base = False
         
@@ -380,7 +390,7 @@ for line in lines:
         
     if 'series:' in line:
         indent = line[:line.find('series:')]
-        line = f'{indent}base: ubuntu@22.04'
+        line = f'{indent}base: {juju_base}'
         
     if in_mongo and 'channel:' in line:
         indent = line[:line.find('channel:')]
@@ -389,14 +399,14 @@ for line in lines:
     out.append(line)
 
 if in_mongo and not mongo_has_base:
-    out.append('    base: ubuntu@22.04')
+    out.append(f'    base: {juju_base}')
 
 full_text = '\n'.join(out) + '\n'
 
-nbi_ingress_app = """  nbi-ingress:
+nbi_ingress_app = f"""  nbi-ingress:
     charm: nginx-ingress-integrator
     channel: latest/stable
-    base: ubuntu@22.04
+    base: {juju_base}
     scale: 1\n"""
 
 full_text = full_text.replace('relations:', nbi_ingress_app + 'relations:')
