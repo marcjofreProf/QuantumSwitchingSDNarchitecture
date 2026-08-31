@@ -190,7 +190,7 @@ install_docker() {
         echo ""
         echo "The script will now continue with newgrp docker..."
         
-        exec sg docker "$0"
+        sg docker "$0"
         
         # Note: exec replaces the current shell, so anything after this won't run
         # If you want to continue the script after, use this instead:
