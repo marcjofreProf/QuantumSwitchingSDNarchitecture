@@ -353,89 +353,42 @@ install_osm_installer() {
     log_info "Adding 'osm' model on k8s-cloud..."
     juju add-model osm k8s-cloud
 
-    log_info "Generating Juju 3 compatible OSM bundle locally for base ${JUJU_BASE}..."
-    cat <<EOF > /tmp/osm-bundle.yaml
-bundle: kubernetes
-name: osm
-description: Single instance Charmed OSM
-applications:
-  zookeeper-k8s:
-    charm: zookeeper-k8s
-    channel: latest/stable
-    scale: 1
-    base: ${JUJU_BASE}
-  kafka-k8s:
-    charm: kafka-k8s
-    channel: latest/stable
-    scale: 1
-    base: ${JUJU_BASE}
-  mongodb-k8s:
-    charm: mongodb-k8s
-    channel: 6/stable
-    scale: 1
-    base: ${JUJU_BASE}
-  keystone-k8s:
-    charm: osm-keystone
-    channel: latest/stable
-    scale: 1
-    base: ${JUJU_BASE}
-  nbi-k8s:
-    charm: osm-nbi
-    channel: latest/stable
-    scale: 1
-    base: ${JUJU_BASE}
-  lcm-k8s:
-    charm: osm-lcm
-    channel: latest/stable
-    scale: 1
-    base: ${JUJU_BASE}
-  ro-k8s:
-    charm: osm-ro
-    channel: latest/stable
-    scale: 1
-    base: ${JUJU_BASE}
-  mon-k8s:
-    charm: osm-mon
-    channel: latest/stable
-    scale: 1
-    base: ${JUJU_BASE}
-  pol-k8s:
-    charm: osm-pol
-    channel: latest/stable
-    scale: 1
-    base: ${JUJU_BASE}
-  ng-ui-k8s:
-    charm: osm-ng-ui
-    channel: latest/stable
-    scale: 1
-    base: ${JUJU_BASE}
-  nbi-ingress:
-    charm: nginx-ingress-integrator
-    channel: latest/stable
-    scale: 1
-    base: ${JUJU_BASE}
-relations:
-  - ["kafka-k8s:zookeeper", "zookeeper-k8s:zookeeper"]
-  - ["nbi-k8s:mongodb", "mongodb-k8s:database"]
-  - ["lcm-k8s:mongodb", "mongodb-k8s:database"]
-  - ["ro-k8s:mongodb", "mongodb-k8s:database"]
-  - ["mon-k8s:mongodb", "mongodb-k8s:database"]
-  - ["pol-k8s:mongodb", "mongodb-k8s:database"]
-  - ["nbi-k8s:kafka", "kafka-k8s:kafka"]
-  - ["lcm-k8s:kafka", "kafka-k8s:kafka"]
-  - ["mon-k8s:kafka", "kafka-k8s:kafka"]
-  - ["pol-k8s:kafka", "kafka-k8s:kafka"]
-  - ["nbi-k8s:keystone", "keystone-k8s:keystone"]
-  - ["nbi-k8s:ro", "ro-k8s:ro"]
-  - ["lcm-k8s:ro", "ro-k8s:ro"]
-  - ["lcm-k8s:nbi", "nbi-k8s:nbi"]
-  - ["mon-k8s:nbi", "nbi-k8s:nbi"]
-  - ["nbi-k8s:ingress", "nbi-ingress:ingress"]
-EOF
+    log_info "Deploying Charmed OSM microservices for base ${JUJU_BASE}..."
 
-    log_info "Deploying OSM bundle to model 'osm'..."
-    juju deploy /tmp/osm-bundle.yaml --trust
-    log_success "OSM bundle deployment initiated successfully."
+    # Deploy charms directly from Charmhub using the selected base
+    juju deploy zookeeper-k8s --channel latest/stable --base "${JUJU_BASE}" --trust
+    juju deploy kafka-k8s --channel latest/stable --base "${JUJU_BASE}" --trust
+    juju deploy mongodb-k8s --channel 6/stable --base "${JUJU_BASE}" --trust
+    juju deploy osm-keystone keystone-k8s --channel latest/stable --base "${JUJU_BASE}" --trust
+    juju deploy osm-nbi nbi-k8s --channel latest/stable --base "${JUJU_BASE}" --trust
+    juju deploy osm-lcm lcm-k8s --channel latest/stable --base "${JUJU_BASE}" --trust
+    juju deploy osm-ro ro-k8s --channel latest/stable --base "${JUJU_BASE}" --trust
+    juju deploy osm-mon mon-k8s --channel latest/stable --base "${JUJU_BASE}" --trust
+    juju deploy osm-pol pol-k8s --channel latest/stable --base "${JUJU_BASE}" --trust
+    juju deploy osm-ng-ui ng-ui-k8s --channel latest/stable --base "${JUJU_BASE}" --trust
+    juju deploy nginx-ingress-integrator nbi-ingress --channel latest/stable --base "${JUJU_BASE}" --trust
+
+    log_info "Integrating OSM microservices..."
+
+    # Relate microservices
+    juju integrate kafka-k8s:zookeeper zookeeper-k8s:zookeeper
+    juju integrate nbi-k8s:mongodb mongodb-k8s:database
+    juju integrate lcm-k8s:mongodb mongodb-k8s:database
+    juju integrate ro-k8s:mongodb mongodb-k8s:database
+    juju integrate mon-k8s:mongodb mongodb-k8s:database
+    juju integrate pol-k8s:mongodb mongodb-k8s:database
+    juju integrate nbi-k8s:kafka kafka-k8s:kafka
+    juju integrate lcm-k8s:kafka kafka-k8s:kafka
+    juju integrate mon-k8s:kafka kafka-k8s:kafka
+    juju integrate pol-k8s:kafka kafka-k8s:kafka
+    juju integrate nbi-k8s:keystone keystone-k8s:keystone
+    juju integrate nbi-k8s:ro ro-k8s:ro
+    juju integrate lcm-k8s:ro ro-k8s:ro
+    juju integrate lcm-k8s:nbi nbi-k8s:nbi
+    juju integrate mon-k8s:nbi nbi-k8s:nbi
+    juju integrate nbi-k8s:ingress nbi-ingress:ingress
+
+    log_success "OSM deployment and integrations initiated successfully."
 }
 
 setup_sdn_python_client() {
