@@ -247,15 +247,18 @@ EOF
 }
 
 setup_helm_repos() {
-    if helm repo list 2>/dev/null | grep -q "onosproject" && helm repo list 2>/dev/null | grep -q "towards5gs"; then
+    if helm repo list 2>/dev/null | grep -q "atomix" && \
+       helm repo list 2>/dev/null | grep -q "onosproject" && \
+       helm repo list 2>/dev/null | grep -q "towards5gs"; then
         log_success "Helm repositories are already configured."
         return 0
     fi
     log_info "Phase 4: Setting up Helm repositories for µONOS and Open5GS..."
     
+    helm repo add atomix https://atomix.github.io/charts.atomix.io || log_warn "Failed to add atomix repository."
     helm repo add onosproject https://charts.onosproject.org || log_warn "Failed to add onosproject repository."
     helm repo add towards5gs https://raw.githubusercontent.com/Orange-OpenSource/towards5gs-helm/main/repo/ || \
-        helm repo add towards5gs https://cdn.jsdelivr.net/gh/Orange-OpenSource/towards5gs-helm@main/repo/
+        helm repo add towards5gs https://cdn.jsdelivr.net/gh/Orange-OpenSource/towards5gs-helm@main/repo/ || log_warn "Failed to add towards5gs repository."
     
     helm repo update
 }
@@ -357,9 +360,10 @@ install_osm_installer() {
     juju deploy kafka-k8s --channel 3/stable --base ubuntu@22.04 --trust
     juju deploy mongodb-k8s --channel 6/stable --base ubuntu@22.04 --trust
     juju deploy charmed-osm-mariadb-k8s mariadb-k8s --channel latest/stable --base ubuntu@20.04 --trust
+    juju deploy osm-prometheus prometheus-k8s --channel 14.0/stable --base ubuntu@22.04 --trust
 
     # OSM Core Services
-    juju deploy osm-keystone keystone-k8s --channel 10.0/stable --base ubuntu@22.04 --trust
+    juju deploy osm-keystone keystone-k8s --channel 10.0/stable --base ubuntu@22.04 --resource keystone-image=opensourcemano/keystone:10.0.3 --trust
     juju deploy osm-nbi nbi-k8s --channel 14.0/stable --base ubuntu@22.04 --trust
     juju deploy osm-lcm lcm-k8s --channel 14.0/stable --base ubuntu@22.04 --trust
     juju deploy osm-ro ro-k8s --channel 14.0/stable --base ubuntu@22.04 --trust
@@ -375,7 +379,7 @@ install_osm_installer() {
     # Core Infrastructure Relations
     juju integrate zookeeper-k8s:zookeeper kafka-k8s:zookeeper
 
-    # MariaDB Relations (Keystone endpoint is 'db')
+    # MariaDB Relations
     juju integrate mariadb-k8s:mysql keystone-k8s:db
     juju integrate mariadb-k8s:mysql pol-k8s:mysql
 
@@ -392,6 +396,10 @@ install_osm_installer() {
     juju integrate kafka-k8s:kafka-client ro-k8s:kafka
     juju integrate kafka-k8s:kafka-client mon-k8s:kafka
     juju integrate kafka-k8s:kafka-client pol-k8s:kafka
+
+    # Prometheus Relations
+    juju integrate prometheus-k8s:prometheus mon-k8s:prometheus
+    juju integrate prometheus-k8s:prometheus nbi-k8s:prometheus
 
     # Keystone & Microservice Inter-relations
     juju integrate keystone-k8s:keystone nbi-k8s:keystone
@@ -567,10 +575,6 @@ deploy_cloud_native_uonos() {
     fi
 
     kubectl create namespace micro-onos --dry-run=client -o yaml | kubectl apply -f -
-
-    helm repo add atomix https://atomix.github.io/charts.atomix.io
-    helm repo add onos https://charts.onosproject.org
-    helm repo update
 
     log_info "Purging stale Helm releases..."
     helm uninstall atomix-controller atomix-raft-storage onos-operator -n micro-onos 2>/dev/null || true
