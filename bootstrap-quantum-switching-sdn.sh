@@ -337,11 +337,8 @@ install_osm_installer() {
     ) &
     CERT_SYNC_PID=$!
 
-    if ask_user "Do you want to deploy OSM using Ubuntu 26.04 (Noble)? (Selecting 'N' defaults to 22.04 Jammy)" "Y"; then
-        export JUJU_BASE="ubuntu@26.04"
-    else
-        export JUJU_BASE="ubuntu@22.04"
-    fi
+    # Set Juju base to 22.04 to match published Charmhub artifacts
+    JUJU_BASE="ubuntu@22.04"
 
     log_info "Bootstrapping Juju Controller with base ${JUJU_BASE}..."
     juju bootstrap k8s-cloud osm-vca \
