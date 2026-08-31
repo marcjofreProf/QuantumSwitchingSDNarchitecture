@@ -3,7 +3,7 @@ import sys
 import os
 import subprocess
 import json
-# From the host controller, execution as: python3 tests/e2e-path-provisioning/test-restconf-northbound.py
+# From the host controller, execution as: python3 ./tests/e2e-path-provisioning/test-restconf-northbound.py
 current_dir = os.path.dirname(os.path.abspath(__file__))
 
 # --- VENV AUTO-DISCOVERY & RE-EXECUTION ---
