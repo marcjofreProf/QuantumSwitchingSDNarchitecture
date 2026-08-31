@@ -165,18 +165,12 @@ install_docker() {
         log_success "Docker installed."
     fi
 
-    # Get the current username (works with sudo)
-    CURRENT_USER=$(whoami)
-    # If running with sudo, get the original user
-    if [ -n "$SUDO_USER" ]; then
-        CURRENT_USER="$SUDO_USER"
+    # Add current user to docker group if needed
+    if ! groups | grep -q docker; then
+        sudo usermod -aG docker "${SUDO_USER:-$USER}"
+        echo "Docker group added. Please run: newgrp docker && ./$(basename "$0")"
+        exit 0
     fi
-    
-    echo "Adding user $CURRENT_USER to docker group..."
-    
-    # Add user to docker group
-    sudo usermod -aG docker "$CURRENT_USER"
-    #sg docker "$0"
 }
 
 install_kubectl_and_helm() {
