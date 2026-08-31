@@ -346,24 +346,24 @@ install_osm_installer() {
         --model-default default-base=$JUJU_BASE || true
 
     kill $CERT_SYNC_PID 2>/dev/null || true
+    
+    log_info "Adding 'osm' model on k8s-cloud with forced default base..."
+    juju add-model osm k8s-cloud --config default-base=ubuntu@22.04
 
-    log_info "Adding 'osm' model on k8s-cloud..."
-    juju add-model osm k8s-cloud
+    log_info "Deploying Charmed OSM microservices with charm-specific bases..."
 
-    log_info "Deploying Charmed OSM microservices for base ${JUJU_BASE}..."
-
-    # Deploy charms directly from Charmhub using the selected base
-    juju deploy zookeeper-k8s --channel latest/stable --base "${JUJU_BASE}" --trust
-    juju deploy kafka-k8s --channel latest/stable --base "${JUJU_BASE}" --trust
-    juju deploy mongodb-k8s --channel 6/stable --base "${JUJU_BASE}" --trust
-    juju deploy osm-keystone keystone-k8s --channel latest/stable --base "${JUJU_BASE}" --trust
-    juju deploy osm-nbi nbi-k8s --channel latest/stable --base "${JUJU_BASE}" --trust
-    juju deploy osm-lcm lcm-k8s --channel latest/stable --base "${JUJU_BASE}" --trust
-    juju deploy osm-ro ro-k8s --channel latest/stable --base "${JUJU_BASE}" --trust
-    juju deploy osm-mon mon-k8s --channel latest/stable --base "${JUJU_BASE}" --trust
-    juju deploy osm-pol pol-k8s --channel latest/stable --base "${JUJU_BASE}" --trust
-    juju deploy osm-ng-ui ng-ui-k8s --channel latest/stable --base "${JUJU_BASE}" --trust
-    juju deploy nginx-ingress-integrator nbi-ingress --channel latest/stable --base "${JUJU_BASE}" --trust
+    # Independent Charm & Base Allocations
+    juju deploy zookeeper-k8s --channel 3/stable --base ubuntu@22.04 --trust
+    juju deploy kafka-k8s --channel 3/stable --base ubuntu@22.04 --trust
+    juju deploy mongodb-k8s --channel 6/stable --base ubuntu@22.04 --trust
+    juju deploy osm-keystone keystone-k8s --channel 3/stable --base ubuntu@22.04 --trust
+    juju deploy osm-nbi nbi-k8s --channel 3/stable --base ubuntu@22.04 --trust
+    juju deploy osm-lcm lcm-k8s --channel 3/stable --base ubuntu@22.04 --trust
+    juju deploy osm-ro ro-k8s --channel 3/stable --base ubuntu@22.04 --trust
+    juju deploy osm-mon mon-k8s --channel 3/stable --base ubuntu@22.04 --trust
+    juju deploy osm-pol pol-k8s --channel 3/stable --base ubuntu@22.04 --trust
+    juju deploy osm-ng-ui ng-ui-k8s --channel 3/stable --base ubuntu@22.04 --trust
+    juju deploy nginx-ingress-integrator nbi-ingress --channel latest/stable --base ubuntu@22.04 --trust
 
     log_info "Integrating OSM microservices..."
 
