@@ -176,32 +176,7 @@ install_docker() {
     
     # Add user to docker group
     sudo usermod -aG docker "$CURRENT_USER"
-    
-    # Check if it was successful
-    if [ $? -eq 0 ]; then
-        echo "User $CURRENT_USER added to docker group successfully!"
-        
-        # Inform user about restart options
-        echo ""
-        echo "To apply the changes, you have several options:"
-        echo "1. Log out and log back in (recommended)"
-        echo "2. Run: newgrp docker"
-        echo "3. Run: exec su -l $CURRENT_USER"
-        echo ""
-        echo "The script will now continue with newgrp docker..."
-        
-        sg docker "$0"
-        
-        # Note: exec replaces the current shell, so anything after this won't run
-        # If you want to continue the script after, use this instead:
-        # newgrp docker <<EOF
-        #   # Your docker commands here
-        #   docker ps
-        # EOF
-    else
-        echo "Failed to add user to docker group"
-        exit 1
-    fi
+    sg docker "$0"
 }
 
 install_kubectl_and_helm() {
