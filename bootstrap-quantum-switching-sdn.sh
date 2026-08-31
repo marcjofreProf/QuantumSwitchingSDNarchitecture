@@ -168,7 +168,8 @@ install_docker() {
     # Add current user to docker group if needed
     if ! groups | grep -q docker; then
         sudo usermod -aG docker "${SUDO_USER:-$USER}"
-        echo "Docker group added. Please run: newgrp docker && ./$(basename "$0")"
+        newgrp docker
+        echo "Docker group added. Please open a new shell: ./$(basename "$0")"
         exit 0
     fi
 }
