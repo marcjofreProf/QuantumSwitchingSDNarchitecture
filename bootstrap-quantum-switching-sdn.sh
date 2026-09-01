@@ -257,7 +257,7 @@ EOF
 setup_helm_repos() {
     if helm repo list 2>/dev/null | grep -q "atomix" && \
        helm repo list 2>/dev/null | grep -q "onosproject" && \
-       helm repo list 2>/dev/null | grep -q "towards5gs"; then
+       helm repo list 2>/dev/null | grep -q "gradiant"; then
         log_success "Helm repositories are already configured."
         return 0
     fi
@@ -265,8 +265,7 @@ setup_helm_repos() {
     
     helm repo add atomix https://atomix.github.io/charts.atomix.io || log_warn "Failed to add atomix repository."
     helm repo add onosproject https://charts.onosproject.org || log_warn "Failed to add onosproject repository."
-    helm repo add towards5gs https://raw.githubusercontent.com/Orange-OpenSource/towards5gs-helm/main/repo/ || \
-        helm repo add towards5gs https://cdn.jsdelivr.net/gh/Orange-OpenSource/towards5gs-helm@main/repo/ || log_warn "Failed to add towards5gs repository."
+    helm repo add gradiant https://gradiant.github.io/5g-charts || log_warn "Failed to add gradiant repository."
     
     helm repo update
 }
@@ -570,7 +569,8 @@ deploy_cloud_native_uonos() {
     log_info "Phase 8: Evaluating µONOS deployment state..."
     
     local uonos_active=false
-    if kubectl get pods -n micro-onos 2>/dev/null | grep -E 'onos-topo|onos-config' | grep -q 'Running'; then
+    if kubectl get ns micro-onos >/dev/null 2>&1 && \
+       kubectl get pods -n micro-onos 2>/dev/null | grep -qE 'onos-topo|onos-config|restconf-gateway'; then
         uonos_active=true
     fi
 
@@ -605,8 +605,6 @@ deploy_cloud_native_uonos() {
     # helm install onos-topo onosproject/onos-topo -n micro-onos 2>/dev/null || true
     kubectl run onos-config -n micro-onos --image=onosproject/onos-config:latest --restart=Never 2>/dev/null || true
     # helm install onos-config onosproject/onos-config -n micro-onos 2>/dev/null || true
-
-    
 
     log_info "Building and deploying RESTCONF Gateway Container..."
     if command -v docker >/dev/null 2>&1; then
@@ -677,11 +675,12 @@ deploy_open5gs() {
 
     kubectl create namespace open5gs --dry-run=client -o yaml | kubectl apply -f -
 
-    log_info "Installing Open5GS using Helm..."
-    if helm install open5gs towards5gs/open5gs -n open5gs 2>/dev/null || helm upgrade --install open5gs towards5gs/open5gs -n open5gs; then
+    log_info "Installing Open5GS using Helm (Gradiant OCI)..."
+    if helm install open5gs oci://registry-1.docker.io/gradiant/open5gs -n open5gs || \
+       helm upgrade --install open5gs oci://registry-1.docker.io/gradiant/open5gs -n open5gs; then
         log_success "Open5GS Helm release deployed successfully."
     else
-        log_warn "Failed to install Open5GS chart from towards5gs repository."
+        log_warn "Failed to install Open5GS chart from Gradiant repository."
     fi
 }
 
