@@ -257,15 +257,16 @@ EOF
 setup_helm_repos() {
     if helm repo list 2>/dev/null | grep -q "atomix" && \
        helm repo list 2>/dev/null | grep -q "onosproject" && \
-       helm repo list 2>/dev/null | grep -q "gradiant"; then
+       helm repo list 2>/dev/null | grep -q "towards5gs"; then
         log_success "Helm repositories are already configured."
         return 0
     fi
-    log_info "Phase 4: Setting up Helm repositories for µONOS and Open5GS..."
+    log_info "Phase 4: Setting up Helm repositories for µONOS..."
     
     helm repo add atomix https://atomix.github.io/charts.atomix.io || log_warn "Failed to add atomix repository."
     helm repo add onosproject https://charts.onosproject.org || log_warn "Failed to add onosproject repository."
-    helm repo add gradiant https://gradiant.github.io/5g-charts || log_warn "Failed to add gradiant repository."
+    helm repo add towards5gs https://raw.githubusercontent.com/Orange-OpenSource/towards5gs-helm/main/repo/ || \
+        helm repo add towards5gs https://cdn.jsdelivr.net/gh/Orange-OpenSource/towards5gs-helm@main/repo/ || log_warn "Failed to add towards5gs repository."
     
     helm repo update
 }
@@ -676,8 +677,8 @@ deploy_open5gs() {
     kubectl create namespace open5gs --dry-run=client -o yaml | kubectl apply -f -
 
     log_info "Installing Open5GS using Helm (Gradiant OCI)..."
-    if helm install open5gs oci://registry-1.docker.io/gradiant/open5gs -n open5gs || \
-       helm upgrade --install open5gs oci://registry-1.docker.io/gradiant/open5gs -n open5gs; then
+    if helm install open5gs oci://registry-1.docker.io/gradiantcharts/open5gs -n open5gs || \
+       helm upgrade --install open5gs oci://registry-1.docker.io/gradiantcharts/open5gs -n open5gs; then
         log_success "Open5GS Helm release deployed successfully."
     else
         log_warn "Failed to install Open5GS chart from Gradiant repository."
