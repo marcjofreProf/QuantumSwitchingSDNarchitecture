@@ -50,10 +50,19 @@ wait_for_apt_lock() {
 }
 
 stop_unattended_upgrades() {
-    log_info "Phase 0: Disabling unattended-upgrades to prevent APT lock conflicts..."
+    log_info "Phase 0: Tuning kernel file watch limits & disabling unattended-upgrades..."
+    
+    # Increase inotify and file descriptor limits to prevent "Too many open files" errors
+    cat <<EOF | sudo tee /etc/sysctl.d/99-inotify-limits.conf >/dev/null
+fs.inotify.max_user_watches = 524288
+fs.inotify.max_user_instances = 8192
+fs.file-max = 2097152
+EOF
+    sudo sysctl -p /etc/sysctl.d/99-inotify-limits.conf >/dev/null
+
     sudo systemctl stop unattended-upgrades 2>/dev/null || true
     sudo systemctl disable unattended-upgrades 2>/dev/null || true
-    log_success "unattended-upgrades stopped and disabled."
+    log_success "Kernel watch limits increased and unattended-upgrades disabled."
 }
 
 ensure_sufficient_memory() {
