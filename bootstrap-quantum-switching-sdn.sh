@@ -380,7 +380,7 @@ install_osm_installer() {
     juju deploy osm-prometheus prometheus-k8s --channel 14.0/stable --base ubuntu@20.04 --trust
 
     # OSM Core Services
-    juju deploy osm-keystone keystone-k8s --channel 10.0/stable --base ubuntu@22.04 --resource keystone-image=opensourcemano/keystone:10.0.3 --trust
+    juju deploy osm-keystone keystone-k8s --channel 14.0/stable --base ubuntu@22.04 --trust
     juju deploy osm-nbi nbi-k8s --channel 14.0/stable --base ubuntu@22.04 --trust
     juju deploy osm-lcm lcm-k8s --channel 14.0/stable --base ubuntu@22.04 --trust
     juju deploy osm-ro ro-k8s --channel 14.0/stable --base ubuntu@22.04 --trust
@@ -394,40 +394,40 @@ install_osm_installer() {
     log_info "Integrating OSM microservices..."
     until ! juju status | grep -q "allocating"; do
         echo "Waiting for Juju allocation to finish...(to check: juju status -m osm --watch 5s)"
-        sleep 30
+        sleep 15
     done
     
     # Core Infrastructure Relations
-    juju integrate zookeeper-k8s:zookeeper kafka-k8s:zookeeper
+    juju integrate kafka-k8s zookeeper-k8s || true
     
     # MariaDB Relations
-    juju integrate mariadb-k8s:mysql keystone-k8s:db
-    juju integrate mariadb-k8s:mysql pol-k8s:mysql
+    juju integrate mariadb-k8s keystone-k8s || true
+    juju integrate mariadb-k8s pol-k8s || true
     
     # MongoDB Relations
-    juju integrate mongodb-k8s:database nbi-k8s:mongodb
-    juju integrate mongodb-k8s:database lcm-k8s:mongodb
-    juju integrate mongodb-k8s:database ro-k8s:mongodb
-    juju integrate mongodb-k8s:database mon-k8s:mongodb
-    juju integrate mongodb-k8s:database pol-k8s:mongodb
+    juju integrate mongodb-k8s nbi-k8s || true
+    juju integrate mongodb-k8s lcm-k8s || true
+    juju integrate mongodb-k8s ro-k8s || true
+    juju integrate mongodb-k8s mon-k8s || true
+    juju integrate mongodb-k8s pol-k8s || true
     
     # Kafka Relations
-    juju integrate kafka-k8s:kafka nbi-k8s:kafka
-    juju integrate kafka-k8s:kafka lcm-k8s:kafka
-    juju integrate kafka-k8s:kafka mon-k8s:kafka
-    juju integrate kafka-k8s:kafka pol-k8s:kafka
-    juju integrate kafka-k8s:kafka ro-k8s:kafka
+    juju integrate kafka-k8s nbi-k8s || true
+    juju integrate kafka-k8s lcm-k8s || true
+    juju integrate kafka-k8s mon-k8s || true
+    juju integrate kafka-k8s pol-k8s || true
+    juju integrate kafka-k8s ro-k8s || true
     
     # Prometheus Relations
-    juju integrate prometheus-k8s:prometheus mon-k8s:prometheus
-    juju integrate prometheus-k8s:prometheus nbi-k8s:prometheus
+    juju integrate prometheus-k8s mon-k8s || true
+    juju integrate prometheus-k8s nbi-k8s || true
     
     # Keystone & Microservice Inter-relations
-    juju integrate keystone-k8s:keystone nbi-k8s:keystone
-    juju integrate keystone-k8s:keystone mon-k8s:keystone
-    juju integrate ro-k8s:ro lcm-k8s:ro
-    juju integrate nbi-k8s:nbi ng-ui-k8s:nbi
-    juju integrate nbi-k8s:ingress nbi-ingress:ingress
+    juju integrate keystone-k8s nbi-k8s || true
+    juju integrate keystone-k8s mon-k8s || true
+    juju integrate ro-k8s lcm-k8s || true
+    juju integrate nbi-k8s ng-ui-k8s || true
+    juju integrate nbi-ingress nbi-k8s || true
 
     log_success "OSM deployment and integrations initiated successfully."
 }
