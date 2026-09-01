@@ -79,7 +79,3 @@ log_info "Reverting custom sysctl configurations..."
 sudo rm -f /etc/sysctl.d/99-sdn-uonos.conf /etc/sysctl.d/99-inotify-limits.conf /etc/sysctl.d/99-juju.conf /etc/modules-load.d/sdn-uonos.conf 2>/dev/null || true
 
 log_success "Environment successfully cleaned up and reset!"
-sdn-controller/northbound-interfaces/model-plugin/go.mod
-sdn-controller/northbound-interfaces/model-plugin/go.sum
-sdn-controller/northbound-interfaces/model-plugin/*.go
-sdn-controller/northbound-interfaces/model-plugin/proto/
