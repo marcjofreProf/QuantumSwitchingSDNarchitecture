@@ -399,35 +399,44 @@ install_osm_installer() {
     
     log_info "Integrating OSM microservices..."
 
-    # Auto-discovered integrations
-    juju integrate kafka-k8s zookeeper-k8s || true
-    juju integrate mariadb-k8s keystone-k8s || true
-    juju integrate mariadb-k8s pol-k8s || true
+    # Core Infrastructure Relations
+    juju integrate zookeeper-k8s:zookeeper kafka-k8s:zookeeper || true
     
-    juju integrate mongodb-k8s nbi-k8s || true
-    juju integrate mongodb-k8s lcm-k8s || true
-    juju integrate mongodb-k8s ro-k8s || true
-    juju integrate mongodb-k8s mon-k8s || true
-    juju integrate mongodb-k8s pol-k8s || true
+    # MariaDB Relations
+    juju integrate mariadb-k8s:mysql keystone-k8s:db || true
+    juju integrate mariadb-k8s:mysql pol-k8s:mysql || true
     
-    juju integrate kafka-k8s nbi-k8s || true
-    juju integrate kafka-k8s lcm-k8s || true
-    juju integrate kafka-k8s mon-k8s || true
-    juju integrate kafka-k8s pol-k8s || true
-    juju integrate kafka-k8s ro-k8s || true
+    # MongoDB Relations
+    juju integrate mongodb-k8s:database nbi-k8s:mongodb || true
+    juju integrate mongodb-k8s:database lcm-k8s:mongodb || true
+    juju integrate mongodb-k8s:database ro-k8s:mongodb || true
+    juju integrate mongodb-k8s:database mon-k8s:mongodb || true
+    juju integrate mongodb-k8s:database pol-k8s:mongodb || true
     
-    juju integrate prometheus-k8s mon-k8s || true
-    juju integrate prometheus-k8s nbi-k8s || true
+    # Kafka Relations
+    juju integrate kafka-k8s:kafka nbi-k8s:kafka || true
+    juju integrate kafka-k8s:kafka lcm-k8s:kafka || true
+    juju integrate kafka-k8s:kafka mon-k8s:kafka || true
+    juju integrate kafka-k8s:kafka pol-k8s:kafka || true
+    juju integrate kafka-k8s:kafka ro-k8s:kafka || true
     
-    juju integrate keystone-k8s nbi-k8s || true
-    juju integrate keystone-k8s mon-k8s || true
-    juju integrate ro-k8s lcm-k8s || true
-    juju integrate nbi-k8s ng-ui-k8s || true
-    juju integrate nbi-ingress nbi-k8s || true
+    # Prometheus Relations
+    juju integrate prometheus-k8s:prometheus mon-k8s:prometheus || true
+    juju integrate prometheus-k8s:prometheus nbi-k8s:prometheus || true
+    
+    # Keystone & Microservice Inter-relations
+    juju integrate keystone-k8s:keystone nbi-k8s:keystone || true
+    juju integrate keystone-k8s:keystone mon-k8s:keystone || true
+    juju integrate ro-k8s:ro lcm-k8s:ro || true
+    juju integrate nbi-k8s:nbi ng-ui-k8s:nbi || true
+    juju integrate nbi-k8s:ingress nbi-ingress:ingress || true
+    
+    # Wait for relations to settle
+    log_info "Waiting for relations to settle..."
+    sleep 15
     
     # Auto-resolve transient DB hook errors if Keystone raced MariaDB startup
-    sleep 10
-    juju resolve keystone-k8s/0 || true
+    juju resolve keystone-k8s/0 2>/dev/null || true
 
     log_success "OSM deployment and integrations initiated successfully."
 }
