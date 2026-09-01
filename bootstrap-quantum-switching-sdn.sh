@@ -657,6 +657,34 @@ EOF
     log_success "µONOS deployment completed successfully!"
 }
 
+deploy_open5gs() {
+    log_info "Phase 9: Evaluating Open5GS deployment state..."
+
+    local open5gs_active=false
+    if helm list -n open5gs 2>/dev/null | grep -q "open5gs" || kubectl get pods -n open5gs 2>/dev/null | grep -q "open5gs"; then
+        open5gs_active=true
+    fi
+
+    if [ "$open5gs_active" = true ]; then
+        log_success "Open5GS is already deployed in namespace 'open5gs'."
+        if ! ask_user "Do you want to re-install / upgrade Open5GS?" "N"; then
+            log_info "Skipping Open5GS re-installation."
+            return 0
+        fi
+    else
+        log_info "Open5GS is not currently deployed. Proceeding with installation..."
+    fi
+
+    kubectl create namespace open5gs --dry-run=client -o yaml | kubectl apply -f -
+
+    log_info "Installing Open5GS using Helm..."
+    if helm install open5gs towards5gs/open5gs -n open5gs 2>/dev/null || helm upgrade --install open5gs towards5gs/open5gs -n open5gs; then
+        log_success "Open5GS Helm release deployed successfully."
+    else
+        log_warn "Failed to install Open5GS chart from towards5gs repository."
+    fi
+}
+
 # --- Main Execution ---
 echo -e "${CYAN}===========================================================${NC}"
 echo -e "${CYAN}   Quantum-SDN Switching Architecture Environment Setup    ${NC}"
@@ -676,6 +704,7 @@ install_osm_installer
 setup_sdn_python_client
 compile_uonos_model_plugins
 deploy_cloud_native_uonos
+deploy_open5gs
 
 echo -e "${GREEN}====================================================${NC}"
 echo -e "${GREEN} Setup Complete!${NC}"
