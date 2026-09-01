@@ -380,7 +380,7 @@ install_osm_installer() {
     juju deploy osm-prometheus prometheus-k8s --channel 14.0/stable --base ubuntu@20.04 --trust
 
     # OSM Core Services
-    juju deploy osm-keystone keystone-k8s --channel 14.0/stable --base ubuntu@22.04 --trust
+    juju deploy osm-keystone keystone-k8s --channel latest/stable --base ubuntu@20.04 --trust
     juju deploy osm-nbi nbi-k8s --channel 14.0/stable --base ubuntu@22.04 --trust
     juju deploy osm-lcm lcm-k8s --channel 14.0/stable --base ubuntu@22.04 --trust
     juju deploy osm-ro ro-k8s --channel 14.0/stable --base ubuntu@22.04 --trust
