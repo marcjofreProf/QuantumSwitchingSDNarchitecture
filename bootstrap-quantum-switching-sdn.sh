@@ -390,27 +390,29 @@ install_osm_installer() {
     
     # Core Infrastructure Relations
     juju integrate zookeeper-k8s:zookeeper kafka-k8s:zookeeper
-
+    
     # MariaDB Relations
     juju integrate mariadb-k8s:mysql keystone-k8s:db
     juju integrate mariadb-k8s:mysql pol-k8s:mysql
-
+    
     # MongoDB Relations
     juju integrate mongodb-k8s:database nbi-k8s:mongodb
     juju integrate mongodb-k8s:database lcm-k8s:mongodb
     juju integrate mongodb-k8s:database ro-k8s:mongodb
     juju integrate mongodb-k8s:database mon-k8s:mongodb
     juju integrate mongodb-k8s:database pol-k8s:mongodb
-
+    
     # Kafka Relations
     juju integrate kafka-k8s:kafka nbi-k8s:kafka
     juju integrate kafka-k8s:kafka lcm-k8s:kafka
     juju integrate kafka-k8s:kafka mon-k8s:kafka
-
+    juju integrate kafka-k8s:kafka pol-k8s:kafka
+    juju integrate kafka-k8s:kafka ro-k8s:kafka
+    
     # Prometheus Relations
     juju integrate prometheus-k8s:prometheus mon-k8s:prometheus
     juju integrate prometheus-k8s:prometheus nbi-k8s:prometheus
-
+    
     # Keystone & Microservice Inter-relations
     juju integrate keystone-k8s:keystone nbi-k8s:keystone
     juju integrate keystone-k8s:keystone mon-k8s:keystone
