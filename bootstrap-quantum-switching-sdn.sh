@@ -380,7 +380,7 @@ install_osm_installer() {
     juju deploy osm-prometheus prometheus-k8s --channel 14.0/stable --base ubuntu@20.04 --trust
 
     # OSM Core Services
-    juju deploy osm-keystone keystone-k8s --channel latest/stable --base ubuntu@20.04 --trust
+    juju deploy osm-keystone keystone-k8s --channel 10.0/stable --base ubuntu@22.04 --resource keystone-image=opensourcemano/keystone:10.0.3 --trust
     juju deploy osm-nbi nbi-k8s --channel 14.0/stable --base ubuntu@22.04 --trust
     juju deploy osm-lcm lcm-k8s --channel 14.0/stable --base ubuntu@22.04 --trust
     juju deploy osm-ro ro-k8s --channel 14.0/stable --base ubuntu@22.04 --trust
@@ -397,37 +397,37 @@ install_osm_installer() {
         sleep 15
     done
     
-    # Core Infrastructure Relations
+    log_info "Integrating OSM microservices..."
+
+    # Auto-discovered integrations
     juju integrate kafka-k8s zookeeper-k8s || true
-    
-    # MariaDB Relations
     juju integrate mariadb-k8s keystone-k8s || true
     juju integrate mariadb-k8s pol-k8s || true
     
-    # MongoDB Relations
     juju integrate mongodb-k8s nbi-k8s || true
     juju integrate mongodb-k8s lcm-k8s || true
     juju integrate mongodb-k8s ro-k8s || true
     juju integrate mongodb-k8s mon-k8s || true
     juju integrate mongodb-k8s pol-k8s || true
     
-    # Kafka Relations
     juju integrate kafka-k8s nbi-k8s || true
     juju integrate kafka-k8s lcm-k8s || true
     juju integrate kafka-k8s mon-k8s || true
     juju integrate kafka-k8s pol-k8s || true
     juju integrate kafka-k8s ro-k8s || true
     
-    # Prometheus Relations
     juju integrate prometheus-k8s mon-k8s || true
     juju integrate prometheus-k8s nbi-k8s || true
     
-    # Keystone & Microservice Inter-relations
     juju integrate keystone-k8s nbi-k8s || true
     juju integrate keystone-k8s mon-k8s || true
     juju integrate ro-k8s lcm-k8s || true
     juju integrate nbi-k8s ng-ui-k8s || true
     juju integrate nbi-ingress nbi-k8s || true
+    
+    # Auto-resolve transient DB hook errors if Keystone raced MariaDB startup
+    sleep 10
+    juju resolve keystone-k8s/0 || true
 
     log_success "OSM deployment and integrations initiated successfully."
 }
