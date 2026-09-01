@@ -679,6 +679,10 @@ deploy_open5gs() {
             log_info "Skipping Open5GS re-installation."
             return 0
         fi
+        
+        log_info "Purging existing Open5GS release and pods for a clean install..."
+        helm uninstall open5gs -n open5gs 2>/dev/null || true
+        kubectl delete pods --all -n open5gs --grace-period=0 --force 2>/dev/null || true
     else
         log_info "Open5GS is not currently deployed. Proceeding with installation..."
     fi
@@ -686,8 +690,7 @@ deploy_open5gs() {
     kubectl create namespace open5gs --dry-run=client -o yaml | kubectl apply -f -
 
     log_info "Installing Open5GS using Helm (Gradiant OCI)..."
-    if helm install open5gs oci://registry-1.docker.io/gradiantcharts/open5gs -n open5gs || \
-       helm upgrade --install open5gs oci://registry-1.docker.io/gradiantcharts/open5gs -n open5gs; then
+    if helm install open5gs oci://registry-1.docker.io/gradiantcharts/open5gs -n open5gs; then
         log_success "Open5GS Helm release deployed successfully."
     else
         log_warn "Failed to install Open5GS chart from Gradiant repository."
