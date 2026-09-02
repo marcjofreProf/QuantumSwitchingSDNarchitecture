@@ -22,10 +22,9 @@ metadata:
 spec:
   containers:
     - name: onos-topo
-      image: onosproject/onos-topo:v1.0.3
+      image: onosproject/onos-topo:latest
       args:
         - "--bind-port=5150"
-        - "--no-tls"
       ports:
         - containerPort: 5150
 ---
