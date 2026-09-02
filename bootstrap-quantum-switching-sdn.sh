@@ -389,7 +389,8 @@ install_osm_installer() {
     juju deploy osm-ng-ui ng-ui-k8s --channel 14.0/stable --base ubuntu@22.04 --trust
 
     # Ingress Controller
-    juju deploy nginx-ingress-integrator nbi-ingress --channel latest/stable --base ubuntu@22.04 --trust
+    juju deploy traefik-k8s --channel 1.0/stable --base ubuntu@20.04 --trust || true
+    juju config nbi-k8s external-hostname="nbi.127.0.0.1.nip.io" || true
 
     log_info "Integrating OSM microservices..."
     until ! juju status | grep -q "allocating"; do
@@ -429,7 +430,7 @@ install_osm_installer() {
     juju integrate keystone-k8s mon-k8s || true
     juju integrate ro-k8s lcm-k8s || true
     juju integrate nbi-k8s ng-ui-k8s || true
-    juju integrate nbi-ingress nbi-k8s || true
+    juju integrate nbi-k8s:ingress traefik-k8s:ingress || true
     
     # Wait for relations to settle and clear transient DB locks
     log_info "Waiting for relations to settle..."
