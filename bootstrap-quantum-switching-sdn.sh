@@ -52,7 +52,6 @@ wait_for_apt_lock() {
 stop_unattended_upgrades() {
     log_info "Phase 0: Tuning kernel file watch limits & disabling unattended-upgrades..."
     
-    # Increase inotify and file descriptor limits to prevent "Too many open files" errors
     cat <<EOF | sudo tee /etc/sysctl.d/99-inotify-limits.conf >/dev/null
 fs.inotify.max_user_watches = 524288
 fs.inotify.max_user_instances = 8192
@@ -174,12 +173,9 @@ install_docker() {
         log_success "Docker installed."
     fi
 
-    # Add current user to docker group if needed
     if ! groups | grep -q docker; then
         sudo usermod -aG docker "${SUDO_USER:-$USER}"
-        newgrp docker
-        echo "Docker group added. Please open a new shell: ./$(basename "$0")"
-        exit 0
+        log_warn "Added ${USER} to docker group. If docker commands fail without sudo, re-login or run 'sg docker'."
     fi
 }
 
@@ -287,8 +283,8 @@ install_grpc_tools() {
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y protobuf-compiler
     fi
     if ! command -v grpcurl >/dev/null 2>&1; then
-        wget https://github.com/fullstorydev/grpcurl/releases/download/v1.8.7/grpcurl_1.8.7_linux_x86_64.tar.gz
-        tar -xvf grpcurl_1.8.7_linux_x86_64.tar.gz
+        wget -q https://github.com/fullstorydev/grpcurl/releases/download/v1.8.7/grpcurl_1.8.7_linux_x86_64.tar.gz
+        tar -xvf grpcurl_1.8.7_linux_x86_64.tar.gz >/dev/null
         sudo mv grpcurl /usr/local/bin/
         rm -f grpcurl_1.8.7_linux_x86_64.tar.gz LICENSE
     fi
@@ -357,7 +353,6 @@ install_osm_installer() {
     ) &
     CERT_SYNC_PID=$!
 
-    # Standardize on ubuntu@22.04 for Juju 3 + K8s Charmhub compatibility
     JUJU_BASE="ubuntu@22.04"
 
     log_info "Bootstrapping Juju Controller with base ${JUJU_BASE}..."
@@ -372,14 +367,12 @@ install_osm_installer() {
 
     log_info "Deploying Charmed OSM microservices with charm-specific bases..."
 
-    # Infrastructure Services
     juju deploy zookeeper-k8s --channel latest/stable --base ubuntu@20.04 --trust
     juju deploy ch:kafka-k8s --channel latest/stable --base ubuntu@20.04 --trust
     juju deploy mongodb-k8s --channel 6/stable --base ubuntu@22.04 --trust
     juju deploy charmed-osm-mariadb-k8s mariadb-k8s --channel latest/stable --base ubuntu@20.04 --trust
     juju deploy osm-prometheus prometheus-k8s --channel 14.0/stable --base ubuntu@20.04 --trust
 
-    # OSM Core Services
     juju deploy osm-keystone keystone-k8s --channel latest/stable --base ubuntu@20.04 --resource keystone-image=opensourcemano/keystone:14 --trust
     juju deploy osm-nbi nbi-k8s --channel 14.0/stable --base ubuntu@22.04 --trust
     juju deploy osm-lcm lcm-k8s --channel 14.0/stable --base ubuntu@22.04 --trust
@@ -388,7 +381,6 @@ install_osm_installer() {
     juju deploy osm-pol pol-k8s --channel 14.0/stable --base ubuntu@22.04 --trust
     juju deploy osm-ng-ui ng-ui-k8s --channel 14.0/stable --base ubuntu@22.04 --trust
 
-    # Ingress Controller
     juju deploy traefik-k8s --channel 1.0/stable --base ubuntu@20.04 --trust || true
     juju config nbi-k8s external-hostname="nbi.127.0.0.1.nip.io" || true
 
@@ -400,43 +392,30 @@ install_osm_installer() {
     
     log_info "Integrating OSM microservices..."
 
-    # Core Infrastructure Relations
     juju integrate zookeeper-k8s kafka-k8s || true
-    
-    # MariaDB Relations
     juju integrate mariadb-k8s keystone-k8s || true
     juju integrate mariadb-k8s pol-k8s || true
-    
-    # MongoDB Relations
     juju integrate mongodb-k8s nbi-k8s || true
     juju integrate mongodb-k8s lcm-k8s || true
     juju integrate mongodb-k8s ro-k8s || true
     juju integrate mongodb-k8s mon-k8s || true
     juju integrate mongodb-k8s pol-k8s || true
-    
-    # Kafka Relations
     juju integrate kafka-k8s nbi-k8s || true
     juju integrate kafka-k8s lcm-k8s || true
     juju integrate kafka-k8s mon-k8s || true
     juju integrate kafka-k8s pol-k8s || true
     juju integrate kafka-k8s ro-k8s || true
-    
-    # Prometheus Relations
     juju integrate prometheus-k8s mon-k8s || true
     juju integrate prometheus-k8s nbi-k8s || true
-    
-    # Keystone & Microservice Inter-relations
     juju integrate keystone-k8s nbi-k8s || true
     juju integrate keystone-k8s mon-k8s || true
     juju integrate ro-k8s lcm-k8s || true
     juju integrate nbi-k8s ng-ui-k8s || true
     juju integrate nbi-k8s:ingress traefik-k8s:ingress || true
     
-    # Wait for relations to settle and clear transient DB locks
     log_info "Waiting for relations to settle..."
     sleep 20
     
-    # Auto-resolve transient DB hook errors if Keystone raced MariaDB startup
     juju resolve keystone-k8s/0 2>/dev/null || true
 
     log_success "OSM deployment and integrations initiated successfully."
@@ -565,10 +544,10 @@ modules:
     file: controller-quantum-switching.yang
 EOF
 
-    local plugin_dir="./sdn-controller/northbound-interfaces/model-plugin"
-
     log_info "Executing onosproject/model-compiler..."
-    docker run --rm -v "$(pwd)/$plugin_dir:/config-model" onosproject/model-compiler:latest
+    local abs_plugin_dir
+    abs_plugin_dir=$(realpath "$plugin_dir")
+    docker run --rm -v "${abs_plugin_dir}:/config-model" onosproject/model-compiler:latest
 
     sudo chown -R $USER:$USER "$plugin_dir"
 
@@ -605,7 +584,7 @@ deploy_cloud_native_uonos() {
     fi
 
     kubectl create namespace micro-onos --dry-run=client -o yaml | kubectl apply -f -
-    kubectl label namespace micro-onos sidecar.atomix.io/inject=true --overwrite 2>/dev/null || true
+    kubectl label namespace micro-onos sidecar.atomix.io/inject=true atomix.io/inject=true --overwrite 2>/dev/null || true
 
     log_info "Purging stale Atomix releases, deployments, leases, and webhooks..."
     
@@ -634,16 +613,41 @@ deploy_cloud_native_uonos() {
     helm upgrade --install atomix-raft-storage atomix/atomix-raft-storage -n kube-system --version 0.1.26
     helm upgrade --install onos-operator onosproject/onos-operator -n kube-system
 
-    # Force wait for Atomix infrastructure and ONOS operator readiness
-    log_info "Waiting for Atomix controller, Raft storage, and ONOS operator to be fully operational..."
+    log_info "Waiting for Atomix controller, Raft storage, and ONOS operator readiness..."
     kubectl rollout status deployment/atomix-controller -n kube-system --timeout=120s || true
     kubectl rollout status deployment/atomix-raft-storage-controller -n kube-system --timeout=120s || true
     kubectl rollout status deployment/onos-operator-topo -n kube-system --timeout=120s || true
     kubectl rollout status deployment/onos-operator-app -n kube-system --timeout=120s || true
+
+    log_info "Waiting for Atomix CRDs to register with Kubernetes API..."
+    kubectl wait --for=condition=established --timeout=60s crd/storageprofiles.atomix.io 2>/dev/null || true
+    kubectl wait --for=condition=established --timeout=60s crd/raftstores.atomix.io 2>/dev/null || true
     
-    log_info "Deploying µONOS stack via uonos-stack.yaml..."
-    kubectl apply -f ./sdn-controller/atomix-storage.yaml
-    kubectl apply -f ./sdn-controller/uonos-stack.yaml    
+    log_info "Patching outdated atomix-agent image tags in manifests..."
+    if [ -f "./sdn-controller/uonos-stack.yaml" ]; then
+        sed -i 's|atomix/atomix-agent:v0.6.9|atomix/sidecar:latest|g' ./sdn-controller/uonos-stack.yaml
+        sed -i 's|atomix/sidecar:v0.1.8|atomix/sidecar:latest|g' ./sdn-controller/uonos-stack.yaml
+    fi
+
+    log_info "Deploying Atomix storage profiles and Raft store cluster..."
+    if [ -f "./sdn-controller/atomix-storage.yaml" ]; then
+        kubectl apply -f ./sdn-controller/atomix-storage.yaml
+    fi
+
+    cat <<EOF | kubectl apply -f -
+apiVersion: atomix.io/v2beta1
+kind: RaftStore
+metadata:
+  name: default-raft-store
+  namespace: micro-onos
+spec:
+  replicas: 3
+EOF
+
+    log_info "Deploying µONOS application stack..."
+    if [ -f "./sdn-controller/uonos-stack.yaml" ]; then
+        kubectl apply -f ./sdn-controller/uonos-stack.yaml
+    fi
     
     log_info "Building and deploying RESTCONF Gateway Container..."
     if command -v docker >/dev/null 2>&1; then
