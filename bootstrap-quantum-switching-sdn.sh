@@ -607,23 +607,26 @@ deploy_cloud_native_uonos() {
     kubectl create namespace micro-onos --dry-run=client -o yaml | kubectl apply -f -
     kubectl label namespace micro-onos sidecar.atomix.io/inject=true --overwrite 2>/dev/null || true
 
-    log_info "Purging stale Atomix releases, deployments, and controller pods across namespaces..."
+    log_info "Purging stale Atomix releases, deployments, leases, and webhooks..."
     
     # 1. Uninstall Helm releases across both kube-system and micro-onos
     helm uninstall atomix atomix-controller atomix-raft-storage onos-operator -n kube-system 2>/dev/null || true
     helm uninstall atomix atomix-controller atomix-raft-storage onos-operator -n micro-onos 2>/dev/null || true
 
-    # 2. Force delete stale deployments in micro-onos and kube-system
+    # 2. Force delete stale deployments and leader election leases
     kubectl delete deployment onos-config onos-topo -n micro-onos 2>/dev/null || true
     kubectl delete deployment -n kube-system -l app.kubernetes.io/part-of=atomix 2>/dev/null || true
     kubectl delete deployment -n kube-system atomix-controller atomix-raft-storage-controller 2>/dev/null || true
+    
+    # Clear coordination leases and webhooks that cause controller crashloops
+    kubectl delete lease -n kube-system -l app.kubernetes.io/part-of=atomix 2>/dev/null || true
+    kubectl delete validatingwebhookconfigurations,mutatingwebhookconfigurations -l app.kubernetes.io/part-of=atomix 2>/dev/null || true
 
-    # 3. Force-kill all surviving/dangling Atomix and ONOS pods to avoid leader election deadlocks
+    # 3. Force-kill all surviving/dangling Atomix and ONOS pods
     for ns in kube-system micro-onos; do
         kubectl get pods -n $ns -o name 2>/dev/null | grep -E 'atomix|onos' | xargs -r kubectl delete -n $ns --force --grace-period=0 2>/dev/null || true
     done
 
-    # Give K8s a brief pause to clean up API locks
     sleep 3
 
     log_info "Installing compatible Atomix controllers and ONOS operator..."
