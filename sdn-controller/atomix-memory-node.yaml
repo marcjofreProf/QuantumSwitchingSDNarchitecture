@@ -29,7 +29,7 @@ spec:
     spec:
       containers:
         - name: memory-node
-          image: docker.io/atomix/memory-storage-node:latest
+          image: docker.io/atomix/runtime-node:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 5678
