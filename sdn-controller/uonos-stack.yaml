@@ -42,6 +42,21 @@ spec:
               value: "5678"
             - name: ATOMIX_RUNTIME_PORT
               value: "5679"
+            - name: ATOMIX_CONFIG
+              value: |
+                {
+                  "stores": [
+                    {
+                      "id": "local-memory",
+                      "type": "memory"
+                    }
+                  ],
+                  "routes": [
+                    {
+                      "store": "local-memory"
+                    }
+                  ]
+                }
           ports:
             - containerPort: 5678
             - containerPort: 5679
@@ -91,6 +106,21 @@ spec:
               value: "5678"
             - name: ATOMIX_RUNTIME_PORT
               value: "5679"
+            - name: ATOMIX_CONFIG
+              value: |
+                {
+                  "stores": [
+                    {
+                      "id": "local-memory",
+                      "type": "memory"
+                    }
+                  ],
+                  "routes": [
+                    {
+                      "store": "local-memory"
+                    }
+                  ]
+                }
           ports:
             - containerPort: 5678
             - containerPort: 5679
