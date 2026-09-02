@@ -53,9 +53,6 @@ spec:
   containers:
     - name: onos-config
       image: onosproject/onos-config:latest
-      env:
-        - name: OIDC_SERVER_URL
-          value: "http://keycloak.micro-onos.svc.cluster.local:8080/auth/realms/sdn"
       args:
         - "--topoEndpoint=onos-topo:5150"
         - "--allowUnvalidatedConfig"
