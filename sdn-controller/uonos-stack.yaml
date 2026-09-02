@@ -54,6 +54,7 @@ spec:
     - name: onos-config
       image: onosproject/onos-config:latest
       args:
+        - "--no-auth"
         - "--topoEndpoint=onos-topo:5150"
         - "--allowUnvalidatedConfig"
       ports:
