@@ -635,7 +635,7 @@ deploy_cloud_native_uonos() {
     fi
 
     cat <<EOF | kubectl apply -f -
-apiVersion: atomix.io/v2beta1
+apiVersion: atomix.io/v1beta1
 kind: RaftStore
 metadata:
   name: default-raft-store
