@@ -635,14 +635,13 @@ deploy_cloud_native_uonos() {
     fi
 
     cat <<EOF | kubectl apply -f -
-apiVersion: raft.atomix.io/v1beta2
+apiVersion: storage.atomix.io/v1beta2
 kind: RaftStore
 metadata:
-  name: default-raft-store
-  namespace: micro-onos
+  name: raft-store
 spec:
-  cluster:
-    replicas: 3
+  replicas: 3  # Direct child of spec
+  partitions: 1
 EOF
 
     log_info "Deploying µONOS application stack..."
