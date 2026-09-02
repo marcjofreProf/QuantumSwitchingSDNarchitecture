@@ -19,6 +19,9 @@ metadata:
   namespace: micro-onos
   labels:
     app: onos-topo
+  annotations:
+    sidecar.atomix.io/inject: "true"
+    storage.atomix.io/profile: "default-storage-profile"
 spec:
   containers:
     - name: onos-topo
@@ -49,6 +52,9 @@ metadata:
   namespace: micro-onos
   labels:
     app: onos-config
+  annotations:
+    sidecar.atomix.io/inject: "true"
+    storage.atomix.io/profile: "default-storage-profile"
 spec:
   containers:
     - name: onos-config
