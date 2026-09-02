@@ -1,0 +1,12 @@
+apiVersion: atomix.io/v2beta1
+kind: DataStore
+metadata:
+  name: memory-store
+  namespace: micro-onos
+spec:
+  driver:
+    name: memory
+    version: v1
+  config:
+    server:
+      address: atomix-memory-node:5678
