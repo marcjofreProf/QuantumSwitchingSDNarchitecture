@@ -36,6 +36,10 @@ fi
 log_info "Removing Kubernetes namespaces and pods..."
 kubectl delete pod onos-config -n micro-onos --force --grace-period=0 2>/dev/null || true
 kubectl delete pod onos-topo -n micro-onos --force --grace-period=0 2>/dev/null || true
+for deploy in $(kubectl get deploy -n kube-system -o name | grep atomix); do
+  kubectl scale $deploy -n kube-system --replicas=0
+done
+kubectl get pods -n kube-system -o name | grep atomix | xargs kubectl delete -n kube-system --force --grace-period=0 2>/dev/null || true
 kubectl delete namespace open5gs --force --grace-period=0 2>/dev/null || true
 kubectl delete namespace micro-onos --force --grace-period=0 2>/dev/null || true
 kubectl delete namespace osm --force --grace-period=0 2>/dev/null || true
