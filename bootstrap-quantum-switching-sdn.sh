@@ -606,15 +606,20 @@ deploy_cloud_native_uonos() {
 
     kubectl create namespace micro-onos --dry-run=client -o yaml | kubectl apply -f -
 
-    log_info "Purging stale µONOS pods..."
+    log_info "Purging stale µONOS pods and controllers..."
     kubectl delete pod onos-config -n micro-onos --force --grace-period=0 2>/dev/null || true
     kubectl delete pod onos-topo -n micro-onos --force --grace-period=0 2>/dev/null || true
-    kubectl delete service onos-config onos-topo -n micro-onos 2>/dev/null || true
-    helm uninstall atomix-controller atomix-raft-storage -n kube-system 2>/dev/null || true
+    helm uninstall atomix atomix-controller atomix-raft-storage -n kube-system 2>/dev/null || true
+    kubectl delete serviceaccount atomix-controller -n kube-system 2>/dev/null || true
 
     log_info "Installing compatible Atomix controllers and onos controllers..."
     helm install atomix-controller atomix/atomix-controller -n kube-system --version 0.6.9  2>/dev/null || true
     helm install atomix-raft-storage atomix/atomix-raft-storage -n kube-system --version 0.1.8  2>/dev/null || true
+
+    # Force wait for Atomix infrastructure readiness before deploying µONOS stack
+    log_info "Waiting for Atomix controller & Raft storage to be fully operational..."
+    kubectl rollout status deployment/atomix-controller -n kube-system --timeout=120s || true
+    kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=atomix-raft-storage -n kube-system --timeout=120s || true
     
     log_info "Deploying µONOS stack via uonos-stack.yaml..."
     kubectl apply -f ./sdn-controller/uonos-stack.yaml
