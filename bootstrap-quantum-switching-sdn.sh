@@ -610,9 +610,9 @@ deploy_cloud_native_uonos() {
     
     log_info "Installing compatible Atomix controllers and ONOS operator..."
     helm upgrade --install atomix-controller atomix/atomix-controller -n kube-system --version 0.6.9
-    helm upgrade --install atomix-raft-storage atomix/atomix-raft-storage -n kube-system --version 0.1.26
+    helm upgrade --install atomix-raft-storage atomix/atomix-raft-storage -n kube-system --version 0.1.15 
     helm upgrade --install onos-operator onosproject/onos-operator -n kube-system
-
+    
     log_info "Waiting for Atomix controller, Raft storage, and ONOS operator readiness..."
     kubectl rollout status deployment/atomix-controller -n kube-system --timeout=120s || true
     kubectl rollout status deployment/atomix-raft-storage-controller -n kube-system --timeout=120s || true
