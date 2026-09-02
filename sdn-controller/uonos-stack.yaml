@@ -6,15 +6,26 @@ metadata:
 data:
   config.json: |
     {
+      "runtime": {
+        "routes": [
+          {
+            "store": {
+              "namespace": "micro-onos",
+              "name": "local-memory-store"
+            }
+          }
+        ]
+      },
       "stores": [
         {
-          "id": "local-store",
-          "type": "memory"
-        }
-      ],
-      "routes": [
-        {
-          "store": "local-store"
+          "id": {
+            "namespace": "micro-onos",
+            "name": "local-memory-store"
+          },
+          "driver": {
+            "name": "memory",
+            "version": "v1"
+          }
         }
       ]
     }
@@ -58,13 +69,8 @@ spec:
         - name: atomix-sidecar
           image: docker.io/atomix/sidecar:latest
           imagePullPolicy: IfNotPresent
-          env:
-            - name: ATOMIX_CONFIG
-              value: /etc/atomix/config.json
-            - name: ATOMIX_PORT
-              value: "5678"
-            - name: ATOMIX_RUNTIME_PORT
-              value: "5679"
+          args:
+            - "--config=/etc/atomix/config.json"
           ports:
             - containerPort: 5678
             - containerPort: 5679
@@ -116,13 +122,8 @@ spec:
         - name: atomix-sidecar
           image: docker.io/atomix/sidecar:latest
           imagePullPolicy: IfNotPresent
-          env:
-            - name: ATOMIX_CONFIG
-              value: /etc/atomix/config.json
-            - name: ATOMIX_PORT
-              value: "5678"
-            - name: ATOMIX_RUNTIME_PORT
-              value: "5679"
+          args:
+            - "--config=/etc/atomix/config.json"
           ports:
             - containerPort: 5678
             - containerPort: 5679
