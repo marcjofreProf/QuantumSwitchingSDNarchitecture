@@ -4,6 +4,6 @@ metadata:
   name: default-storage-profile
   namespace: micro-onos
 spec:
-  routes:
+  bindings:
     - store:
         name: raft-store
