@@ -21,9 +21,9 @@ log_info "Starting Quantum-SDN Architecture environment cleanup..."
 # 1. Uninstall Helm Deployments
 log_info "Uninstalling Helm releases..."
 helm uninstall open5gs -n open5gs 2>/dev/null || true
-helm uninstall onos-topo onos-config onos-operator -n micro-onos 2>/dev/null || true
-helm uninstall atomix atomix-controller atomix-raft-storage -n kube-system 2>/dev/null || true
-kubectl delete serviceaccount atomix-controller -n kube-system 2>/dev/null || true
+helm uninstall onos-topo onos-config -n micro-onos 2>/dev/null || true
+helm uninstall onos-operator atomix atomix-controller atomix-raft-storage -n kube-system 2>/dev/null || true
+kubectl delete serviceaccount atomix-controller onos-operator -n kube-system 2>/dev/null || true
 
 # 2. Destroy Juju Controllers and Models
 if command -v juju >/dev/null 2>&1; then
@@ -36,15 +36,15 @@ fi
 # 3. Purge Cluster-Scoped Resources (Webhooks, RBAC, CRDs)
 log_info "Purging cluster-scoped Webhook Configurations, ClusterRoles, and CRDs..."
 
-# Remove Mutating & Validating Webhooks (Atomix, Juju, OSM)
+# Remove Mutating & Validating Webhooks (Atomix, ONOS, Juju, OSM)
 kubectl delete mutatingwebhookconfigurations -l app.kubernetes.io/part-of=atomix 2>/dev/null || true
 kubectl delete mutatingwebhookconfigurations -l controller.juju.is/name=osm-vca 2>/dev/null || true
 kubectl delete validatingwebhookconfigurations -l controller.juju.is/name=osm-vca 2>/dev/null || true
 
-for mwc in $(kubectl get mutatingwebhookconfigurations -o name 2>/dev/null | grep -E 'atomix|juju|osm'); do
+for mwc in $(kubectl get mutatingwebhookconfigurations -o name 2>/dev/null | grep -E 'atomix|onos|juju|osm'); do
     kubectl delete "$mwc" 2>/dev/null || true
 done
-for vwc in $(kubectl get validatingwebhookconfigurations -o name 2>/dev/null | grep -E 'atomix|juju|osm'); do
+for vwc in $(kubectl get validatingwebhookconfigurations -o name 2>/dev/null | grep -E 'atomix|onos|juju|osm'); do
     kubectl delete "$vwc" 2>/dev/null || true
 done
 
@@ -53,20 +53,23 @@ kubectl delete clusterrolebindings -l controller.juju.is/name=osm-vca 2>/dev/nul
 kubectl delete clusterroles -l controller.juju.is/name=osm-vca 2>/dev/null || true
 kubectl delete clusterrolebindings -l app.kubernetes.io/part-of=atomix 2>/dev/null || true
 kubectl delete clusterroles -l app.kubernetes.io/part-of=atomix 2>/dev/null || true
+kubectl delete clusterrolebindings -l app.kubernetes.io/name=onos-operator 2>/dev/null || true
+kubectl delete clusterroles -l app.kubernetes.io/name=onos-operator 2>/dev/null || true
 
 # Remove leftover Custom Resource Definitions (CRDs)
 for crd in $(kubectl get crd -o name 2>/dev/null | grep -E 'atomix.io|onosproject.org|juju'); do
     kubectl delete "$crd" 2>/dev/null || true
 done
 
-# 4. Purge Kubernetes Namespaces and Manual Pods
-log_info "Removing Kubernetes namespaces and pods..."
-kubectl delete pod onos-config -n micro-onos --force --grace-period=0 2>/dev/null || true
-kubectl delete pod onos-topo -n micro-onos --force --grace-period=0 2>/dev/null || true
-for deploy in $(kubectl get deploy -n kube-system -o name 2>/dev/null | grep atomix); do
+# 4. Purge Kubernetes Namespaces and Manual Pods/Deployments
+log_info "Removing Kubernetes namespaces and workloads..."
+kubectl delete deployment onos-config onos-topo -n micro-onos 2>/dev/null || true
+kubectl delete pod onos-config onos-topo -n micro-onos --force --grace-period=0 2>/dev/null || true
+
+for deploy in $(kubectl get deploy -n kube-system -o name 2>/dev/null | grep -E 'atomix|onos-operator'); do
   kubectl scale $deploy -n kube-system --replicas=0 2>/dev/null || true
 done
-kubectl get pods -n kube-system -o name 2>/dev/null | grep atomix | xargs -r kubectl delete -n kube-system --force --grace-period=0 2>/dev/null || true
+kubectl get pods -n kube-system -o name 2>/dev/null | grep -E 'atomix|onos-operator' | xargs -r kubectl delete -n kube-system --force --grace-period=0 2>/dev/null || true
 
 kubectl delete namespace open5gs --force --grace-period=0 2>/dev/null || true
 kubectl delete namespace micro-onos --force --grace-period=0 2>/dev/null || true
