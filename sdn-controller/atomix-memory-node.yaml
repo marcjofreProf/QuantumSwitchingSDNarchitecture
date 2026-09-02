@@ -1,35 +1,35 @@
-apiVersion: v1
-kind: Service
-metadata:
-  name: atomix-memory-node
-  namespace: micro-onos
-spec:
-  type: ClusterIP
-  selector:
-    app: atomix-memory-node
-  ports:
-    - name: grpc
-      port: 5678
-      targetPort: 5678
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: atomix-memory-node
+  name: atomix-shared-memory-controller
   namespace: micro-onos
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: atomix-memory-node
+      app: atomix-shared-memory-controller
   template:
     metadata:
       labels:
-        app: atomix-memory-node
+        app: atomix-shared-memory-controller
     spec:
       containers:
-        - name: memory-node
-          image: docker.io/atomix/runtime-node:latest
+        - name: controller
+          image: docker.io/atomix/shared-memory-controller:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 5678
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: atomix-shared-memory-controller
+  namespace: micro-onos
+spec:
+  type: ClusterIP
+  selector:
+    app: atomix-shared-memory-controller
+  ports:
+    - name: grpc
+      port: 5678
+      targetPort: 5678
