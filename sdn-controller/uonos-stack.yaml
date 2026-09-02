@@ -26,10 +26,6 @@ spec:
     metadata:
       labels:
         app: onos-topo
-      annotations:
-        sidecar.atomix.io/inject: "true"
-        atomix.io/inject: "true"
-        storage.atomix.io/profile: "default-storage-profile"
     spec:
       containers:
         - name: onos-topo
@@ -73,9 +69,6 @@ spec:
     metadata:
       labels:
         app: onos-config
-      annotations:
-        sidecar.atomix.io/inject: "true"
-        storage.atomix.io/profile: "default-storage-profile"
     spec:
       containers:
         - name: onos-config
@@ -85,3 +78,9 @@ spec:
             - "--allowUnvalidatedConfig"
           ports:
             - containerPort: 5150
+        - name: atomix-sidecar
+          image: atomix/sidecar:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5678
+              name: sidecar
