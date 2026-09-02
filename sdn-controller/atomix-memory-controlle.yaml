@@ -1,37 +1,27 @@
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: atomix-pod-memory-controller
-  namespace: micro-onos
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: atomix-pod-memory-controller
-  template:
-    metadata:
-      labels:
-        app: atomix-pod-memory-controller
-    spec:
-      containers:
-        - name: controller
-          image: docker.io/atomix/pod-memory-controller:latest
-          imagePullPolicy: IfNotPresent
-          args:
-            - "--namespace=micro-onos"
----
 apiVersion: v1
-kind: ConfigMap
+kind: ServiceAccount
 metadata:
-  name: atomix-memory-store-config
+  name: atomix-controller
   namespace: micro-onos
-data:
-  config.json: |
-    {
-      "stores": [
-        {
-          "id": "local-memory",
-          "type": "memory"
-        }
-      ]
-    }
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: atomix-controller-role
+rules:
+  - apiGroups: ["", "apps", "atomix.io"]
+    resources: ["*"]
+    verbs: ["*"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: atomix-controller-binding
+subjects:
+  - kind: ServiceAccount
+    name: atomix-controller
+    namespace: micro-onos
+roleRef:
+  kind: ClusterRole
+  name: atomix-controller-role
+  apiGroup: rbac.authorization.k8s.io
