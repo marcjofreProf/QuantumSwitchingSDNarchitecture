@@ -28,35 +28,62 @@ helm uninstall atomix-controller atomix-raft-storage -n kube-system 2>/dev/null 
 if command -v juju >/dev/null 2>&1; then
     log_info "Destroying Juju models and controllers..."
     juju destroy-model osm -y --destroy-storage --force 2>/dev/null || true
-    juju kill-controller osm-vca -y 2>/dev/null || true
+    juju kill-controller osm-vca -y --timeout 30s 2>/dev/null || true
     rm -rf ~/.local/share/juju ~/.cache/juju 2>/dev/null || true
 fi
 
-# 3. Purge Kubernetes Namespaces and Manual Pods
+# 3. Purge Cluster-Scoped Resources (Webhooks, RBAC, CRDs)
+log_info "Purging cluster-scoped Webhook Configurations, ClusterRoles, and CRDs..."
+
+# Remove Mutating & Validating Webhooks (Atomix, Juju, OSM)
+kubectl delete mutatingwebhookconfigurations -l app.kubernetes.io/part-of=atomix 2>/dev/null || true
+kubectl delete mutatingwebhookconfigurations -l controller.juju.is/name=osm-vca 2>/dev/null || true
+kubectl delete validatingwebhookconfigurations -l controller.juju.is/name=osm-vca 2>/dev/null || true
+
+for mwc in $(kubectl get mutatingwebhookconfigurations -o name 2>/dev/null | grep -E 'atomix|juju|osm'); do
+    kubectl delete "$mwc" 2>/dev/null || true
+done
+for vwc in $(kubectl get validatingwebhookconfigurations -o name 2>/dev/null | grep -E 'atomix|juju|osm'); do
+    kubectl delete "$vwc" 2>/dev/null || true
+done
+
+# Remove ClusterRoles and ClusterRoleBindings
+kubectl delete clusterrolebindings -l controller.juju.is/name=osm-vca 2>/dev/null || true
+kubectl delete clusterroles -l controller.juju.is/name=osm-vca 2>/dev/null || true
+kubectl delete clusterrolebindings -l app.kubernetes.io/part-of=atomix 2>/dev/null || true
+kubectl delete clusterroles -l app.kubernetes.io/part-of=atomix 2>/dev/null || true
+
+# Remove leftover Custom Resource Definitions (CRDs)
+for crd in $(kubectl get crd -o name 2>/dev/null | grep -E 'atomix.io|onosproject.org|juju'); do
+    kubectl delete "$crd" 2>/dev/null || true
+done
+
+# 4. Purge Kubernetes Namespaces and Manual Pods
 log_info "Removing Kubernetes namespaces and pods..."
 kubectl delete pod onos-config -n micro-onos --force --grace-period=0 2>/dev/null || true
 kubectl delete pod onos-topo -n micro-onos --force --grace-period=0 2>/dev/null || true
-for deploy in $(kubectl get deploy -n kube-system -o name | grep atomix); do
-  kubectl scale $deploy -n kube-system --replicas=0
+for deploy in $(kubectl get deploy -n kube-system -o name 2>/dev/null | grep atomix); do
+  kubectl scale $deploy -n kube-system --replicas=0 2>/dev/null || true
 done
-kubectl get pods -n kube-system -o name | grep atomix | xargs kubectl delete -n kube-system --force --grace-period=0 2>/dev/null || true
+kubectl get pods -n kube-system -o name 2>/dev/null | grep atomix | xargs -r kubectl delete -n kube-system --force --grace-period=0 2>/dev/null || true
+
 kubectl delete namespace open5gs --force --grace-period=0 2>/dev/null || true
 kubectl delete namespace micro-onos --force --grace-period=0 2>/dev/null || true
 kubectl delete namespace osm --force --grace-period=0 2>/dev/null || true
 kubectl delete namespace controller-osm-vca --force --grace-period=0 2>/dev/null || true
 
-# 4. Cleanup Local Docker Images
+# 5. Cleanup Local Docker Images
 if command -v docker >/dev/null 2>&1; then
     log_info "Removing built Docker images..."
     docker rmi quantum-restconf-gateway:1.0.0 2>/dev/null || true
     docker rmi onosproject/controller-quantum-switching:1.0.0-controller-quantum-switching-1.0.0 2>/dev/null || true
 fi
 
-# 5. Remove Virtual Environment
+# 6. Remove Virtual Environment
 log_info "Removing Python Virtual Environment..."
 sudo rm -rf /opt/sdn-venv
 
-# 6. Delete Dynamically Generated Repository Files
+# 7. Delete Dynamically Generated Repository Files
 log_info "Cleaning generated build artifacts, stubs, and model plugins..."
 base_dir="."
 
@@ -78,7 +105,7 @@ rm -f "$plugin_dir"/*.go 2>/dev/null || true
 # Clean temporary installer downloads
 rm -f get-docker.sh get_helm.sh install_osm.sh grpcurl_*.tar.gz helm-*-linux-amd64.tar.gz 2>/dev/null || true
 
-# 7. Remove Custom Kernel & Network Configurations
+# 8. Remove Custom Kernel & Network Configurations
 log_info "Reverting custom sysctl configurations..."
 sudo rm -f /etc/sysctl.d/99-sdn-uonos.conf /etc/sysctl.d/99-inotify-limits.conf /etc/sysctl.d/99-juju.conf /etc/modules-load.d/sdn-uonos.conf 2>/dev/null || true
 
