@@ -38,6 +38,11 @@ spec:
             - "--bind-port=5150"
           ports:
             - containerPort: 5150
+        - name: atomix-sidecar
+          image: atomix/atomix-sidecar:v0.1.8
+          ports:
+          - containerPort: 5678
+            name: sidecar
 ---
 apiVersion: v1
 kind: Service
