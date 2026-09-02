@@ -1,0 +1,61 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: onos-topo
+  namespace: micro-onos
+spec:
+  type: ClusterIP
+  selector:
+    app: onos-topo
+  ports:
+    - name: grpc
+      port: 5150
+      targetPort: 5150
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: onos-topo
+  namespace: micro-onos
+  labels:
+    app: onos-topo
+spec:
+  containers:
+    - name: onos-topo
+      image: onosproject/onos-topo:v1.0.3
+      args:
+        - "--bind-port=5150"
+        - "--no-tls"
+      ports:
+        - containerPort: 5150
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: onos-config
+  namespace: micro-onos
+spec:
+  type: ClusterIP
+  selector:
+    app: onos-config
+  ports:
+    - name: gnmi
+      port: 5150
+      targetPort: 5150
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: onos-config
+  namespace: micro-onos
+  labels:
+    app: onos-config
+spec:
+  containers:
+    - name: onos-config
+      image: onosproject/onos-config:latest
+      args:
+        - "--topoEndpoint=onos-topo:5150"
+        - "--allowUnvalidatedConfig"
+      ports:
+        - containerPort: 5150
