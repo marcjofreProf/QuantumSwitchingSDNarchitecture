@@ -35,8 +35,10 @@ spec:
           ports:
             - containerPort: 5150
         - name: atomix-sidecar
-          image: atomix/sidecar:latest
+          image: atomix/sidecar:v0.1.8
           imagePullPolicy: IfNotPresent
+          args:
+            - "--agent-endpoint=localhost:5678"
           ports:
             - containerPort: 5678
               name: sidecar
@@ -79,8 +81,10 @@ spec:
           ports:
             - containerPort: 5150
         - name: atomix-sidecar
-          image: atomix/sidecar:latest
+          image: atomix/sidecar:v0.1.8
           imagePullPolicy: IfNotPresent
+          args:
+            - "--agent-endpoint=localhost:5678"
           ports:
             - containerPort: 5678
               name: sidecar
