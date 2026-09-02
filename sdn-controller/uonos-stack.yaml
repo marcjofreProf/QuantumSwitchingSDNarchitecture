@@ -1,4 +1,25 @@
 apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: atomix-sidecar-config
+  namespace: micro-onos
+data:
+  config.json: |
+    {
+      "stores": [
+        {
+          "id": "local-store",
+          "type": "memory"
+        }
+      ],
+      "routes": [
+        {
+          "store": "local-store"
+        }
+      ]
+    }
+---
+apiVersion: v1
 kind: Service
 metadata:
   name: onos-topo
@@ -35,9 +56,11 @@ spec:
           ports:
             - containerPort: 5150
         - name: atomix-sidecar
-          image: atomix/sidecar:latest
+          image: docker.io/atomix/sidecar:latest
           imagePullPolicy: IfNotPresent
           env:
+            - name: ATOMIX_CONFIG
+              value: /etc/atomix/config.json
             - name: ATOMIX_PORT
               value: "5678"
             - name: ATOMIX_RUNTIME_PORT
@@ -45,6 +68,13 @@ spec:
           ports:
             - containerPort: 5678
             - containerPort: 5679
+          volumeMounts:
+            - name: atomix-config
+              mountPath: /etc/atomix
+      volumes:
+        - name: atomix-config
+          configMap:
+            name: atomix-sidecar-config
 ---
 apiVersion: v1
 kind: Service
@@ -84,9 +114,11 @@ spec:
           ports:
             - containerPort: 5150
         - name: atomix-sidecar
-          image: atomix/sidecar:latest
+          image: docker.io/atomix/sidecar:latest
           imagePullPolicy: IfNotPresent
           env:
+            - name: ATOMIX_CONFIG
+              value: /etc/atomix/config.json
             - name: ATOMIX_PORT
               value: "5678"
             - name: ATOMIX_RUNTIME_PORT
@@ -94,3 +126,10 @@ spec:
           ports:
             - containerPort: 5678
             - containerPort: 5679
+          volumeMounts:
+            - name: atomix-config
+              mountPath: /etc/atomix
+      volumes:
+        - name: atomix-config
+          configMap:
+            name: atomix-sidecar-config
