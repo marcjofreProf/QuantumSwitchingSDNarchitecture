@@ -617,15 +617,15 @@ deploy_cloud_native_uonos() {
     log_info "Installing compatible Atomix controllers and onos controllers..."
     helm install atomix-controller atomix/atomix-controller -n kube-system --version 0.6.9  2>/dev/null || true
     helm install atomix-raft-storage atomix/atomix-raft-storage -n kube-system --version 0.1.8  2>/dev/null || true
-
-    # NOTE: Manual kubectl run commands (working solution)
-    # kubectl run onos-operator -n micro-onos --image=onosproject/onos-operator:latest --restart=Never
-    # helm install onos-operator onosproject/onos-operator -n micro-onos 2>/dev/null || true
-    kubectl run onos-topo -n micro-onos --image=onosproject/onos-topo:v1.0.3 --restart=Never -- --bind-port=5150 --no-tls 2>/dev/null || true
-    # helm install onos-topo onosproject/onos-topo -n micro-onos 2>/dev/null || true
-    kubectl run onos-config -n micro-onos --image=onosproject/onos-config:latest --restart=Never 2>/dev/null || true
-    # helm install onos-config onosproject/onos-config -n micro-onos 2>/dev/null || true
-
+    
+    # --- Replace onos-topo and onos-config pod launches ---
+    kubectl run onos-topo -n micro-onos --image=onosproject/onos-topo:v1.0.3 --restart=Never --port=5150 -- --bind-port=5150 --no-tls 2>/dev/null || true
+    kubectl run onos-config -n micro-onos --image=onosproject/onos-config:latest --restart=Never --port=5150 2>/dev/null || true
+    
+    # Ensure ClusterIP services are exposed
+    kubectl expose pod onos-topo -n micro-onos --name=onos-topo --port=5150 --target-port=5150 2>/dev/null || true
+    kubectl expose pod onos-config -n micro-onos --name=onos-config --port=5150 --target-port=5150 2>/dev/null || true
+    
     log_info "Building and deploying RESTCONF Gateway Container..."
     if command -v docker >/dev/null 2>&1; then
         (cd "./sdn-controller/northbound-interfaces/restconf-gateway" && docker build -t quantum-restconf-gateway:1.0.0 .) || log_warn "Skipped building Gateway image."
