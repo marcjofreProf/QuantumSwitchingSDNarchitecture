@@ -1,3 +1,65 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: onos-topo
+  namespace: micro-onos
+spec:
+  type: ClusterIP
+  selector:
+    app: onos-topo
+  ports:
+    - name: grpc
+      port: 5150
+      targetPort: 5150
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: onos-topo
+  namespace: micro-onos
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: onos-topo
+  template:
+    metadata:
+      labels:
+        app: onos-topo
+    spec:
+      containers:
+        - name: onos-topo
+          image: onosproject/onos-topo:latest
+          args:
+            - "--bind-port=5150"
+          ports:
+            - containerPort: 5150
+        - name: atomix-sidecar
+          image: atomix/sidecar:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: ATOMIX_PORT
+              value: "5678"
+            - name: ATOMIX_RUNTIME_PORT
+              value: "5679"
+          ports:
+            - containerPort: 5678
+            - containerPort: 5679
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: onos-config
+  namespace: micro-onos
+spec:
+  type: ClusterIP
+  selector:
+    app: onos-config
+  ports:
+    - name: gnmi
+      port: 5150
+      targetPort: 5150
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -19,6 +81,16 @@ spec:
           args:
             - "--topoEndpoint=onos-topo:5150"
             - "--allowUnvalidatedConfig"
-            - "--storeType=memory"
           ports:
             - containerPort: 5150
+        - name: atomix-sidecar
+          image: atomix/sidecar:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: ATOMIX_PORT
+              value: "5678"
+            - name: ATOMIX_RUNTIME_PORT
+              value: "5679"
+          ports:
+            - containerPort: 5678
+            - containerPort: 5679
