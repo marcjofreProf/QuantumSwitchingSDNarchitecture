@@ -1,0 +1,9 @@
+apiVersion: storage.atomix.io/v1beta1
+kind: StorageProfile
+metadata:
+  name: default-storage-profile
+  namespace: micro-onos
+spec:
+  routes:
+    - store:
+        name: raft-store
