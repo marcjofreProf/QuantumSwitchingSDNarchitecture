@@ -4,6 +4,7 @@ metadata:
   name: default-storage-profile
   namespace: micro-onos
 spec:
-  bindings:
-    - store:
-        name: raft-store
+  selector:
+    matchLabels: {}
+  drivers:
+    - "raft"
