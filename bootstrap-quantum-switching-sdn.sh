@@ -628,11 +628,11 @@ deploy_cloud_native_uonos() {
     done
 
     sleep 3
-
+    
     log_info "Installing compatible Atomix controllers and ONOS operator..."
-    helm upgrade --install atomix-controller atomix/atomix-controller -n kube-system --version 0.6.9 2>/dev/null || true
-    helm upgrade --install atomix-raft-storage atomix/atomix-raft-storage -n kube-system --version 0.1.8 2>/dev/null || true
-    helm upgrade --install onos-operator onosproject/onos-operator -n kube-system 2>/dev/null || true
+    helm upgrade --install atomix-controller atomix/atomix-controller -n kube-system --version 0.6.9
+    helm upgrade --install atomix-raft-storage atomix/atomix-raft-storage -n kube-system --version 0.1.26
+    helm upgrade --install onos-operator onosproject/onos-operator -n kube-system
 
     # Force wait for Atomix infrastructure and ONOS operator readiness
     log_info "Waiting for Atomix controller, Raft storage, and ONOS operator to be fully operational..."
