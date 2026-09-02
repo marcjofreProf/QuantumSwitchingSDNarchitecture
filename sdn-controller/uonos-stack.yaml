@@ -64,18 +64,19 @@ spec:
         - name: atomix-sidecar
           image: docker.io/atomix/sidecar:latest
           imagePullPolicy: IfNotPresent
-          args:
-            - "--config=/etc/atomix/config.json"
+          env:
+            - name: ATOMIX_PORT
+              value: "5678"
+            - name: ATOMIX_RUNTIME_PORT
+              value: "5679"
+            - name: ATOMIX_CONFIG
+              valueFrom:
+                configMapKeyRef:
+                  name: atomix-sidecar-config
+                  key: config.json
           ports:
             - containerPort: 5678
             - containerPort: 5679
-          volumeMounts:
-            - name: atomix-config
-              mountPath: /etc/atomix
-      volumes:
-        - name: atomix-config
-          configMap:
-            name: atomix-sidecar-config
 ---
 apiVersion: v1
 kind: Service
@@ -117,15 +118,16 @@ spec:
         - name: atomix-sidecar
           image: docker.io/atomix/sidecar:latest
           imagePullPolicy: IfNotPresent
-          args:
-            - "--config=/etc/atomix/config.json"
+          env:
+            - name: ATOMIX_PORT
+              value: "5678"
+            - name: ATOMIX_RUNTIME_PORT
+              value: "5679"
+            - name: ATOMIX_CONFIG
+              valueFrom:
+                configMapKeyRef:
+                  name: atomix-sidecar-config
+                  key: config.json
           ports:
             - containerPort: 5678
             - containerPort: 5679
-          volumeMounts:
-            - name: atomix-config
-              mountPath: /etc/atomix
-      volumes:
-        - name: atomix-config
-          configMap:
-            name: atomix-sidecar-config
