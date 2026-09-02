@@ -22,7 +22,8 @@ log_info "Starting Quantum-SDN Architecture environment cleanup..."
 log_info "Uninstalling Helm releases..."
 helm uninstall open5gs -n open5gs 2>/dev/null || true
 helm uninstall onos-topo onos-config onos-operator -n micro-onos 2>/dev/null || true
-helm uninstall atomix-controller atomix-raft-storage -n kube-system 2>/dev/null || true
+helm uninstall atomix atomix-controller atomix-raft-storage -n kube-system 2>/dev/null || true
+kubectl delete serviceaccount atomix-controller -n kube-system 2>/dev/null || true
 
 # 2. Destroy Juju Controllers and Models
 if command -v juju >/dev/null 2>&1; then
