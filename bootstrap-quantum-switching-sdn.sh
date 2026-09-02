@@ -586,7 +586,7 @@ EOF
 }
 
 deploy_cloud_native_uonos() {
-    log_info "Phase 8: Evaluating µONOS deployment state..."
+    log_info "Phase 8: Evaluating µONOS and Atomix deployment state..."
     
     local uonos_active=false
     if kubectl get ns micro-onos >/dev/null 2>&1 && \
@@ -607,10 +607,24 @@ deploy_cloud_native_uonos() {
     kubectl create namespace micro-onos --dry-run=client -o yaml | kubectl apply -f -
     kubectl label namespace micro-onos sidecar.atomix.io/inject=true --overwrite 2>/dev/null || true
 
-    log_info "Purging stale µONOS pods and controllers..."
-    kubectl delete deployment onos-config onos-topo -n micro-onos 2>/dev/null || true
-    kubectl delete pod onos-config onos-topo -n micro-onos --force --grace-period=0 2>/dev/null || true
+    log_info "Purging stale Atomix releases, deployments, and controller pods across namespaces..."
+    
+    # 1. Uninstall Helm releases across both kube-system and micro-onos
     helm uninstall atomix atomix-controller atomix-raft-storage onos-operator -n kube-system 2>/dev/null || true
+    helm uninstall atomix atomix-controller atomix-raft-storage onos-operator -n micro-onos 2>/dev/null || true
+
+    # 2. Force delete stale deployments in micro-onos and kube-system
+    kubectl delete deployment onos-config onos-topo -n micro-onos 2>/dev/null || true
+    kubectl delete deployment -n kube-system -l app.kubernetes.io/part-of=atomix 2>/dev/null || true
+    kubectl delete deployment -n kube-system atomix-controller atomix-raft-storage-controller 2>/dev/null || true
+
+    # 3. Force-kill all surviving/dangling Atomix and ONOS pods to avoid leader election deadlocks
+    for ns in kube-system micro-onos; do
+        kubectl get pods -n $ns -o name 2>/dev/null | grep -E 'atomix|onos' | xargs -r kubectl delete -n $ns --force --grace-period=0 2>/dev/null || true
+    done
+
+    # Give K8s a brief pause to clean up API locks
+    sleep 3
 
     log_info "Installing compatible Atomix controllers and ONOS operator..."
     helm upgrade --install atomix-controller atomix/atomix-controller -n kube-system --version 0.6.9 2>/dev/null || true
@@ -620,6 +634,7 @@ deploy_cloud_native_uonos() {
     # Force wait for Atomix infrastructure and ONOS operator readiness
     log_info "Waiting for Atomix controller, Raft storage, and ONOS operator to be fully operational..."
     kubectl rollout status deployment/atomix-controller -n kube-system --timeout=120s || true
+    kubectl rollout status deployment/atomix-raft-storage-controller -n kube-system --timeout=120s || true
     kubectl rollout status deployment/onos-operator-topo -n kube-system --timeout=120s || true
     kubectl rollout status deployment/onos-operator-app -n kube-system --timeout=120s || true
     
