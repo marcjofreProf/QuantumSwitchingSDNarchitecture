@@ -37,9 +37,15 @@ spec:
         - name: atomix-sidecar
           image: atomix/sidecar:latest
           imagePullPolicy: IfNotPresent
-          ports:
-            - containerPort: 5678
-              name: sidecar
+          args:
+            - "--config=/etc/atomix/config.json"
+          volumeMounts:
+            - name: atomix-config
+              mountPath: /etc/atomix
+      volumes:
+        - name: atomix-config
+          configMap:
+            name: atomix-sidecar-config
 ---
 apiVersion: v1
 kind: Service
@@ -81,6 +87,12 @@ spec:
         - name: atomix-sidecar
           image: atomix/sidecar:latest
           imagePullPolicy: IfNotPresent
-          ports:
-            - containerPort: 5678
-              name: sidecar
+          args:
+            - "--config=/etc/atomix/config.json"
+          volumeMounts:
+            - name: atomix-config
+              mountPath: /etc/atomix
+      volumes:
+        - name: atomix-config
+          configMap:
+            name: atomix-sidecar-config
