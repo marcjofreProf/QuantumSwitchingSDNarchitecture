@@ -39,7 +39,7 @@ spec:
           ports:
             - containerPort: 5150
         - name: atomix-sidecar
-          image: atomix/atomix-sidecar:v0.1.8
+          image: atomix/atomix-agent:v0.6.9
           ports:
           - containerPort: 5678
             name: sidecar
