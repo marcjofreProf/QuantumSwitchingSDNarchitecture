@@ -1,36 +1,4 @@
 apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: atomix-sidecar-config
-  namespace: micro-onos
-data:
-  config.json: |
-    {
-      "runtime": {
-        "routes": [
-          {
-            "store": {
-              "namespace": "micro-onos",
-              "name": "local-memory-store"
-            }
-          }
-        ]
-      },
-      "stores": [
-        {
-          "id": {
-            "namespace": "micro-onos",
-            "name": "local-memory-store"
-          },
-          "driver": {
-            "name": "memory",
-            "version": "v1"
-          }
-        }
-      ]
-    }
----
-apiVersion: v1
 kind: Service
 metadata:
   name: onos-topo
@@ -67,20 +35,16 @@ spec:
           ports:
             - containerPort: 5150
         - name: atomix-sidecar
-          image: docker.io/atomix/sidecar:latest
+          image: atomix/sidecar:latest
           imagePullPolicy: IfNotPresent
-          args:
-            - "--config=/etc/atomix/config.json"
+          env:
+            - name: ATOMIX_PORT
+              value: "5678"
+            - name: ATOMIX_RUNTIME_PORT
+              value: "5679"
           ports:
             - containerPort: 5678
             - containerPort: 5679
-          volumeMounts:
-            - name: atomix-config
-              mountPath: /etc/atomix
-      volumes:
-        - name: atomix-config
-          configMap:
-            name: atomix-sidecar-config
 ---
 apiVersion: v1
 kind: Service
@@ -120,17 +84,13 @@ spec:
           ports:
             - containerPort: 5150
         - name: atomix-sidecar
-          image: docker.io/atomix/sidecar:latest
+          image: atomix/sidecar:latest
           imagePullPolicy: IfNotPresent
-          args:
-            - "--config=/etc/atomix/config.json"
+          env:
+            - name: ATOMIX_PORT
+              value: "5678"
+            - name: ATOMIX_RUNTIME_PORT
+              value: "5679"
           ports:
             - containerPort: 5678
             - containerPort: 5679
-          volumeMounts:
-            - name: atomix-config
-              mountPath: /etc/atomix
-      volumes:
-        - name: atomix-config
-          configMap:
-            name: atomix-sidecar-config
