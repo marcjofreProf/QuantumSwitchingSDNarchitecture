@@ -622,7 +622,8 @@ deploy_cloud_native_uonos() {
     kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=atomix-raft-storage -n kube-system --timeout=120s || true
     
     log_info "Deploying µONOS stack via uonos-stack.yaml..."
-    kubectl apply -f ./sdn-controller/uonos-stack.yaml
+    kubectl apply -f ./sdn-controller/atomix-storage.yaml
+    kubectl apply -f ./sdn-controller/uonos-stack.yaml    
     
     log_info "Building and deploying RESTCONF Gateway Container..."
     if command -v docker >/dev/null 2>&1; then
