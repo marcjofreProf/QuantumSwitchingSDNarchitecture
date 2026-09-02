@@ -28,6 +28,7 @@ spec:
         app: onos-topo
       annotations:
         sidecar.atomix.io/inject: "true"
+        atomix.io/inject: "true"
         storage.atomix.io/profile: "default-storage-profile"
     spec:
       containers:
