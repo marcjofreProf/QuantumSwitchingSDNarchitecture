@@ -5,25 +5,16 @@ import os
 import socket
 import sys
 
-current_dir = os.path.dirname(os.path.abspath(__file__))
-
-# Virtual environment auto-discovery
+# Virtual environment auto-discovery fix
 try:
     import requests
 except ModuleNotFoundError:
-    venv_candidates = [
-        "/opt/sdn-venv/bin/python3",
-        os.path.abspath(os.path.join(current_dir, "../../.venv/bin/python3")),
-        os.path.abspath(os.path.join(current_dir, "../.venv/bin/python3")),
-    ]
-
-    for venv_python in venv_candidates:
-        if os.path.exists(venv_python):
-            os.execl(venv_python, venv_python, *sys.argv)
-
-    print("[ERROR] 'requests' missing and no virtual environment found.")
-    sys.exit(1)
-
+    venv_python = "/opt/sdn-venv/bin/python3"
+    if os.path.exists(venv_python) and sys.executable != venv_python:
+        os.execv(venv_python, [venv_python] + sys.argv)
+    else:
+        print("[ERROR] 'requests' missing. Run bootstrap script or run with /opt/sdn-venv/bin/python3", flush=True)
+        sys.exit(1)
 
 def get_host_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
