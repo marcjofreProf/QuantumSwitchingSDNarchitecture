@@ -19,7 +19,8 @@ def create_cross_connect():
         
         # Execute gNMI Set operation with TLS enabled (--skip-verify)
         cmd = [
-            "gnmic", "-a", GNMI_TARGET, "--skip-verify", 
+            "gnmic", "-a", GNMI_TARGET, "--skip-verify",
+            "-t", service_id,
             "set", "--update-path", gnmi_path,
             "--update-value", json.dumps(service)
         ]
@@ -37,7 +38,11 @@ def get_cross_connect(service_id):
     gnmi_path = f"/quantum-services/cross-connect-service[service-id={service_id}]"
     
     # Execute gNMI Get operation with TLS enabled (--skip-verify)
-    cmd = ["gnmic", "-a", GNMI_TARGET, "--skip-verify", "get", "--path", gnmi_path]
+    cmd = [
+        "gnmic", "-a", GNMI_TARGET, "--skip-verify",
+        "-t", service_id,
+        "get", "--path", gnmi_path
+    ]
     
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
