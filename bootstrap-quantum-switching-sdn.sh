@@ -584,73 +584,7 @@ deploy_cloud_native_uonos() {
     fi
 
     kubectl create namespace micro-onos --dry-run=client -o yaml | kubectl apply -f -
-    kubectl label namespace micro-onos sidecar.atomix.io/inject=true atomix.io/inject=true --overwrite 2>/dev/null || true
-
-    log_info "Purging stale Atomix releases, deployments, leases, and webhooks..."
     
-    # 1. Uninstall Helm releases across both kube-system and micro-onos
-    helm uninstall atomix atomix-controller atomix-raft-storage onos-operator -n kube-system 2>/dev/null || true
-    helm uninstall atomix atomix-controller atomix-raft-storage onos-operator -n micro-onos 2>/dev/null || true
-
-    # 2. Force delete stale deployments and leader election leases
-    kubectl delete deployment onos-config onos-topo -n micro-onos 2>/dev/null || true
-    kubectl delete deployment -n kube-system -l app.kubernetes.io/part-of=atomix 2>/dev/null || true
-    kubectl delete deployment -n kube-system atomix-controller atomix-raft-storage-controller 2>/dev/null || true
-    
-    # Clear coordination leases and webhooks that cause controller crashloops
-    kubectl delete lease -n kube-system -l app.kubernetes.io/part-of=atomix 2>/dev/null || true
-    kubectl delete validatingwebhookconfigurations,mutatingwebhookconfigurations -l app.kubernetes.io/part-of=atomix 2>/dev/null || true
-
-    # 3. Force-kill all surviving/dangling Atomix and ONOS pods
-    for ns in kube-system micro-onos; do
-        kubectl get pods -n $ns -o name 2>/dev/null | grep -E 'atomix|onos' | xargs -r kubectl delete -n $ns --force --grace-period=0 2>/dev/null || true
-    done
-
-    sleep 3
-    
-    log_info "Installing compatible Atomix controllers and ONOS operator..."
-    helm upgrade --install atomix-controller atomix/atomix-controller -n kube-system --version 0.6.9
-    helm upgrade --install atomix-raft-storage atomix/atomix-raft-storage -n kube-system --version 0.1.15 
-    helm upgrade --install onos-operator onosproject/onos-operator -n kube-system
-    
-    log_info "Waiting for Atomix controller, Raft storage, and ONOS operator readiness..."
-    kubectl rollout status deployment/atomix-controller -n kube-system --timeout=120s || true
-    kubectl rollout status deployment/atomix-raft-storage-controller -n kube-system --timeout=120s || true
-    kubectl rollout status deployment/onos-operator-topo -n kube-system --timeout=120s || true
-    kubectl rollout status deployment/onos-operator-app -n kube-system --timeout=120s || true
-
-    log_info "Waiting for Atomix CRDs to register with Kubernetes API..."
-    kubectl wait --for=condition=established --timeout=60s crd/storageprofiles.atomix.io 2>/dev/null || true
-    kubectl wait --for=condition=established --timeout=60s crd/raftstores.atomix.io 2>/dev/null || true
-    
-    log_info "Patching outdated atomix-agent image tags in manifests..."
-    if [ -f "./sdn-controller/uonos-stack.yaml" ]; then
-        sed -i 's|atomix/atomix-agent:v0.6.9|atomix/sidecar:latest|g' ./sdn-controller/uonos-stack.yaml
-        sed -i 's|atomix/sidecar:v0.1.8|atomix/sidecar:latest|g' ./sdn-controller/uonos-stack.yaml
-    fi
-
-    log_info "Deploying Atomix storage profiles and Raft store cluster..."
-    if [ -f "./sdn-controller/atomix-storage.yaml" ]; then
-        kubectl apply -f ./sdn-controller/atomix-storage.yaml
-    fi
-
-    cat <<EOF | kubectl apply -f -
-apiVersion: raft.atomix.io/v1beta2
-kind: RaftStore
-metadata:
-  name: default-raft-store
-  namespace: micro-onos
-spec:
-  partitions: 1
-  cluster:
-    name: default-raft-store
-    namespace: micro-onos
-EOF
-
-    log_info "Deploying µONOS application stack..."
-    if [ -f "./sdn-controller/uonos-stack.yaml" ]; then
-        kubectl apply -f ./sdn-controller/uonos-stack.yaml
-    fi
     
     log_info "Building and deploying RESTCONF Gateway Container..."
     if command -v docker >/dev/null 2>&1; then
@@ -750,8 +684,8 @@ setup_helm_repos
 install_grpc_tools
 install_osm_installer
 setup_sdn_python_client
-#compile_uonos_model_plugins
-#deploy_cloud_native_uonos
+compile_uonos_model_plugins
+deploy_cloud_native_uonos
 deploy_open5gs
 
 echo -e "${GREEN}====================================================${NC}"
