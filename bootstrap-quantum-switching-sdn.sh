@@ -750,8 +750,8 @@ setup_helm_repos
 install_grpc_tools
 install_osm_installer
 setup_sdn_python_client
-compile_uonos_model_plugins
-deploy_cloud_native_uonos
+#compile_uonos_model_plugins
+#deploy_cloud_native_uonos
 deploy_open5gs
 
 echo -e "${GREEN}====================================================${NC}"
