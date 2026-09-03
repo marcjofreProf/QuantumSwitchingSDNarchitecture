@@ -1,0 +1,22 @@
+# SPDX-FileCopyrightText: 2022-present Intel Corporation
+#
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: atomix.io/v3beta4
+kind: StorageProfile
+metadata:
+  name: {{ template "onos-config.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    name: {{ template "onos-config.fullname" . }}
+    chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+    release: "{{ .Release.Name }}"
+    heritage: "{{ .Release.Service }}"
+spec:
+  routes:
+    - store:
+        name: {{ template "onos-config.atomix.consensus.store.name" . }}
+      {{- with .Values.atomix.store.consensus.rules }}
+      rules:
+        {{ . | toYaml | nindent 8 }}
+      {{- end }}

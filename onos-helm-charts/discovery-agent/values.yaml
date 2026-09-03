@@ -1,0 +1,33 @@
+# SPDX-FileCopyrightText: 2022-present Intel Corporation
+#
+# SPDX-License-Identifier: Apache-2.0
+
+image:
+  registry: ""
+  repository: onosproject/discovery-agent
+  tag: '{{ .Chart.AppVersion }}'
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+
+imagePullSecrets: []
+nameOverride: ""
+
+resources: {}
+
+agent:
+  count: 1
+  uuid: 0
+  port: 30000
+
+stratum:
+  basePort: 20000
+  serviceName: fabric-sim
+
+service:
+  type: ClusterIP
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}

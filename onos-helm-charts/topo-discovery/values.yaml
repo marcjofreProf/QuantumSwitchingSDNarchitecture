@@ -1,0 +1,88 @@
+# SPDX-FileCopyrightText: 2023-present Intel Corporation
+#
+# SPDX-License-Identifier: Apache-2.0
+
+global:
+  image:
+    registry: ""
+    tag: ""
+  atomix:
+    store:
+      consensus:
+        name: ""
+        image:
+          registry: ""
+          tag: ""
+
+replicaCount: 1
+
+grpcLogger:
+  enabled: false
+  golog_verbosity: "99"
+  severity: "info"
+  trace: "all"
+  verbosity: "debug"
+
+certManager:
+  enabled: false
+  name: topo-discovery-cert
+  secretName: topo-discovery-secret
+
+issuer:
+  name: ca-common-issuer
+
+image:
+  registry: ""
+  repository: onosproject/topo-discovery
+  tag: '{{ .Chart.AppVersion }}'
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+
+imagePullSecrets: []
+nameOverride: ""
+
+debug: false
+
+resources: {}
+
+service:
+  type: ClusterIP
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+logging:
+  loggers:
+    root:
+      level: info
+      output:
+        stdout:
+          sink: stdout
+  sinks:
+    stdout:
+      type: stdout
+      stdout: {}
+
+# Enable by giving a value like http://dex:32000
+# make sure this is reachable at http://dex:32000/.well-known/openid-configuration
+openidc:
+  issuer:
+
+podSecurityContext:
+  seccompProfile:
+    type: "Unconfined"
+
+topo:
+  address: onos-topo:5150
+
+realm:
+  label: realm
+  value: "*"
+
+neighborRealm:
+  label: "role"
+  value: ""
+

@@ -1,0 +1,94 @@
+# SPDX-FileCopyrightText: 2022 2020-present Open Networking Foundation <info@opennetworking.org>
+#
+# SPDX-License-Identifier: Apache-2.0
+
+onos-classic:
+  image:
+    repository: registry.aetherproject.org/tost/tost
+    tag: stable-2020-12-15
+    # You will need to pass docker registry credential to K8s before installing this helm chart.
+    #   kubectl -n <ONOS_NAMESPACE> create secret docker-registry aether-registry-credential \
+    #     --docker-server=registry.aetherproject.org --docker-username=<DOCKER_USER> --docker-password=<DOCKER_PASS>
+    pullSecrets:
+      - aether-registry-credential
+
+  replicas: 3
+
+  ports:
+    - name: up4
+      port: 51001
+    - name: east-west
+      port: 9876
+    - name: cli
+      port: 8101
+    - name: ui
+      port: 8181
+
+  apps:
+    - org.onosproject.lldpprovider
+    - org.onosproject.hostprovider
+    - org.onosproject.netcfghostprovider
+    - org.onosproject.gui
+    - org.onosproject.drivers.barefoot
+    - org.onosproject.segmentrouting
+    - org.onosproject.t3
+    - org.omecproject.up4
+    - org.stratumproject.fabric-tna
+    - org.onosproject.dhcprelay
+    - org.onosproject.hostprobingprovider
+
+  logging:
+    karafVersion: 4.2.14
+    config: |
+      # Common pattern layout for appenders
+      log4j2.stdout.pattern = %d{RFC3339} %-5level [%c{1}] %msg%n%throwable
+
+      # Root logger
+      log4j2.rootLogger.level = INFO
+
+      # OSGi appender
+      log4j2.rootLogger.appenderRef.PaxOsgi.ref = PaxOsgi
+      log4j2.appender.osgi.type = PaxOsgi
+      log4j2.appender.osgi.name = PaxOsgi
+      log4j2.appender.osgi.filter = *
+
+      # stdout appender
+      log4j2.rootLogger.appenderRef.Console.ref = Console
+      log4j2.appender.console.type = Console
+      log4j2.appender.console.name = Console
+      log4j2.appender.console.layout.type = PatternLayout
+      log4j2.appender.console.layout.pattern = ${log4j2.stdout.pattern}
+
+      # SSHD logger
+      log4j2.logger.sshd.name = org.apache.sshd
+      log4j2.logger.sshd.level = INFO
+
+      # Spifly logger
+      log4j2.logger.spifly.name = org.apache.aries.spifly
+      log4j2.logger.spifly.level = WARN
+
+  annotations:
+    fluentbit.io/parser: onos
+
+  resources:
+    limits:
+      cpu: 1
+      memory: 4Gi
+
+  atomix:
+    replicas: 3
+    persistence:
+      enabled: false
+    resources:
+      limits:
+        cpu: 1
+        memory: 2Gi
+
+# Optional.
+# When configured, a pod will fetch netcfg from given git repo and push it to ONOS.
+# You will need to pass git and ONOS credential to K8s before installing this helm chart.
+#   kubectl -n <ONOS_NAMESPACE> create secret generic onos-git-secret \
+#     --from-literal=username=<GIT_USER> --from-literal=password=<GIT_PASS>
+#   kubectl -n <ONOS_NAMESPACE> create secret generic onos-secret \
+#     --from-literal=username=<ONOS_USER> --from-literal=password=<ONOS_PASS>
+#

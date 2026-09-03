@@ -1,0 +1,20 @@
+# SPDX-FileCopyrightText: 2022 2020-present Open Networking Foundation <info@opennetworking.org>
+#
+# SPDX-License-Identifier: Apache-2.0
+
+{{- if .Values.plugin.cache.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ template "onos-config.fullname" .}}-registry
+  namespace: {{.Release.Namespace}}
+  labels:
+    {{- include "onos-config.labels" . | nindent 4}}
+spec:
+  accessModes:
+  - ReadWriteOnce
+  storageClassName: {{ .Values.plugin.cache.storage.class | quote }}
+  resources:
+    requests:
+      storage: {{ .Values.plugin.cache.storage.size }}
+{{- end }}

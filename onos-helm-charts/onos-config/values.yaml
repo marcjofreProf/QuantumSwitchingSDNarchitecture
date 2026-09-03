@@ -1,0 +1,239 @@
+# SPDX-FileCopyrightText: 2022 2020-present Open Networking Foundation <info@opennetworking.org>
+#
+# SPDX-License-Identifier: Apache-2.0
+
+# Default values for onos-config.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+global:
+  image:
+    registry: ""
+    tag: ""
+  nameOverride: ""
+  atomix:
+    store:
+      consensus:
+        enabled: false
+  openpolicyagent:
+    enabled: false
+    image:
+      registry: ""
+      tag: ""
+
+replicaCount: 1
+
+grpcLogger:
+  enabled: false
+  golog_verbosity: "99"
+  severity: "info"
+  trace: "all"
+  verbosity: "debug"
+
+certManager:
+  enabled: false
+  name: onos-config-cert
+  secretName: onos-config-secret
+
+issuer:
+  name: ca-common-issuer
+
+image:
+  registry: ""
+  repository: onosproject/onos-config
+  tag: '{{ .Chart.AppVersion }}'
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: "onos-config"
+
+debug: false
+
+devices: []
+
+# model plugins list
+# deployed as a sidecar to onos-config, eg:
+
+modelPlugins:
+  - name: devicesim-1
+    image: onosproject/devicesim:0.6.0-devicesim-1.0.x
+    endpoint: localhost
+    port: 5152
+  - name: testdevice-1
+    image: onosproject/testdevice-1.0.x:0.6.0-testdevice-1.0.x
+    endpoint: localhost
+    port: 5153
+  - name: testdevice-2
+    image: onosproject/testdevice-2.0.x:0.6.0-testdevice-2.0.x
+    endpoint: localhost
+    port: 5154
+
+
+# Variable to change to onos topo service endpoint for the default onos-topo:5150
+# topoEndpoint: onos-topo-classic:5150
+
+plugin:
+  cache:
+    enabled: false
+    storage:
+      class: "standard"
+      size: 1Gi
+  compiler:
+    version: v1.0.1
+    target: ""
+
+
+atomix:
+  sidecar:
+    image:
+      repository: atomix/sidecar
+      tag: ""
+      pullPolicy: ""
+    config:
+      logging:
+        # The default log level for all loggers. Only messages logged at this level or higher severity will be
+        # output to the logger sinks. Log levels in order of severity (least to greatest):
+        # - debug
+        # - info
+        # - warn
+        # - error
+        # - fatal
+        level: info
+
+  store:
+    consensus:
+      enabled: true
+      name: ""
+      image:
+        registry: ""
+        repository: atomix/raft-node
+        tag: ""
+        pullPolicy: ""
+        pullSecrets: []
+      replicas: 3
+      partitions: 3
+      # An array of routing rules for the consensus store route.
+      # Examples:
+      #
+      #     # Route only primitives named "foo" or "bar" to this store
+      #     - names:
+      #         - foo
+      #         - bar
+      #
+      #     # Route only primitives tagged "persistent" to this store
+      #     - tags:
+      #         - persistent
+      #
+      #     # Route only LeaderElection primitives to this store
+      #     - kind: LeaderElection
+      #       apiVersion: v1
+      #
+      #     # Route all primitives to this store and enable caching for all maps in the store
+      #     - names:
+      #         - '*'
+      #     - kind: Map
+      #       apiVersion: v1
+      #       config:
+      #         cache:
+      #           enabled: true
+      rules:
+        - names:
+            - '*'
+        - kind: Map
+          apiVersion: v1
+          config:
+            cache:
+              enabled: true
+        - kind: IndexedMap
+          apiVersion: v1
+          config:
+            cache:
+              enabled: true
+      server: {}
+      config:
+        # The estimated round trip time for a heartbeat from the Raft leader to a follower.
+        # This should approximate the round trip time of an RPC from one pod to another in the Kubernetes cluster.
+        heartbeatRTT:
+        # The number of heartbeatRTTs to wait after last hearing from the current leader before electing a new leader.
+        electionRTT:
+        # The number of entries after which Raft nodes should take a snapshot and compact their logs.
+        snapshotEntries:
+        # The number of entries to retain following log compaction to avoid snapshot replication to slow followers.
+        compactionOverhead:
+        # The maximum size of the in-memory write-ahead Raft log, (e.g. 1Gi, 500Mi, etc).
+        maxInMemLogSize:
+      logging:
+        # The encoding is the format of the logging output:
+        # console: standard formatted text logging
+        # json: JSON encoded structured logging
+        encoding: console
+        # The default log level for all loggers. Only messages logged at this level or higher severity will be
+        # output to the logger sinks. Log levels in order of severity (least to greatest):
+        # - debug
+        # - info
+        # - warn
+        # - error
+        # - fatal
+        level: info
+        loggers:
+          github.com/atomix/atomix/runtime/pkg/utils/grpc/interceptors: error
+      persistence:
+        # enabled: false
+        # storageClass: ""
+        accessModes:
+          - ReadWriteOnce
+        size: 8Gi
+      securityContext:
+        runAsUser: 0
+
+
+service:
+  type: ClusterIP
+
+resources: {}
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+config: {}
+
+logging:
+  loggers:
+    root:
+      level: info
+      output:
+        stdout:
+          sink: stdout
+    onos/grpc/retry:
+      level: error
+    atomix/grpc/retry:
+      level: error
+  sinks:
+    stdout:
+      type: stdout
+      stdout: {}
+
+# Enable by giving a value like http://dex:32000
+# make sure this is reachable at http://dex:32000/.well-known/openid-configuration
+openidc:
+  issuer:
+  admingroups:
+    - AetherROCAdmin
+    - EnterpriseAdmin
+
+openpolicyagent:
+  enabled: false
+  image:
+    repository: openpolicyagent/opa
+    registry: ""
+    tag: 0.51.0
+  regoConfigMap: onos-config-openpolicyagent
+  loglevel: info
+
+gnmiSet:
+  sizeLimit: 1000  # max number of updates + deletes in a gNMI Set

@@ -1,0 +1,18 @@
+# SPDX-FileCopyrightText: 2022 2020-present Open Networking Foundation <info@opennetworking.org>
+#
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: v2
+name: stratum-simulator
+description: Stratum Simulator
+kubeVersion: ">=1.15.0"
+type: application
+version: 0.0.3
+appVersion: v0.1.0
+keywords:
+  - onos
+  - sdn
+home: https://onosproject.org
+maintainers:
+  - name: ONOS Support
+    email: support@opennetworking.org

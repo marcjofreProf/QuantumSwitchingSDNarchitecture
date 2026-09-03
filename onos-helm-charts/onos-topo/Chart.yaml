@@ -1,0 +1,18 @@
+# SPDX-FileCopyrightText: 2020-present Open Networking Foundation <info@opennetworking.org>
+#
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: v2
+name: onos-topo
+description: ONOS Topology service
+kubeVersion: ">=1.17.0"
+type: application
+version: 1.5.3
+appVersion: v1.0.4
+keywords:
+  - onos
+  - sdn
+home: https://onosproject.org
+maintainers:
+  - name: ONOS Support
+    email: support@opennetworking.org

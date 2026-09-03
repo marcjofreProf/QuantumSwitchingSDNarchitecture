@@ -1,0 +1,99 @@
+# SPDX-FileCopyrightText: 2020-present Open Networking Foundation <info@opennetworking.org>
+#
+# SPDX-License-Identifier: Apache-2.0
+
+# Default values for all µONOS Helm charts.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+global:
+  fullnameOverride: "onos"
+  nameOverride: ""
+  atomix:
+    store:
+      consensus:
+        enabled: true
+        name: ""
+
+
+# Atomix store configurations
+atomix:
+  store:
+    consensus:
+      enabled: true
+      name: ""
+      image:
+        registry: ""
+        repository: atomix/raft-node
+        tag: ""
+        pullPolicy: ""
+        pullSecrets: []
+      replicas: 3
+      server: {}
+      logging:
+        # The encoding is the format of the logging output:
+        # console: standard formatted text logging
+        # json: JSON encoded structured logging
+        encoding: console
+        # The default log level for all loggers. Only messages logged at this level or higher severity will be
+        # output to the logger sinks. Log levels in order of severity (least to greatest):
+        # - debug
+        # - info
+        # - warn
+        # - error
+        # - fatal
+        level: info
+        loggers:
+          github.com/atomix/atomix/runtime/pkg/utils/grpc/interceptors: error
+      persistence:
+        # enabled: false
+        # storageClass: ""
+        accessModes:
+          - ReadWriteOnce
+        size: 8Gi
+      securityContext:
+        runAsUser: 0
+
+import:
+  onos-topo:
+    enabled: true
+  onos-config:
+    enabled: true
+  onos-cli:
+    enabled: true
+  device-provisioner:
+    enabled: true
+  topo-discovery:
+    enabled: true
+  fabric-underlay:
+    enabled: false
+
+# ONOS-TOPO
+onos-topo:
+  atomix:
+    store:
+      consensus:
+        enabled: false
+
+# ONOS-CONFIG
+onos-config:
+  atomix:
+    store:
+      consensus:
+        enabled: false
+
+device-provisioner:
+  atomix:
+    store:
+      consensus:
+        enabled: false
+
+fabric-underlay:
+  atomix:
+    store:
+      consensus:
+        enabled: false
+
+
+# ONOS-CLI
+onos-cli: {}
