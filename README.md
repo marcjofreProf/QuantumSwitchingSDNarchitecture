@@ -86,14 +86,10 @@ python3 ./hardware-agents/switch-drivers/netconf-switching-client.py <NODE_IP> c
 # Force the physical switch to disconnect
 python3 ./hardware-agents/switch-drivers/netconf-switching-client.py <NODE_IP> disconnect
 
-## Automated Hardware Tests
-To validate a node's full connection lifecycle, use the automated test scripts. These execute a sequence of actions (Status ➔ Connect ➔ Status ➔ Disconnect ➔ Status) with built-in delays to verify that the physical switch properly actuates under protocol commands.
-
-# Run the automated gNOI test sequence
-python3 tests/test-manual-gnoi-switching.py <NODE_IP>
-
-# Run the automated NETCONF test sequence
-python3 tests/test-manual-netconf-switching.py <NODE_IP>
+## Northbound Interface Tests
+These end-to-end tests verify service provisioning across the SDN controller northbound interfaces:
+ - test-gnmi-northbound.sh: Validates direct gNMI/gRPC operations (Capabilities, Set, Get) against onos-config: ./tests/e2e-path-provisioning/test-gnmi-northbound.sh
+ - test-restconf-northbound.py: Validates HTTP RESTCONF operations (POST, GET) against restconf-gateway: python3 ./tests/e2e-path-provisioning/test-restconf-northbound.py
 
 ## Environment Teardown & Cleanup
 
