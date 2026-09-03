@@ -625,7 +625,7 @@ deploy_cloud_native_uonos() {
     
     log_info "Building and deploying RESTCONF Gateway Container..."
     if command -v docker >/dev/null 2>&1; then
-        (cd "./sdn-controller/northbound-interfaces/restconf-gateway" && docker build -t quantum-restconf-gateway:1.0.0 .) || log_warn "Skipped building Gateway image."
+        (cd "$SCRIPT_DIR/sdn-controller/northbound-interfaces/restconf-gateway" && docker build -t quantum-restconf-gateway:1.0.0 .) || log_warn "Skipped building Gateway image."
         
         if command -v k3s >/dev/null 2>&1; then
             docker save quantum-restconf-gateway:1.0.0 2>/dev/null | sudo k3s ctr images import - || true
