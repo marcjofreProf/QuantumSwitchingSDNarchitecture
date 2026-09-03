@@ -583,69 +583,45 @@ deploy_cloud_native_uonos() {
         log_info "µONOS is not currently operational. Proceeding with deployment..."
     fi
 
-   echo "=== Installing µONOS ==="
+   log_info "=== Installing µONOS ==="
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    local ONOS_HELM_DIR="$SCRIPT_DIR/onos-helm-charts"
 
-    local ONOS_HELM_DIR="./onos-helm-charts"
-    local ONOS_HELM_TAG="onos-operator-0.5.11"
-    local ORIGINAL_DIR
-
-    ORIGINAL_DIR="$(pwd)"
-
-    # Verify that the ONOS Helm repository already exists
-    if [ ! -d "$ONOS_HELM_DIR/.git" ]; then
-        echo "ERROR: ONOS Helm repository not found at $ONOS_HELM_DIR"
-        echo "The repository must be present locally; it will not be cloned automatically."
-        return 1
+    if [ ! -d "$ONOS_HELM_DIR" ]; then
+        log_error "ONOS Helm repository not found at $ONOS_HELM_DIR"
+        log_error "The repository must be present locally; it will not be cloned automatically."
+        exit 1
     fi
 
-    # Enter the existing ONOS Helm repository
-    cd "$ONOS_HELM_DIR" || return 1
+    log_info "Using local ONOS Helm repository: $ONOS_HELM_DIR"
 
-    # Verify the stored checkout, but DO NOT modify it
-    local CURRENT_TAG
-    CURRENT_TAG="$(git describe --tags --exact-match 2>/dev/null || true)"
+    cd "$ONOS_HELM_DIR" || exit 1
 
-    if [ "$CURRENT_TAG" != "$ONOS_HELM_TAG" ]; then
-        echo "ERROR: unexpected ONOS Helm Charts version."
-        echo "Expected: $ONOS_HELM_TAG"
-        echo "Found:    ${CURRENT_TAG:-not a tag}"
-        cd "$ORIGINAL_DIR" || return 1
-        return 1
-    fi
-
-    echo "ONOS Helm Charts: $CURRENT_TAG"
-
-    # Build Helm dependencies
-    echo "Building ONOS Helm dependencies..."
+    log_info "Building ONOS Helm dependencies..."
     helm dependency build ./onos-umbrella || {
-        cd "$ORIGINAL_DIR"
-        return 1
+        log_error "Failed to build ONOS Helm dependencies."
+        exit 1
     }
 
-    # Install Atomix
-    echo "Installing Atomix..."
-    helm install atomix atomix/atomix \
+    log_info "Installing Atomix 1.1.2..."
+    helm upgrade --install atomix atomix/atomix \
         --version 1.1.2 \
         -n kube-system || {
-        cd "$ORIGINAL_DIR"
-        return 1
+        log_error "Failed to install Atomix."
+        exit 1
     }
 
-    # Create µONOS namespace
+    log_info "Creating micro-onos namespace..."
     kubectl create namespace micro-onos 2>/dev/null || true
 
-    # Install µONOS
-    echo "Installing µONOS..."
-    helm install onos-umbrella ./onos-umbrella \
+    log_info "Installing µONOS..."
+    helm upgrade --install onos-umbrella ./onos-umbrella \
         -n micro-onos || {
-        cd "$ORIGINAL_DIR"
-        return 1
+        log_error "Failed to install µONOS."
+        exit 1
     }
 
-    # Return to the directory from which bootstrap.sh was started
-    cd "$ORIGINAL_DIR" || return 1
-
-    echo "=== µONOS installation completed ==="
+    log_info "=== µONOS installation completed ==="
     
     log_info "Building and deploying RESTCONF Gateway Container..."
     if command -v docker >/dev/null 2>&1; then
