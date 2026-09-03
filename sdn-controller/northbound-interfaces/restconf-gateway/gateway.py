@@ -20,7 +20,7 @@ def create_cross_connect():
         # Execute gNMI Set operation with TLS enabled (--skip-verify)
         cmd = [
             "gnmic", "-a", GNMI_TARGET, "--skip-verify",
-            "-t", service_id,
+            "--target", service_id,
             "set", "--update-path", gnmi_path,
             "--update-value", json.dumps(service)
         ]
@@ -40,7 +40,7 @@ def get_cross_connect(service_id):
     # Execute gNMI Get operation with TLS enabled (--skip-verify)
     cmd = [
         "gnmic", "-a", GNMI_TARGET, "--skip-verify",
-        "-t", service_id,
+        "--target", service_id,
         "get", "--path", gnmi_path
     ]
     
