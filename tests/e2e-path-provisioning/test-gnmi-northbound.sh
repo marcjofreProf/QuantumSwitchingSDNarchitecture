@@ -69,7 +69,7 @@ gnmic -a "$TARGET" \
   --skip-verify \
   --tls-cert "$TLS_CERT" \
   --tls-key "$TLS_KEY" \
-  -t "$SERVICE_ID" \
+  --target "$SERVICE_ID" \
   set \
   --update-path "$GNMI_PATH" \
   --update-value "$VALUE"
@@ -83,7 +83,7 @@ gnmic -a "$TARGET" \
   --skip-verify \
   --tls-cert "$TLS_CERT" \
   --tls-key "$TLS_KEY" \
-  -t "$SERVICE_ID" \
+  --target "$SERVICE_ID" \
   get \
   --path "$GNMI_PATH"
 
