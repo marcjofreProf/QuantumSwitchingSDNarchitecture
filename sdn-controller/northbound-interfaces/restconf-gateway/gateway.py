@@ -14,14 +14,12 @@ def create_cross_connect():
         service = payload.get("cross-connect-service", [{}])[0]
         service_id = service.get("service-id")
         
-        # Map RESTCONF JSON payload to a YANG-compliant gNMI path
         gnmi_path = f"/quantum-services/cross-connect-service[service-id={service_id}]"
         
-        # Execute gNMI Set operation with TLS enabled (--skip-verify)
         cmd = [
             "gnmic", "-a", GNMI_TARGET, "--skip-verify",
             "--target", service_id,
-            "set", "--update-path", gnmi_path,
+            "set", "--replace-path", gnmi_path,
             "--update-value", json.dumps(service)
         ]
         
