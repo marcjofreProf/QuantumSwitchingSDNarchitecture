@@ -1,4 +1,3 @@
-```bash
 #!/bin/bash
 #
 # Test gNMI Northbound Interface against onos-config
@@ -180,4 +179,4 @@ gnmic \
 
 echo
 echo "[OK] gNMI Northbound test completed successfully."
-```
+
