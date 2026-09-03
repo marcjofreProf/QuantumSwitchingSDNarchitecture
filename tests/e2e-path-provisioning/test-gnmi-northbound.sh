@@ -72,7 +72,7 @@ gnmic -a "$TARGET" \
   --target "$SERVICE_ID" \
   set \
   --replace-path "$GNMI_PATH" \
-  --update-value "$VALUE"
+  --replace-value "$VALUE"
 
 echo
 echo "========================================"
