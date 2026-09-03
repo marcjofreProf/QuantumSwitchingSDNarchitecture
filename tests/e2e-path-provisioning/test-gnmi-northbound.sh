@@ -71,7 +71,7 @@ gnmic -a "$TARGET" \
   --tls-key "$TLS_KEY" \
   --target "$SERVICE_ID" \
   set \
-  --update-path "$GNMI_PATH" \
+  --replace-path "$GNMI_PATH" \
   --update-value "$VALUE"
 
 echo
