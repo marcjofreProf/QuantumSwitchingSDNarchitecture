@@ -584,7 +584,15 @@ deploy_cloud_native_uonos() {
     fi
 
     kubectl create namespace micro-onos --dry-run=client -o yaml | kubectl apply -f -
+
+    # Build the umbrella chart dependencies
+    helm dependency build ./onos-umbrella
+
+    # Install the Atomix version required by this µONOS release
+    helm install atomix atomix/atomix --version 1.1.2 -n kube-system
     
+    # Install µONOS
+    helm install onos-umbrella ./onos-umbrella -n micro-onos
     
     log_info "Building and deploying RESTCONF Gateway Container..."
     if command -v docker >/dev/null 2>&1; then
