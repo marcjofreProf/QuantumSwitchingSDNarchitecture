@@ -1,14 +1,11 @@
 #!/bin/bash
 # Test direct gNMI Northbound Interface against onos-config via K8s ClusterIP
-# From the host controller, execution as: ./tests/e2e-path-provisioning/test-gnmi-northbound.sh
 
-# --- ROUTE CHECK & INJECTION ---
 if ! ip route | grep -q "10.43.0.0/16"; then
   echo "[*] K3s ClusterIP route missing. Injecting 10.43.0.0/16 via cni0..."
   sudo ip route add 10.43.0.0/16 dev cni0 2>/dev/null || true
 fi
 
-# Dynamically discover onos-config ClusterIP in micro-onos namespace
 CLUSTER_IP=$(kubectl get svc onos-config -n micro-onos -o jsonpath='{.spec.clusterIP}' 2>/dev/null)
 
 if [ -z "$CLUSTER_IP" ]; then
@@ -24,9 +21,9 @@ VALUE='{"service-id": "xc-99", "target-node-ip": "10.0.0.5", "ingress-port": 1, 
 echo "[*] Target resolved to ClusterIP: $TARGET"
 
 echo "Sending gNMI Set to $TARGET..."
-gnmic -a $TARGET --insecure set \
+gnmic -a $TARGET --skip-verify set \
   --update-path "$GNMI_PATH" \
   --update-value "$VALUE"
 
 echo "Verifying gNMI Get..."
-gnmic -a $TARGET --insecure get --path "$GNMI_PATH"
+gnmic -a $TARGET --skip-verify get --path "$GNMI_PATH"
