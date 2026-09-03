@@ -89,7 +89,7 @@ python3 ./hardware-agents/switch-drivers/netconf-switching-client.py <NODE_IP> d
 ## Northbound Interface Tests
 These end-to-end tests verify service provisioning across the SDN controller northbound interfaces:
  - test-gnmi-northbound.sh: Validates direct gNMI/gRPC operations (Capabilities, Set, Get) against onos-config: ./tests/e2e-path-provisioning/test-gnmi-northbound.sh
- - test-restconf-northbound.py: Validates HTTP RESTCONF operations (POST, GET) against restconf-gateway: python3 ./tests/e2e-path-provisioning/test-restconf-northbound.py
+ - test-restconf-northbound.py: Validates HTTP RESTCONF operations (POST, GET) against restconf-gateway: /opt/sdn-venv/bin/python3 ./tests/e2e-path-provisioning/test-restconf-northbound.py
 
 ## Environment Teardown & Cleanup
 
