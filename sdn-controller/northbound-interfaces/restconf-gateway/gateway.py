@@ -20,7 +20,7 @@ def create_cross_connect():
             "gnmic", "-a", GNMI_TARGET, "--skip-verify",
             "--target", service_id,
             "set", "--replace-path", gnmi_path,
-            "--update-value", json.dumps(service)
+            "--replace-value", json.dumps(service)
         ]
         
         result = subprocess.run(cmd, capture_output=True, text=True)
