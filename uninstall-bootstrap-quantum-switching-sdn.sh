@@ -61,15 +61,96 @@ for crd in $(kubectl get crd -o name 2>/dev/null | grep -E 'atomix.io|onosprojec
     kubectl delete "$crd" 2>/dev/null || true
 done
 
-# 4. Purge Kubernetes Namespaces and Manual Pods/Deployments
-log_info "Removing Kubernetes namespaces and workloads..."
-kubectl delete deployment onos-config onos-topo -n micro-onos 2>/dev/null || true
-kubectl delete pod onos-config onos-topo -n micro-onos --force --grace-period=0 2>/dev/null || true
+# 4. Purge µONOS Kubernetes resources
+log_info "Removing µONOS workloads, namespaces and CRDs..."
 
-for deploy in $(kubectl get deploy -n kube-system -o name 2>/dev/null | grep -E 'atomix|onos-operator'); do
-  kubectl scale $deploy -n kube-system --replicas=0 2>/dev/null || true
-done
-kubectl get pods -n kube-system -o name 2>/dev/null | grep -E 'atomix|onos-operator' | xargs -r kubectl delete -n kube-system --force --grace-period=0 2>/dev/null || true
+# ------------------------------------------------------------------
+# Remove µONOS Helm release
+# ------------------------------------------------------------------
+if helm status onos-umbrella -n micro-onos >/dev/null 2>&1; then
+    log_info "Uninstalling onos-umbrella..."
+    helm uninstall onos-umbrella -n micro-onos 2>/dev/null || true
+fi
+
+# ------------------------------------------------------------------
+# Remove µONOS namespace
+# This removes pods, deployments, services, configmaps, secrets, etc.
+# ------------------------------------------------------------------
+if kubectl get namespace micro-onos >/dev/null 2>&1; then
+    log_info "Deleting micro-onos namespace..."
+    kubectl delete namespace micro-onos --wait=true 2>/dev/null || true
+fi
+
+# ------------------------------------------------------------------
+# Remove Atomix Helm release
+# ------------------------------------------------------------------
+if helm status atomix -n kube-system >/dev/null 2>&1; then
+    log_info "Uninstalling Atomix..."
+    helm uninstall atomix -n kube-system 2>/dev/null || true
+fi
+
+# ------------------------------------------------------------------
+# Remove Atomix custom resources
+#
+# These can survive Helm uninstallation because they are instances
+# of CRDs rather than normal namespaced Kubernetes objects.
+# ------------------------------------------------------------------
+log_info "Removing Atomix custom resources..."
+
+kubectl delete storageprofiles.atomix.io --all --all-namespaces \
+    --ignore-not-found=true 2>/dev/null || true
+
+kubectl delete raftclusters.raft.atomix.io --all --all-namespaces \
+    --ignore-not-found=true 2>/dev/null || true
+
+kubectl delete raftstores.raft.atomix.io --all --all-namespaces \
+    --ignore-not-found=true 2>/dev/null || true
+
+# ------------------------------------------------------------------
+# Remove Atomix CRDs
+#
+# Required for a completely clean µONOS reinstall.
+# ------------------------------------------------------------------
+log_info "Removing Atomix CRDs..."
+
+kubectl get crd -o name 2>/dev/null \
+    | grep -E '(^|\.)(atomix\.io|raft\.atomix\.io)$' \
+    | xargs -r kubectl delete 2>/dev/null || true
+
+# More robust fallback: explicitly delete the CRDs used by µONOS.
+kubectl delete crd \
+    storageprofiles.atomix.io \
+    raftclusters.raft.atomix.io \
+    raftstores.raft.atomix.io \
+    --ignore-not-found=true 2>/dev/null || true
+
+# ------------------------------------------------------------------
+# Remove any remaining Atomix / ONOS operator workloads
+# ------------------------------------------------------------------
+log_info "Removing remaining Atomix/ONOS operator workloads..."
+
+kubectl get pods -n kube-system -o name 2>/dev/null \
+    | grep -E 'atomix|onos-operator' \
+    | xargs -r kubectl delete -n kube-system \
+        --force --grace-period=0 2>/dev/null || true
+
+kubectl get deployments -n kube-system -o name 2>/dev/null \
+    | grep -E 'atomix|onos-operator' \
+    | xargs -r kubectl delete -n kube-system 2>/dev/null || true
+
+# ------------------------------------------------------------------
+# Remove Atomix-related ClusterRoles / ClusterRoleBindings if they
+# were left behind by the Helm release.
+# ------------------------------------------------------------------
+kubectl get clusterrole -o name 2>/dev/null \
+    | grep -E 'atomix|onos-operator' \
+    | xargs -r kubectl delete 2>/dev/null || true
+
+kubectl get clusterrolebinding -o name 2>/dev/null \
+    | grep -E 'atomix|onos-operator' \
+    | xargs -r kubectl delete 2>/dev/null || true
+
+log_info "µONOS Kubernetes cleanup completed."
 
 kubectl delete namespace open5gs --force --grace-period=0 2>/dev/null || true
 kubectl delete namespace micro-onos --force --grace-period=0 2>/dev/null || true
