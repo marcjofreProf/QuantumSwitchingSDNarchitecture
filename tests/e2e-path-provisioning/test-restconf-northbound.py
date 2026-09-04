@@ -3,9 +3,9 @@
 import json
 import os
 import socket
+import subprocess
 import sys
 
-# Virtual environment auto-discovery fix
 try:
     import requests
 except ModuleNotFoundError:
@@ -13,7 +13,7 @@ except ModuleNotFoundError:
     if os.path.exists(venv_python) and sys.executable != venv_python:
         os.execv(venv_python, [venv_python] + sys.argv)
     else:
-        print("[ERROR] 'requests' missing. Run bootstrap script or run with /opt/sdn-venv/bin/python3", flush=True)
+        print("[ERROR] 'requests' missing.", flush=True)
         sys.exit(1)
 
 def get_host_ip():
@@ -27,56 +27,63 @@ def get_host_ip():
         s.close()
     return ip
 
-
+NAMESPACE = "micro-onos"
 HOST_IP = get_host_ip()
 NODE_PORT = 30181
-SERVICE_ID = "xc-100"
+TARGET_ENTITY = "devicesim-1"
 
-BASE_PATH = (
-    "/restconf/data/"
-    "controller-quantum-switching:quantum-services/"
-    "cross-connect-service"
-)
-
-GATEWAY_URL = f"http://{HOST_IP}:{NODE_PORT}{BASE_PATH}"
-SERVICE_URL = f"{GATEWAY_URL}={SERVICE_ID}"
-
-payload = {
-    "cross-connect-service": [
-        {
-            "service-id": SERVICE_ID,
-            "target-node-ip": "192.168.100.5",
-            "ingress-port": 10,
-            "egress-port": 20,
-            "admin-state": "ENABLED",
-        }
-    ]
-}
+GATEWAY_URL = f"http://{HOST_IP}:{NODE_PORT}/restconf/data/openconfig-system:system/clock/config"
 
 HEADERS = {
     "Content-Type": "application/yang-data+json",
     "Accept": "application/yang-data+json",
 }
 
+def ensure_topology_entity():
+    print(f"=== Provisioning Topology Entity '{TARGET_ENTITY}' ===")
+    try:
+        cli_cmd = f"kubectl get pods -n {NAMESPACE} -l app.kubernetes.io/name=onos-cli -o jsonpath='{{.items[0].metadata.name}}' 2>/dev/null || kubectl get pods -n {NAMESPACE} | grep onos-cli | head -n 1 | awk '{{print $1}}'"
+        cli_pod = subprocess.check_output(cli_cmd, shell=True, text=True).strip()
+
+        if cli_pod:
+            print(f"[*] Cleaning up existing '{TARGET_ENTITY}'...")
+            subprocess.run(
+                f"kubectl exec -n {NAMESPACE} '{cli_pod}' -- onos topo delete entity {TARGET_ENTITY} 2>/dev/null",
+                shell=True,
+            )
+            print(f"[*] Creating fresh '{TARGET_ENTITY}'...")
+            subprocess.run(
+                f"kubectl exec -n {NAMESPACE} '{cli_pod}' -- onos topo create entity {TARGET_ENTITY} --aspect onos.topo.Configurable='{{\"type\": \"devicesim\", \"version\": \"1.0.x\"}}'",
+                shell=True,
+                check=True,
+            )
+        else:
+            print("[!] WARNING: Could not locate onos-cli pod. Skipping topo reset.")
+    except Exception as e:
+        print(f"[!] Topology setup warning: {e}")
 
 def run_test():
     print("========================================")
     print(" RESTCONF Northbound Interface Test")
     print("========================================")
     print(f"[*] Gateway URL: {GATEWAY_URL}")
-    print(f"[*] Service URL: {SERVICE_URL}")
-    print(f"[*] Service ID:  {SERVICE_ID}")
     print()
 
-    print("========================================")
+    ensure_topology_entity()
+
+    print("\n========================================")
     print(" RESTCONF POST")
     print("========================================")
-    print(f"[*] Creating cross-connect '{SERVICE_ID}'...")
+    print("[*] Setting system clock timezone to 'Europe/Paris'...")
+
+    payload = {
+        "openconfig-system:config": {
+            "timezone-name": "Europe/Paris"
+        }
+    }
 
     try:
-        response = requests.post(
-            GATEWAY_URL, json=payload, headers=HEADERS, timeout=10
-        )
+        response = requests.post(GATEWAY_URL, json=payload, headers=HEADERS, timeout=10)
         print(f"Status: {response.status_code}")
         if response.text:
             print(f"Body: {response.text}")
@@ -89,14 +96,10 @@ def run_test():
     print("\n========================================")
     print(" RESTCONF GET")
     print("========================================")
-    print(f"[*] Reading cross-connect '{SERVICE_ID}'...")
+    print("[*] Reading system clock config...")
 
     try:
-        get_response = requests.get(
-            SERVICE_URL,
-            headers={"Accept": "application/yang-data+json"},
-            timeout=10,
-        )
+        get_response = requests.get(GATEWAY_URL, headers={"Accept": "application/yang-data+json"}, timeout=10)
         print(f"Status: {get_response.status_code}")
         if get_response.text:
             try:
@@ -111,16 +114,12 @@ def run_test():
 
     return True
 
-
 def main():
-    success = run_test()
-    if success:
+    if run_test():
         print("\n[OK] RESTCONF Northbound test completed successfully.")
         return 0
-
     print("\n[ERROR] RESTCONF Northbound test failed.")
     return 1
-
 
 if __name__ == "__main__":
     sys.exit(main())
