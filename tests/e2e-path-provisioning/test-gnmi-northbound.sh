@@ -102,9 +102,9 @@ gnmic -a "$TARGET" \
     --tls-cert "$TLS_CERT" \
     --tls-key "$TLS_KEY" \
     --target "devicesim-1" \
-    get \
-    --path "/"
-
+    set \
+    --update-path "/system/clock/config/timezone-name" \
+    --update-value "Europe/Paris"
 
 # ------------------------------------------------------------
 # 3. Result
