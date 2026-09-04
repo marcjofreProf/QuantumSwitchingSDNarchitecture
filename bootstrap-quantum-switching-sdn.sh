@@ -328,10 +328,28 @@ install_osm_installer() {
         sleep 2
     done
 
-    log_info "Configuring CoreDNS upstream servers and kernel IP forwarding..."
+    log_info "Ensuring host DNS and configuring CoreDNS upstream servers..."
     sudo sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 || true
-    kubectl get configmap coredns -n kube-system -o json 2>/dev/null | sed 's/forward . \/etc\/resolv.conf/forward . 8.8.8.8 1.1.1.1/' | kubectl apply -f - >/dev/null 2>&1 || true
+
+    # 1. Restore host DNS fallback if dnscore removal broke /etc/resolv.conf
+    if ! grep -qE '8.8.8.8|1.1.1.1' /etc/resolv.conf; then
+        log_info "Adding public resolvers to host /etc/resolv.conf..."
+        echo -e "nameserver 8.8.8.8\nnameserver 1.1.1.1" | sudo tee -a /etc/resolv.conf >/dev/null
+    fi
+
+    # 2. Patch CoreDNS to bypass host resolv.conf
+    kubectl get configmap coredns -n kube-system -o json 2>/dev/null | \
+        sed 's/forward . \/etc\/resolv.conf/forward . 8.8.8.8 1.1.1.1/' | \
+        kubectl apply -f - >/dev/null 2>&1 || true
+
+    # 3. Restart CoreDNS and block until pods are fully Running & Ready
+    log_info "Restarting CoreDNS and waiting for readiness..."
     kubectl rollout restart deployment coredns -n kube-system >/dev/null 2>&1 || true
+    kubectl rollout status deployment coredns -n kube-system --timeout=120s || {
+        log_error "CoreDNS failed to start. Check cluster logs with 'kubectl logs -n kube-system -l k8s-app=kube-dns'."
+        exit 1
+    }
+    log_success "CoreDNS is running and resolving DNS requests."
 
     log_info "Ensuring K3s local storage class is fully initialized..."
     kubectl rollout status deployment/local-path-provisioner -n kube-system --timeout=60s || true
