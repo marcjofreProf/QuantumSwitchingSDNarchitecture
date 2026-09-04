@@ -232,8 +232,8 @@ ensure_kubernetes_cluster() {
 }
 
 setup_persistent_sdn_networking() {
-    if [ -f "/etc/sysctl.d/99-sdn-uonos.conf" ] && dpkg -l | grep -qw iptables-persistent; then
-        log_success "Persistent SDN networking is already configured."
+    if [ -f "/etc/sysctl.d/99-sdn-uonos.conf" ] && [ -f "/etc/systemd/system/sdn-boot-recovery.service" ] && dpkg -l | grep -qw iptables-persistent; then
+        log_success "Persistent SDN networking and boot recovery service are already configured."
         return 0
     fi
     log_info "Phase 3.5: Applying persistent iptables and kernel network configurations..."
@@ -257,6 +257,26 @@ EOF
     sudo DEBIAN_FRONTEND=noninteractive apt-get install -y iptables-persistent netfilter-persistent
 
     sudo netfilter-persistent save
+
+    # Systemd service for reboot recovery
+    cat <<EOF | sudo tee /etc/systemd/system/sdn-boot-recovery.service >/dev/null
+[Unit]
+Description=SDN Architecture Boot Network Recovery
+After=k3s.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c 'iptables -P FORWARD ACCEPT && sysctl -w net.ipv4.ip_forward=1'
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    sudo systemctl daemon-reload
+    sudo systemctl enable sdn-boot-recovery.service
+    log_success "SDN persistent networking configured."
 }
 
 setup_helm_repos() {
@@ -400,6 +420,7 @@ install_osm_installer() {
     juju deploy osm-ng-ui ng-ui-k8s --channel 14.0/stable --base ubuntu@22.04 --trust
 
     juju deploy traefik-k8s --channel 1.0/stable --base ubuntu@20.04 --trust || true
+    juju config traefik-k8s external_hostname="127.0.0.1.nip.io" || true
     juju config nbi-k8s external-hostname="nbi.127.0.0.1.nip.io" || true
 
     log_info "Integrating OSM microservices..."
