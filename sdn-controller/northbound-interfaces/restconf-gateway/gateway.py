@@ -4,8 +4,17 @@ import json
 from flask import Flask, request, jsonify
 
 app = Flask(__name__)
-# Targets the onos-config service running in the micro-onos Kubernetes namespace
+
 GNMI_TARGET = os.getenv("GNMI_TARGET", "onos-config.micro-onos.svc.cluster.local:5150")
+GNMI_TARGET_DEVICE = os.getenv("GNMI_TARGET_DEVICE", "devicesim-1")
+TLS_CERT = os.getenv("TLS_CERT", "/etc/onos/certs/tls.crt")
+TLS_KEY = os.getenv("TLS_KEY", "/etc/onos/certs/tls.key")
+
+def get_gnmic_cmd():
+    cmd = ["gnmic", "-a", GNMI_TARGET, "--skip-verify"]
+    if os.path.exists(TLS_CERT) and os.path.exists(TLS_KEY):
+        cmd.extend(["--tls-cert", TLS_CERT, "--tls-key", TLS_KEY])
+    return cmd
 
 @app.route('/restconf/data/controller-quantum-switching:quantum-services/cross-connect-service', methods=['POST'])
 def create_cross_connect():
@@ -15,12 +24,12 @@ def create_cross_connect():
         service_id = service.get("service-id")
         
         gnmi_path = f"/quantum-services/cross-connect-service[service-id={service_id}]"
+        target_device = request.args.get("target", GNMI_TARGET_DEVICE)
         
-        cmd = [
-            "gnmic", "-a", GNMI_TARGET, "--skip-verify",
-            "--target", service_id,
-            "set", "--replace-path", gnmi_path,
-            "--replace-value", json.dumps(service)
+        cmd = get_gnmic_cmd() + [
+            "--target", target_device,
+            "set",
+            "--update", f"{gnmi_path}:::json:::{json.dumps(service)}"
         ]
         
         result = subprocess.run(cmd, capture_output=True, text=True)
@@ -31,15 +40,16 @@ def create_cross_connect():
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
+@app.route('/restconf/data/controller-quantum-switching:quantum-services/cross-connect-service=<service_id>', methods=['GET'])
 @app.route('/restconf/data/controller-quantum-switching:quantum-services/cross-connect-service/<service_id>', methods=['GET'])
 def get_cross_connect(service_id):
     gnmi_path = f"/quantum-services/cross-connect-service[service-id={service_id}]"
+    target_device = request.args.get("target", GNMI_TARGET_DEVICE)
     
-    # Execute gNMI Get operation with TLS enabled (--skip-verify)
-    cmd = [
-        "gnmic", "-a", GNMI_TARGET, "--skip-verify",
-        "--target", service_id,
-        "get", "--path", gnmi_path
+    cmd = get_gnmic_cmd() + [
+        "--target", target_device,
+        "get",
+        "--path", gnmi_path
     ]
     
     result = subprocess.run(cmd, capture_output=True, text=True)
