@@ -48,30 +48,35 @@ trap cleanup EXIT INT TERM
 
 
 # ------------------------------------------------------------
-# Ensure Topology Entity Exists
+# Ensure Topology Entity Exists (devicesim-1)
 # ------------------------------------------------------------
 
 echo
-echo "=== Ensuring Topology Entity 'virtual' ==="
+echo "=== Ensuring Topology Entity 'devicesim-1' ==="
+
+TARGET_ENTITY="devicesim-1"
 
 if command -v onos >/dev/null 2>&1; then
-    if ! onos topo get entity "virtual" >/dev/null 2>&1; then
-        echo "[*] Entity 'virtual' not found. Creating..."
-        onos topo create entity "virtual" --aspect onos.topo.Configurable='{"type": "devicesim-1.0.x", "version": "1.0.0"}'
+    if ! onos topo get entity "$TARGET_ENTITY" >/dev/null 2>&1; then
+        echo "[*] Entity '$TARGET_ENTITY' not found. Creating..."
+        onos topo create entity "$TARGET_ENTITY" --aspect onos.topo.Configurable='{"type": "devicesim", "version": "1.0.x"}'
     else
-        echo "[*] Entity 'virtual' already exists."
+        echo "[*] Entity '$TARGET_ENTITY' already exists."
     fi
 else
-    CLI_POD=$(kubectl get pods -n "$NAMESPACE" -l app=onos-cli -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+    CLI_POD=$(kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/name=onos-cli -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || \
+              kubectl get pods -n "$NAMESPACE" -l app=onos-cli -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || \
+              kubectl get pods -n "$NAMESPACE" 2>/dev/null | grep onos-cli | awk '{print $1}' | head -n 1)
+
     if [ -n "$CLI_POD" ]; then
-        if ! kubectl exec -n "$NAMESPACE" "$CLI_POD" -- onos topo get entity "virtual" >/dev/null 2>&1; then
-            echo "[*] Entity 'virtual' not found. Creating via pod..."
-            kubectl exec -n "$NAMESPACE" "$CLI_POD" -- onos topo create entity "virtual" --aspect onos.topo.Configurable='{"type": "devicesim-1.0.x", "version": "1.0.0"}'
+        if ! kubectl exec -n "$NAMESPACE" "$CLI_POD" -- onos topo get entity "$TARGET_ENTITY" >/dev/null 2>&1; then
+            echo "[*] Entity '$TARGET_ENTITY' not found. Creating via pod $CLI_POD..."
+            kubectl exec -n "$NAMESPACE" "$CLI_POD" -- onos topo create entity "$TARGET_ENTITY" --aspect onos.topo.Configurable='{"type": "devicesim", "version": "1.0.x"}'
         else
-            echo "[*] Entity 'virtual' already exists."
+            echo "[*] Entity '$TARGET_ENTITY' already exists."
         fi
     else
-        echo "[!] WARNING: 'onos' CLI binary or 'onos-cli' pod not found. Skipping topology entity check."
+        echo "[!] WARNING: Unable to locate 'onos-cli' pod. Skipping automated topo entity check."
     fi
 fi
 
@@ -91,11 +96,11 @@ gnmic -a "$TARGET" \
 
 
 # ------------------------------------------------------------
-# 2. gNMI Get
+# 2. gNMI Set
 # ------------------------------------------------------------
 
 echo
-echo "=== 2. gNMI Get ==="
+echo "=== 2. gNMI Set ==="
 
 gnmic -a "$TARGET" \
     --skip-verify \
@@ -103,11 +108,27 @@ gnmic -a "$TARGET" \
     --tls-key "$TLS_KEY" \
     --target "devicesim-1" \
     set \
-    --update-path "/system/clock/config/timezone-name" \
-    --update-value "Europe/Paris"
+    --update "/system/clock/config/timezone-name:::string:::Europe/Paris"
+
 
 # ------------------------------------------------------------
-# 3. Result
+# 3. gNMI Get
+# ------------------------------------------------------------
+
+echo
+echo "=== 3. gNMI Get ==="
+
+gnmic -a "$TARGET" \
+    --skip-verify \
+    --tls-cert "$TLS_CERT" \
+    --tls-key "$TLS_KEY" \
+    --target "devicesim-1" \
+    get \
+    --path "/system/clock/config/timezone-name"
+
+
+# ------------------------------------------------------------
+# 4. Result
 # ------------------------------------------------------------
 
 echo
