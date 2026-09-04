@@ -670,20 +670,16 @@ spec:
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8181
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: restconf-gateway
-spec:
-  type: NodePort
-  selector:
-    app: restconf-gateway
-  ports:
-  - port: 8181
-    targetPort: 8181
-    nodePort: 30181
+        volumeMounts:
+        - name: onos-config-certs
+          mountPath: /etc/onos/certs
+          readOnly: true
+      volumes:
+      - name: onos-config-certs
+        secret:
+          secretName: onos-config-secret
 EOF
+
         log_success "RESTCONF Gateway deployed on NodePort 30181."
     fi
 
