@@ -72,6 +72,7 @@ gnmic -a "$TARGET" \
     --skip-verify \
     --tls-cert "$TLS_CERT" \
     --tls-key "$TLS_KEY" \
+    --target "devicesim-1" \
     get \
     --path "/"
 
