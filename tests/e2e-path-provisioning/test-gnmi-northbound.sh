@@ -48,6 +48,35 @@ trap cleanup EXIT INT TERM
 
 
 # ------------------------------------------------------------
+# Ensure Topology Entity Exists
+# ------------------------------------------------------------
+
+echo
+echo "=== Ensuring Topology Entity 'virtual' ==="
+
+if command -v onos >/dev/null 2>&1; then
+    if ! onos topo get entity "virtual" >/dev/null 2>&1; then
+        echo "[*] Entity 'virtual' not found. Creating..."
+        onos topo create entity "virtual" --aspect onos.topo.Configurable='{"type": "devicesim-1.0.x", "version": "1.0.0"}'
+    else
+        echo "[*] Entity 'virtual' already exists."
+    fi
+else
+    CLI_POD=$(kubectl get pods -n "$NAMESPACE" -l app=onos-cli -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+    if [ -n "$CLI_POD" ]; then
+        if ! kubectl exec -n "$NAMESPACE" "$CLI_POD" -- onos topo get entity "virtual" >/dev/null 2>&1; then
+            echo "[*] Entity 'virtual' not found. Creating via pod..."
+            kubectl exec -n "$NAMESPACE" "$CLI_POD" -- onos topo create entity "virtual" --aspect onos.topo.Configurable='{"type": "devicesim-1.0.x", "version": "1.0.0"}'
+        else
+            echo "[*] Entity 'virtual' already exists."
+        fi
+    else
+        echo "[!] WARNING: 'onos' CLI binary or 'onos-cli' pod not found. Skipping topology entity check."
+    fi
+fi
+
+
+# ------------------------------------------------------------
 # 1. gNMI Capabilities
 # ------------------------------------------------------------
 
@@ -85,4 +114,3 @@ echo
 echo "=========================================="
 echo "[OK] Micro-ONOS gNMI northbound test passed"
 echo "=========================================="
-
