@@ -367,6 +367,17 @@ install_osm_installer() {
         sleep 2
     done
 
+    # Ensure CoreDNS deployment exists before patching
+    if ! kubectl get deployment coredns -n kube-system >/dev/null 2>&1; then
+        log_warn "CoreDNS deployment missing. Restoring from K3s manifests..."
+        if sudo test -f /var/lib/rancher/k3s/server/manifests/coredns.yaml; then
+            sudo kubectl apply -f /var/lib/rancher/k3s/server/manifests/coredns.yaml
+        else
+            sudo systemctl restart k3s
+        fi
+        sleep 5
+    fi
+    
     log_info "Ensuring host DNS and configuring CoreDNS upstream servers..."
     sudo sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 || true
 
