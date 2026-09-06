@@ -173,9 +173,9 @@ install_docker() {
         log_success "Docker installed."
     fi
 
-    if ! groups | grep -q docker; then
+    if ! id -nG "${SUDO_USER:-$USER}" | grep -qw docker; then
         sudo usermod -aG docker "${SUDO_USER:-$USER}"
-        log_warn "Added ${USER} to docker group. If docker commands fail without sudo, re-login or run 'sg docker'."
+        log_warn "Added ${USER} to docker group. Re-login or run 'sg docker' for non-sudo docker usage."
     fi
 }
 
@@ -401,13 +401,14 @@ install_osm_installer() {
     kill $CERT_SYNC_PID 2>/dev/null || true
     
     log_info "Adding 'osm' model on k8s-cloud with forced default base..."
-    juju add-model osm k8s-cloud --config default-base=$JUJU_BASE
+    juju add-model osm k8s-cloud --config default-base=$JUJU_BASE || true
 
     log_info "Deploying Charmed OSM microservices with charm-specific bases..."
 
     juju deploy zookeeper-k8s --channel latest/stable --base ubuntu@20.04 --trust
     juju deploy ch:kafka-k8s --channel latest/stable --base ubuntu@20.04 --trust
-    juju deploy mongodb-k8s --channel 6/stable --base ubuntu@22.04 --trust
+    juju deploy mongodb-k8s --channel 5/stable --base ubuntu@20.04 --trust || \
+    juju deploy ch:mongodb-k8s --channel 5/stable --base ubuntu@20.04 --trust
     juju deploy charmed-osm-mariadb-k8s mariadb-k8s --channel latest/stable --base ubuntu@20.04 --trust
     juju deploy osm-prometheus prometheus-k8s --channel 14.0/stable --base ubuntu@20.04 --trust
 
@@ -423,9 +424,8 @@ install_osm_installer() {
     juju config traefik-k8s external_hostname="127.0.0.1.nip.io" || true
     juju config nbi-k8s external-hostname="nbi.127.0.0.1.nip.io" || true
 
-    log_info "Integrating OSM microservices..."
-    until ! juju status | grep -q "allocating"; do
-        echo "Waiting for Juju allocation to finish...(to check: juju status -m osm --watch 5s)"
+    until ! juju status -m osm | grep -q "allocating"; do
+        echo "Waiting for Juju allocation to finish... (check: juju status -m osm --watch 5s)"
         sleep 15
     done
     
@@ -634,31 +634,33 @@ deploy_cloud_native_uonos() {
 
     log_info "Using local ONOS Helm repository: $ONOS_HELM_DIR"
 
-    cd "$ONOS_HELM_DIR" || exit 1
-
-    log_info "Building ONOS Helm dependencies..."
-    helm dependency build ./onos-umbrella || {
-        log_error "Failed to build ONOS Helm dependencies."
-        exit 1
-    }
-
-    log_info "Installing Atomix 1.1.2..."
-    helm upgrade --install atomix atomix/atomix \
-        --version 1.1.2 \
-        -n kube-system || {
-        log_error "Failed to install Atomix."
-        exit 1
-    }
-
-    log_info "Creating micro-onos namespace..."
-    kubectl create namespace micro-onos 2>/dev/null || true
-
-    log_info "Installing µONOS..."
-    helm upgrade --install onos-umbrella ./onos-umbrella \
-        -n micro-onos || {
-        log_error "Failed to install µONOS."
-        exit 1
-    }
+   (
+        cd "$ONOS_HELM_DIR" || exit 1
+    
+        log_info "Building ONOS Helm dependencies..."
+        helm dependency build ./onos-umbrella || {
+            log_error "Failed to build ONOS Helm dependencies."
+            exit 1
+        }
+    
+        log_info "Installing Atomix 1.1.2..."
+        helm upgrade --install atomix atomix/atomix \
+            --version 1.1.2 \
+            -n kube-system || {
+            log_error "Failed to install Atomix."
+            exit 1
+        }
+    
+        log_info "Creating micro-onos namespace..."
+        kubectl create namespace micro-onos 2>/dev/null || true
+    
+        log_info "Installing µONOS..."
+        helm upgrade --install onos-umbrella ./onos-umbrella \
+            -n micro-onos || {
+            log_error "Failed to install µONOS."
+            exit 1
+        }
+    ) || exit 1
 
     log_info "=== µONOS installation completed ==="
     
