@@ -168,14 +168,32 @@ install_docker() {
         log_info "Installing Docker..."
         curl -fsSL https://get.docker.com -o get-docker.sh
         sudo sh get-docker.sh
-        sudo usermod -aG docker "$USER"
-        rm get-docker.sh
+        rm -f get-docker.sh
         log_success "Docker installed."
     fi
 
-    if ! id -nG "${SUDO_USER:-$USER}" | grep -qw docker; then
-        sudo usermod -aG docker "${SUDO_USER:-$USER}"
-        log_warn "Added ${USER} to docker group. Re-login or run 'sg docker' for non-sudo docker usage."
+    local TARGET_USER="${SUDO_USER:-$USER}"
+    if ! id -nG "$TARGET_USER" | grep -qw docker; then
+        sudo usermod -aG docker "$TARGET_USER"
+        log_warn "Added $TARGET_USER to docker group."
+    fi
+
+    # Verify docker socket access without sudo
+    if ! docker ps >/dev/null 2>&1; then
+        log_warn "Docker socket permission check failed in active shell session."
+        
+        # Attempt to seamlessly re-exec script with docker group context
+        if sg docker -c "docker ps >/dev/null 2>&1"; then
+            log_info "Refreshing group context and re-launching bootstrap..."
+            exec sg docker -c "bash \"$0\" \"$@\""
+        else
+            log_error "Docker permissions could not be applied dynamically."
+            log_error "Please log out and log back in (or reboot the machine), then re-run:"
+            log_error "  ./$(basename "$0")"
+            exit 1
+        fi
+    else
+        log_success "Docker socket permissions verified."
     fi
 }
 
