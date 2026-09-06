@@ -407,8 +407,7 @@ install_osm_installer() {
 
     juju deploy zookeeper-k8s --channel latest/stable --base ubuntu@20.04 --trust
     juju deploy ch:kafka-k8s --channel latest/stable --base ubuntu@20.04 --trust
-    juju deploy mongodb-k8s --channel 5/stable --base ubuntu@20.04 --trust || \
-    juju deploy ch:mongodb-k8s --channel 5/stable --base ubuntu@20.04 --trust
+    juju deploy mongodb-k8s --channel 6/stable --base ubuntu@22.04 --trust
     juju deploy charmed-osm-mariadb-k8s mariadb-k8s --channel latest/stable --base ubuntu@20.04 --trust
     juju deploy osm-prometheus prometheus-k8s --channel 14.0/stable --base ubuntu@20.04 --trust
 
