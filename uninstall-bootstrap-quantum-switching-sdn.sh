@@ -18,13 +18,6 @@ log_warn() { echo -e "${YELLOW}[WARNING] $1${NC}"; }
 
 log_info "Starting Quantum-SDN Architecture environment cleanup..."
 
-# 1. Uninstall CoreDNS
-log_info "Uninstalling CoreDNS deployment, configmaps, and pods..."
-kubectl delete deployment coredns -n kube-system --ignore-not-found=true
-kubectl delete configmap coredns -n kube-system --ignore-not-found=true
-kubectl delete pods -n kube-system -l k8s-app=kube-dns --force --grace-period=0 2>/dev/null || true
-log_success "CoreDNS resources uninstalled."
-
 # 2. Uninstall Helm Deployments
 log_info "Uninstalling Helm releases..."
 helm uninstall open5gs -n open5gs 2>/dev/null || true
