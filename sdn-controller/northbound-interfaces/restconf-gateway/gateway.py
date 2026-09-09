@@ -21,18 +21,21 @@ def dispatch_southbound_config(action, payload, sb_target):
     target_device = payload.get("target-node-ip", DEFAULT_TARGET_DEVICE)
     service_id = payload.get("service-id", "qservice")
     ingress_port = payload.get("ingress-port", 1)
+    if_name = f"eth{ingress_port}"
 
-    # Target standard devicesim-1.0.x YANG leaf path
-    gnmi_path = f"/interfaces/interface[name=eth{ingress_port}]/config/name"
+    # Standard devicesim-1.0.x leafref paths
+    key_path = f"/interfaces/interface[name={if_name}]/name"
+    cfg_path = f"/interfaces/interface[name={if_name}]/config/name"
 
     if action == "DELETE":
-        cmd = get_gnmic_base_cmd() + ["--target", target_device, "set", "--delete", gnmi_path]
+        cmd = get_gnmic_base_cmd() + ["--target", target_device, "set", "--delete", f"/interfaces/interface[name={if_name}]"]
     else:
-        # Send simple string value for the interface config leaf
+        # Set key and config simultaneously to satisfy leafref constraints
         cmd = get_gnmic_base_cmd() + [
-            "--target", target_device, 
-            "set", 
-            "--update", f"{gnmi_path}:::string:::{service_id}"
+            "--target", target_device,
+            "set",
+            "--update", f"{key_path}:::string:::{if_name}",
+            "--update", f"{cfg_path}:::string:::{service_id}"
         ]
 
     result = subprocess.run(cmd, capture_output=True, text=True)
