@@ -28,8 +28,8 @@ topo_endpoint = sys.argv[2]
 yaml_files = glob.glob(os.path.join(devices_dir, "*.yaml")) + glob.glob(os.path.join(devices_dir, "*.yml"))
 
 if not yaml_files:
-print(f"[!] No device definition files found in {devices_dir}")
-sys.exit(0)
+    print(f"[!] No device definition files found in {devices_dir}")
+    sys.exit(0)
 
 for filepath in yaml_files:
 dev_id = None
