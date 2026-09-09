@@ -29,7 +29,7 @@ quantum-sdn-architecture/
 │   └── open5gs/                # Helm charts/Kustomize files for Open5GS pods
 └── bootstrap-quantum-switching-sdn.sh
 └── uninstall-bootstrap-quantum-switching-sdn.sh
-
+```
 
 # Quantum switching SDN Architecture
 
@@ -85,6 +85,7 @@ python3 ./hardware-agents/switch-drivers/netconf-switching-client.py <NODE_IP> c
 
 # Force the physical switch to disconnect
 python3 ./hardware-agents/switch-drivers/netconf-switching-client.py <NODE_IP> disconnect
+```
 
 ## Northbound Interface Tests
 These end-to-end tests verify service provisioning across the SDN controller northbound interfaces:
@@ -98,3 +99,4 @@ To remove installed binaries, purge the Python virtual environment and compiled 
 ```bash
 sudo chmod +x uninstall-bootstrap-quantum-switching-sdn.sh
 ./uninstall-bootstrap-quantum-switching-sdn.sh
+```
