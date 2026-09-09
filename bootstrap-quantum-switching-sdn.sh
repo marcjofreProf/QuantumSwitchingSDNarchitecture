@@ -129,7 +129,8 @@ create_repo_structure() {
              "$base_dir"/hardware-agents/switch-drivers \
              "$base_dir"/tests/latency-benchmarks \
              "$base_dir"/tests/e2e-path-provisioning \
-             "$base_dir"/proto
+             "$base_dir"/proto \
+             "$base_dir"/inventory/devices 
 
     log_success "Repository structure verified."
 }
@@ -754,6 +755,15 @@ deploy_cloud_native_uonos() {
     log_success "µONOS deployment completed successfully!"
 }
 
+register_inventory_devices() {
+    log_info "Phase 8.5: Registering current device inventory with µONOS..."
+    if [ -f "./inventory/register-devices.sh" ]; then
+        ./inventory/register-devices.sh || log_warn "Device registration completed with warnings."
+    else
+        log_warn "./inventory/register-devices.sh script not found. Skipping auto-registration."
+    fi
+}
+
 deploy_open5gs() {
     log_info "Phase 9: Evaluating Open5GS deployment state..."
 
@@ -805,6 +815,7 @@ install_osm_installer
 setup_sdn_python_client
 compile_uonos_model_plugins
 deploy_cloud_native_uonos
+register_inventory_devices
 deploy_open5gs
 
 echo -e "${GREEN}====================================================${NC}"
