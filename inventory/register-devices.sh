@@ -45,7 +45,7 @@ for filepath in yaml_files:
     dev_id = None
     address = None
     dev_type = "devicesim"
-    version = "1.0.x"
+    version = "1.0.0"
 
     with open(filepath, 'r') as f:
         for line in f:
@@ -65,26 +65,21 @@ for filepath in yaml_files:
 
     print(f"[*] Provisioning Topology Entity: '{dev_id}' -> Address: '{address}'")
 
-    # Cleanup existing entity to ensure clean state
-    subprocess.run(
-        ["kubectl", "exec", "-n", namespace, cli_pod, "--", "onos", "topo", "delete", "entity", dev_id],
-        capture_output=True, text=True
-    )
-
-    # Create entity with Configurable aspect
-    aspect_json = f'{{"address": "{address}", "type": "{dev_type}", "version": "{version}"}}'
-    cmd_create = [
+    # Set attributes on the entity using onos topo set entity
+    cmd_set = [
         "kubectl", "exec", "-n", namespace, cli_pod, "--",
-        "onos", "topo", "create", "entity", dev_id,
-        "--aspect", f"onos.topo.Configurable={aspect_json}"
+        "onos", "topo", "set", "entity", dev_id,
+        "-a", f"address={address}",
+        "-a", f"target_type={dev_type}",
+        "-a", f"version={version}"
     ]
 
-    result = subprocess.run(cmd_create, capture_output=True, text=True)
+    result = subprocess.run(cmd_set, capture_output=True, text=True)
 
     if result.returncode == 0:
-        print(f"    [SUCCESS] Registered '{dev_id}' in onos-topo successfully.")
+        print(f"    [SUCCESS] Updated topology attributes for '{dev_id}' in onos-topo.")
     else:
-        print(f"    [WARNING] Registration failed for '{dev_id}'. Output: {result.stderr.strip()}")
+        print(f"    [WARNING] Attribute update failed for '{dev_id}'. Output: {result.stderr.strip()}")
 
 print("==================================================================")
 EOF
