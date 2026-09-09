@@ -702,35 +702,48 @@ deploy_cloud_native_uonos() {
         fi
 
         kubectl apply -n micro-onos -f - <<EOF
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: restconf-gateway
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: restconf-gateway
-  template:
-    metadata:
-      labels:
-        app: restconf-gateway
-    spec:
-      containers:
-      - name: restconf-gateway
-        image: quantum-restconf-gateway:1.0.0
-        imagePullPolicy: IfNotPresent
-        ports:
-        - containerPort: 8181
-        volumeMounts:
-        - name: onos-config-certs
-          mountPath: /etc/onos/certs
-          readOnly: true
-      volumes:
-      - name: onos-config-certs
-        secret:
-          secretName: onos-config-secret
-EOF
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: restconf-gateway
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app: restconf-gateway
+          template:
+            metadata:
+              labels:
+                app: restconf-gateway
+            spec:
+              containers:
+              - name: restconf-gateway
+                image: quantum-restconf-gateway:1.0.0
+                imagePullPolicy: IfNotPresent
+                ports:
+                - containerPort: 8181
+                volumeMounts:
+                - name: onos-config-certs
+                  mountPath: /etc/onos/certs
+                  readOnly: true
+              volumes:
+              - name: onos-config-certs
+                secret:
+                  secretName: onos-config-secret
+        ---
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: restconf-gateway
+        spec:
+          type: LoadBalancer
+          selector:
+            app: restconf-gateway
+          ports:
+          - name: restconf
+            port: 8181
+            targetPort: 8181
+        EOF
 
         log_success "RESTCONF Gateway deployed on NodePort 30181."
     fi
