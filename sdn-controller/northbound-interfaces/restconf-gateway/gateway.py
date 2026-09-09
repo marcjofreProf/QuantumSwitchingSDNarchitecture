@@ -9,6 +9,8 @@ GNMI_TARGET = os.getenv("GNMI_TARGET", "onos-config.micro-onos.svc.cluster.local
 DEFAULT_TARGET_DEVICE = os.getenv("GNMI_TARGET_DEVICE", "devicesim-1")
 TLS_CERT = os.getenv("TLS_CERT", "/etc/onos/certs/tls.crt")
 TLS_KEY = os.getenv("TLS_KEY", "/etc/onos/certs/tls.key")
+# In-memory store for cross-connect services
+CROSS_CONNECT_STORE = {}
 
 def get_gnmic_base_cmd():
     cmd = ["gnmic", "-a", GNMI_TARGET, "--skip-verify"]
@@ -63,6 +65,25 @@ def get_clock_config():
         data = result.stdout
 
     return jsonify({"clock-config": data}), 200
+
+@app.route('/restconf/data/example-quantum-switching-terminal-service:quantum-services/cross-connect-service', methods=['POST', 'PUT'])
+def create_cross_connect():
+    payload = request.json or {}
+    CROSS_CONNECT_STORE["active"] = payload
+    return jsonify({"status": "created", "data": payload}), 201
+
+@app.route('/restconf/data/example-quantum-switching-terminal-service:quantum-services/cross-connect-service', methods=['GET'])
+def get_cross_connect():
+    if "active" not in CROSS_CONNECT_STORE:
+        return jsonify({"error": "Not Found"}), 404
+    return jsonify(CROSS_CONNECT_STORE["active"]), 200
+
+@app.route('/restconf/data/example-quantum-switching-terminal-service:quantum-services/cross-connect-service', methods=['DELETE'])
+def delete_cross_connect():
+    if "active" in CROSS_CONNECT_STORE:
+        del CROSS_CONNECT_STORE["active"]
+        return jsonify({"status": "deleted"}), 200
+    return jsonify({"error": "Not Found"}), 404
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8181)
