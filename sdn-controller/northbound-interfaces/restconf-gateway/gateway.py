@@ -20,14 +20,15 @@ def dispatch_southbound_config(action, payload, sb_target):
     """Synchronously executes southbound config and returns execution status"""
     target_device = payload.get("target-node-ip", DEFAULT_TARGET_DEVICE)
     service_id = payload.get("service-id", "qservice")
-    gnmi_path = f"/quantum-switching/cross-connect[id={service_id}]"
+    # Map to valid devicesim-1.0.x YANG interface path
+    ingress_port = payload.get("ingress-port", 1)
+    gnmi_path = f"/interfaces/interface[name=eth{ingress_port}]/config/name"
     
     if action == "DELETE":
         cmd = get_gnmic_base_cmd() + ["--target", target_device, "set", "--delete", gnmi_path]
     else:
-        json_val = json.dumps(payload)
-        cmd = get_gnmic_base_cmd() + ["--target", target_device, "set", "--update", f"{gnmi_path}:::json:::{json_val}"]
-
+        cmd = get_gnmic_base_cmd() + ["--target", target_device, "set", "--update", f"{gnmi_path}:::string:::{service_id}"]
+    
     # Synchronously capture returncode and stderr
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
