@@ -23,19 +23,19 @@ def dispatch_southbound_config(action, payload, sb_target):
     ingress_port = payload.get("ingress-port", 1)
     if_name = f"eth{ingress_port}"
 
-    # Standard devicesim-1.0.x leafref paths
-    key_path = f"/interfaces/interface[name={if_name}]/name"
-    cfg_path = f"/interfaces/interface[name={if_name}]/config/name"
-
     if action == "DELETE":
-        cmd = get_gnmic_base_cmd() + ["--target", target_device, "set", "--delete", f"/interfaces/interface[name={if_name}]"]
+        cmd = get_gnmic_base_cmd() + [
+            "--target", target_device, 
+            "set", 
+            "--delete", f"/interfaces/interface[name={if_name}]"
+        ]
     else:
-        # Set key and config simultaneously to satisfy leafref constraints
         cmd = get_gnmic_base_cmd() + [
             "--target", target_device,
             "set",
-            "--update", f"{key_path}:::string:::{if_name}",
-            "--update", f"{cfg_path}:::string:::{service_id}"
+            "--update", f"/interfaces/interface[name={if_name}]/name:::string:::{if_name}",
+            "--update", f"/interfaces/interface[name={if_name}]/config/name:::string:::{if_name}",
+            "--update", f"/interfaces/interface[name={if_name}]/config/enabled:::bool:::true"
         ]
 
     result = subprocess.run(cmd, capture_output=True, text=True)
