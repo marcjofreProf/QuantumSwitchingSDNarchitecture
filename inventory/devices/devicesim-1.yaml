@@ -1,0 +1,8 @@
+id: "devicesim-1"
+display_name: "In-Cluster Quantum Simulator"
+address: "devicesim-1.micro-onos.svc.cluster.local:10161"
+kind: "devicesim"
+role: "simulator"
+protocols:
+  - name: "gnmi"
+    port: 10161
