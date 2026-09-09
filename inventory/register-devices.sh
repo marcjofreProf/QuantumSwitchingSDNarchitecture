@@ -16,7 +16,7 @@ echo "=================================================================="
 echo "  Registering Quantum Devices in µONOS Topology (onos-topo)"
 echo "=================================================================="
 
-python3 - "$DEVICES_DIR" "$ONOS_TOPO_ENDPOINT" << 'PYEOF'
+python3 - "$DEVICES_DIR" "$ONOS_TOPO_ENDPOINT" << 'EOF'
 import os
 import sys
 import glob
@@ -65,5 +65,4 @@ else:
     print(f"    [WARNING] Registration failed for '{dev_id}'. Output: {result.stderr.strip()}")
 
 print("==================================================================")
-PYEOF
 EOF
