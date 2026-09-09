@@ -14,6 +14,9 @@ quantum-sdn-architecture/
 │   ├── gnoi-targets/           # Lightweight gNOI server stubs for physical switches
 │   ├── netconf-servers/        # NETCONF server stubs for standardized switch management
 │   └── switch-drivers/         # Vendor API scripts
+├── inventory/                  # Quantum device target declarations & auto-registration
+│   ├── devices/                # YAML definition files for simulators and switches
+│   └── register-devices.sh     # Registration runner targeting onos-topo
 ├── orchestration/              # Open Source MANO (OSM) integration
 │   ├── osm-packages/           # Network Service (NS) and CNF descriptors
 │   └── yang-models/            # Standardized YANG models for orchestration
@@ -40,6 +43,42 @@ Because packet inspection cannot be performed on a single photon without destroy
 Designed for deployment on the **6G-OpenLab** infrastructure.
 
 ---
+
+## Device Inventory & Topology Registration
+The architecture decouples device management from the controller deployment pipeline. Network nodes (both virtual simulators and physical switches) are declared declaratively as YAML manifests in the inventory/devices/ directory.
+
+Concept & Architecture
+Declarative Definitions: Every node (devicesim-1, quantum-node-1, etc.) is defined in inventory/devices/<node-id>.yaml.
+
+Automated Provisioning: The ./inventory/register-devices.sh script parses the YAML manifests and injects target endpoints directly into the µONOS topology service (onos-topo) via gnmic.
+
+Adding a New Quantum Device
+To onboard a new physical switch or virtual target into the control plane:
+
+1. Create a YAML definition file inside inventory/devices/ (e.g., inventory/devices/quantum-node-2.yaml):
+```text
+id: "quantum-node-2"
+display_name: "Physical Quantum Switch 2"
+address: "10.0.0.253:9339"
+kind: "beaglebone-qswitch"
+role: "quantum-switch"
+protocols:
+  - name: "gnoi"
+    port: 9339
+  - name: "netconf"
+    port: 830
+```
+
+2. Execute the registration runner:
+```bash
+./inventory/register-devices.sh
+```
+
+3. Verify Registration:
+Query onos-topo directly using gnmic to ensure the device is active in the controller topology:
+```bash
+gnmic -a localhost:30150 --skip-verify get --path /interfaces/interface
+```
 
 ## Quickstart: Environment Bootstrap
 
