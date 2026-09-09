@@ -5,7 +5,7 @@ set -eo pipefail
 
 DEVICES_DIR="$(dirname "$0")/devices"
 CONTROLLER_HOST="${CONTROLLER_HOST:-localhost}"
-ONOS_TOPO_ENDPOINT="${CONTROLLER_HOST}:30150"
+ONOS_TOPO_ENDPOINT="${CONTROLLER_HOST:-10.0.0.2}:5150"
 
 if [ ! -d "$DEVICES_DIR" ]; then
     echo "[ERROR] Directory $DEVICES_DIR not found."
