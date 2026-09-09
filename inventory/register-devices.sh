@@ -5,7 +5,6 @@ set -eo pipefail
 
 DEVICES_DIR="$(dirname "$0")/devices"
 NAMESPACE="${NAMESPACE:-micro-onos}"
-PORT_OVERRIDE="${1:-}" # Optional first argument to override target port (e.g. 830, 50051, or 9339)
 
 if [ ! -d "$DEVICES_DIR" ]; then
     echo "[ERROR] Directory $DEVICES_DIR not found."
@@ -26,7 +25,7 @@ if [ -z "$CLI_POD" ]; then
     exit 1
 fi
 
-python3 - "$DEVICES_DIR" "$NAMESPACE" "$CLI_POD" "$PORT_OVERRIDE" << 'EOF'
+python3 - "$DEVICES_DIR" "$NAMESPACE" "$CLI_POD" << 'EOF'
 import os
 import sys
 import glob
@@ -35,7 +34,12 @@ import subprocess
 devices_dir = sys.argv[1]
 namespace = sys.argv[2]
 cli_pod = sys.argv[3]
-port_override = sys.argv[4] if len(sys.argv) > 4 else ""
+
+try:
+    import yaml
+    HAS_YAML = True
+except ImportError:
+    HAS_YAML = False
 
 yaml_files = glob.glob(os.path.join(devices_dir, "*.yaml")) + glob.glob(os.path.join(devices_dir, "*.yml"))
 
@@ -46,40 +50,82 @@ if not yaml_files:
 for filepath in yaml_files:
     dev_id = None
     address = None
-    dev_type = "devicesim"
+    kind = "beaglebone-qswitch"
+    role = "quantum-switch"
     version = "1.0.0"
+    gnoi_port = None
+    netconf_port = None
 
-    with open(filepath, 'r') as f:
-        for line in f:
-            line = line.strip()
-            if line.startswith("id:"):
-                dev_id = line.split(":", 1)[1].strip().strip('"').strip("'")
-            elif line.startswith("address:"):
-                address = line.split(":", 1)[1].strip().strip('"').strip("'")
-            elif line.startswith("type:"):
-                dev_type = line.split(":", 1)[1].strip().strip('"').strip("'")
-            elif line.startswith("version:"):
-                version = line.split(":", 1)[1].strip().strip('"').strip("'")
+    if HAS_YAML:
+        with open(filepath, 'r') as f:
+            data = yaml.safe_load(f) or {}
+            dev_id = data.get("id")
+            address = data.get("address")
+            kind = data.get("kind", kind)
+            role = data.get("role", role)
+            version = str(data.get("version", version))
+            
+            protocols = data.get("protocols", [])
+            for proto in protocols:
+                if isinstance(proto, dict):
+                    name = str(proto.get("name", "")).lower()
+                    port = str(proto.get("port", ""))
+                    if name == "gnoi":
+                        gnoi_port = port
+                    elif name == "netconf":
+                        netconf_port = port
+    else:
+        # Fallback basic parser if pyyaml is missing
+        with open(filepath, 'r') as f:
+            lines = f.readlines()
+            current_proto = None
+            for line in lines:
+                line = line.strip()
+                if line.startswith("id:"):
+                    dev_id = line.split(":", 1)[1].strip().strip('"').strip("'")
+                elif line.startswith("address:"):
+                    address = line.split(":", 1)[1].strip().strip('"').strip("'")
+                elif line.startswith("kind:"):
+                    kind = line.split(":", 1)[1].strip().strip('"').strip("'")
+                elif line.startswith("role:"):
+                    role = line.split(":", 1)[1].strip().strip('"').strip("'")
+                elif line.startswith("- name:"):
+                    current_proto = line.split(":", 1)[1].strip().strip('"').strip("'").lower()
+                elif line.startswith("port:") and current_proto:
+                    port_val = line.split(":", 1)[1].strip()
+                    if current_proto == "gnoi":
+                        gnoi_port = port_val
+                    elif current_proto == "netconf":
+                        netconf_port = port_val
 
     if not dev_id or not address:
         print(f"[EXCLUDED] Skipping {filepath}: Missing 'id' or 'address'.")
         continue
 
-    # Apply port override if specified via CLI argument
-    if port_override:
-        ip_host = address.split(":")[0]
-        address = f"{ip_host}:{port_override}"
+    host_ip = address.split(":")[0] if ":" in address else address
 
-    print(f"[*] Provisioning Topology Entity: '{dev_id}' -> Address: '{address}'")
+    # Construct attribute list
+    attrs = [
+        f"address={address}",
+        f"target_type={kind}",
+        f"role={role}",
+        f"version={version}"
+    ]
 
-    # Set attributes on the entity using onos topo set entity
+    if gnoi_port:
+        attrs.append(f"gnoi_address={host_ip}:{gnoi_port}")
+    if netconf_port:
+        attrs.append(f"netconf_address={host_ip}:{netconf_port}")
+
+    print(f"[*] Provisioning Topology Entity: '{dev_id}' -> Primary: '{address}' | NETCONF: '{host_ip}:{netconf_port}' | gNOI: '{host_ip}:{gnoi_port}'")
+
     cmd_set = [
         "kubectl", "exec", "-n", namespace, cli_pod, "--",
-        "onos", "topo", "set", "entity", dev_id,
-        "-a", f"address={address}",
-        "-a", f"target_type={dev_type}",
-        "-a", f"version={version}"
+        "onos", "topo", "set", "entity", dev_id
     ]
+
+    for attr in attrs:
+        cmd_set.extend(["-a", attr])
 
     result = subprocess.run(cmd_set, capture_output=True, text=True)
 
