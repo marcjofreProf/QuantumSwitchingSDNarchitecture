@@ -17,7 +17,6 @@ def get_gnmic_base_cmd():
     return cmd
 
 def dispatch_southbound_config(action, payload, sb_target):
-    """Synchronously executes southbound config and returns execution status"""
     target_device = payload.get("target-node-ip", DEFAULT_TARGET_DEVICE)
     service_id = payload.get("service-id", "qservice")
     ingress_port = payload.get("ingress-port", 1)
@@ -25,23 +24,27 @@ def dispatch_southbound_config(action, payload, sb_target):
 
     if action == "DELETE":
         cmd = get_gnmic_base_cmd() + [
-            "--target", target_device, 
-            "set", 
+            "--target", target_device,
+            "set",
             "--delete", f"/interfaces/interface[name={if_name}]"
         ]
     else:
+        # Create list key entry first, followed by child config nodes
         cmd = get_gnmic_base_cmd() + [
             "--target", target_device,
             "set",
-            "--update", f"/interfaces/interface[name={if_name}]/name:::string:::{if_name}",
-            "--update", f"/interfaces/interface[name={if_name}]/config/name:::string:::{if_name}",
+            "--update", f"/interfaces/interface[name={if_name}]:::json:::{{\"name\":\"{if_name}\"}}",
+            "--update", f"/interfaces/interface[name={if_name}]/config/name:::string:::{service_id}",
             "--update", f"/interfaces/interface[name={if_name}]/config/enabled:::bool:::true"
         ]
 
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        return False, result.stderr
-    return True, result.stdout
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+        if result.returncode != 0:
+            return False, result.stderr
+        return True, result.stdout
+    except subprocess.TimeoutExpired:
+        return False, "gnmic request to onos-config timed out after 5s"
 
 @app.route('/restconf/data/example-quantum-switching-terminal-service:quantum-services/cross-connect-service', methods=['POST', 'PUT'])
 def create_cross_connect():
