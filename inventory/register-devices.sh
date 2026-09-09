@@ -32,8 +32,8 @@ if not yaml_files:
     sys.exit(0)
 
 for filepath in yaml_files:
-dev_id = None
-address = None
+    dev_id = None
+    address = None
 
 with open(filepath, 'r') as f:
     for line in f:
