@@ -5,6 +5,7 @@ set -eo pipefail
 
 DEVICES_DIR="$(dirname "$0")/devices"
 NAMESPACE="${NAMESPACE:-micro-onos}"
+PORT_OVERRIDE="${1:-}" # Optional first argument to override target port (e.g. 830, 50051, or 9339)
 
 if [ ! -d "$DEVICES_DIR" ]; then
     echo "[ERROR] Directory $DEVICES_DIR not found."
@@ -25,7 +26,7 @@ if [ -z "$CLI_POD" ]; then
     exit 1
 fi
 
-python3 - "$DEVICES_DIR" "$NAMESPACE" "$CLI_POD" << 'EOF'
+python3 - "$DEVICES_DIR" "$NAMESPACE" "$CLI_POD" "$PORT_OVERRIDE" << 'EOF'
 import os
 import sys
 import glob
@@ -34,6 +35,7 @@ import subprocess
 devices_dir = sys.argv[1]
 namespace = sys.argv[2]
 cli_pod = sys.argv[3]
+port_override = sys.argv[4] if len(sys.argv) > 4 else ""
 
 yaml_files = glob.glob(os.path.join(devices_dir, "*.yaml")) + glob.glob(os.path.join(devices_dir, "*.yml"))
 
@@ -62,6 +64,11 @@ for filepath in yaml_files:
     if not dev_id or not address:
         print(f"[EXCLUDED] Skipping {filepath}: Missing 'id' or 'address'.")
         continue
+
+    # Apply port override if specified via CLI argument
+    if port_override:
+        ip_host = address.split(":")[0]
+        address = f"{ip_host}:{port_override}"
 
     print(f"[*] Provisioning Topology Entity: '{dev_id}' -> Address: '{address}'")
 
