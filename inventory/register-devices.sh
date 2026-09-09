@@ -49,16 +49,28 @@ for filepath in yaml_files:
 
     print(f"[*] Registering Target: '{dev_id}' -> Address: '{address}'")
 
-    cmd = [
+    # Try TLS (with self-signed cert verification skip)
+    cmd_tls = [
         "gnmic", "-a", topo_endpoint,
-        "--tls",
         "--skip-verify",
         "--target", dev_id,
         "set",
         "--update", f"/interfaces/interface[name=eth0]/config/name:::string:::{address}"
     ]
 
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd_tls, capture_output=True, text=True)
+
+    # Fallback to plaintext (--insecure) if TLS handshake fails
+    if result.returncode != 0:
+        cmd_insecure = [
+            "gnmic", "-a", topo_endpoint,
+            "--insecure",
+            "--target", dev_id,
+            "set",
+            "--update", f"/interfaces/interface[name=eth0]/config/name:::string:::{address}"
+        ]
+        result = subprocess.run(cmd_insecure, capture_output=True, text=True)
+
     if result.returncode == 0:
         print(f"    [SUCCESS] Registered '{dev_id}' successfully.")
     else:
