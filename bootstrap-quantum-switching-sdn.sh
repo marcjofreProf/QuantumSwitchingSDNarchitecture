@@ -748,9 +748,23 @@ EOF
 
         log_success "RESTCONF Gateway deployed on NodePort 30181."
     fi
+    
+    # Expose onos-config via LoadBalancer preserving ports 5150 (gNMI) and 5151 (gNOI)
+    kubectl patch svc onos-config -n micro-onos -p '{"spec": {"type": "LoadBalancer", "ports": [{"name": "gnmi", "port": 5150, "targetPort": 5150}, {"name": "gnoi", "port": 5151, "targetPort": 5151}]}}' 2>/dev/null || true
 
-    # Permanently expose port 5150 for gNMI traffic via LoadBalancer
-    kubectl patch svc onos-config -n micro-onos -p '{"spec": {"type": "LoadBalancer", "ports": [{"name": "grpc", "port": 5150, "targetPort": 5150}]}}' 2>/dev/null || true
+    # Extract mTLS certificates for local gNMI tools
+    log_info "Extracting µONOS client certificates for gnmic..."
+    mkdir -p "$HOME/.onos/certs"
+    kubectl get secret -n micro-onos onos-config-secret -o jsonpath='{.data.client\.crt}' | base64 -d > "$HOME/.onos/certs/client.crt"
+    kubectl get secret -n micro-onos onos-config-secret -o jsonpath='{.data.client\.key}' | base64 -d > "$HOME/.onos/certs/client.key"
+
+    # Write global gnmic configuration
+    cat << EOF > "$HOME/.gnmic.yaml"
+skip-verify: true
+tls-cert: $HOME/.onos/certs/client.crt
+tls-key: $HOME/.onos/certs/client.key
+EOF
+    log_success "gnmic mTLS configuration generated successfully."
     
     log_success "µONOS deployment completed successfully!"
 }
