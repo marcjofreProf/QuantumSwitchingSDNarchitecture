@@ -754,18 +754,22 @@ EOF
 
     # Extract mTLS certificates for local gNMI tools
     log_info "Extracting µONOS client certificates for gnmic..."
-    mkdir -p "$HOME/.onos/certs"
-    kubectl get secret -n micro-onos onos-config-secret -o go-template='{{index .data "tls.crt"}}' | base64 -d > "$HOME/.onos/certs/tls.crt"
-    kubectl get secret -n micro-onos onos-config-secret -o go-template='{{index .data "tls.key"}}' | base64 -d > "$HOME/.onos/certs/tls.key"
-    kubectl get secret -n micro-onos onos-config-secret -o go-template='{{index .data "tls.cacrt"}}' | base64 -d > "$HOME/.onos/certs/tls.cacrt"
-
-    # Write global gnmic configuration
-    cat << EOF > "$HOME/.gnmic.yaml"
+    # Extract mTLS certificates for local gNMI tools
+    log_info "Extracting µONOS client certificates for gnmic..."
+    sudo mkdir -p /etc/onos/certs
+    kubectl get secret -n micro-onos onos-config-secret -o go-template='{{index .data "tls.crt"}}' | base64 -d | sudo tee /etc/onos/certs/tls.crt > /dev/null
+    kubectl get secret -n micro-onos onos-config-secret -o go-template='{{index .data "tls.key"}}' | base64 -d | sudo tee /etc/onos/certs/tls.key > /dev/null
+    kubectl get secret -n micro-onos onos-config-secret -o go-template='{{index .data "tls.cacrt"}}' | base64 -d | sudo tee /etc/onos/certs/tls.cacrt > /dev/null
+    sudo chmod 644 /etc/onos/certs/*
+    
+    # Write user-level gnmic configuration
+    cat << 'EOF' | sudo tee /etc/onos/certs/.gnmic.yaml > /dev/null
 skip-verify: true
-tls-cert: $HOME/.onos/certs/tls.crt
-tls-key: $HOME/.onos/certs/tls.key
-tls-ca: $HOME/.onos/certs/tls.cacrt
+tls-cert: /etc/onos/certs/tls.crt
+tls-key: /etc/onos/certs/tls.key
+tls-ca: /etc/onos/certs/tls.cacrt
 EOF
+    sudo chmod 644 /etc/onos/certs/.gnmic.yaml
 
     log_success "gnmic mTLS configuration generated successfully."
     
