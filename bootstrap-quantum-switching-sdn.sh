@@ -723,7 +723,6 @@ spec:
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8181
-          hostPort: 8181
         volumeMounts:
         - name: onos-config-certs
           mountPath: /etc/onos/certs
