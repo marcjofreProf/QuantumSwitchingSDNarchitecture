@@ -7,7 +7,7 @@ protocols:
   - name: "gnmi"
     port: 50051
   - name: "gnoi"
-    port: 50051
+    port: 50052
   - name: "netconf"
     port: 8300
 aspects:
