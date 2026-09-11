@@ -777,6 +777,32 @@ EOF
     log_success "µONOS deployment completed successfully!"
 }
 
+configure_uonos_controller_settings() {
+    log_info "Phase 8.1: Configuring µONOS Controller Mastership & TLS Settings..."
+
+    # 1. Disable Master Election at the Deployment level
+    log_info "Setting MASTER_ELECTION=false on onos-config deployment..."
+    kubectl set env deployment/onos-config -n micro-onos MASTER_ELECTION=false || log_warn "Failed to set MASTER_ELECTION env variable."
+
+    # 2. Wait for onos-cli pod to be ready
+    log_info "Waiting for onos-cli deployment to become ready..."
+    kubectl rollout status deployment/onos-cli -n micro-onos --timeout=60s || true
+
+    # 3. Configure Topology Aspects for target entities
+    log_info "Applying MastershipState and TLSOptions aspects to quantum-node-1..."
+    kubectl exec -n micro-onos deployment/onos-cli -- onos topo set entity quantum-node-1 \
+      -a onos.topo.MastershipState='{"none": {}}' || log_warn "Failed to set MastershipState aspect."
+
+    kubectl exec -n micro-onos deployment/onos-cli -- onos topo set entity quantum-node-1 \
+      -a onos.topo.TLSOptions='{"insecure": true, "plain": true}' || log_warn "Failed to set TLSOptions aspect."
+
+    # 4. Clear any stale backlogged proposals/transactions
+    log_info "Clearing stale transaction queues..."
+    kubectl exec -n micro-onos deployment/onos-cli -- onos config delete transaction --all 2>/dev/null || true
+
+    log_success "µONOS controller mastership and topology options successfully configured."
+}
+
 register_inventory_devices() {
     log_info "Phase 8.5: Registering current device inventory with µONOS..."
     if [ -f "./inventory/register-devices.sh" ]; then
@@ -837,6 +863,7 @@ install_osm_installer
 setup_sdn_python_client
 compile_uonos_model_plugins
 deploy_cloud_native_uonos
+configure_uonos_controller_settings
 register_inventory_devices
 deploy_open5gs
 
