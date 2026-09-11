@@ -96,7 +96,9 @@ for filepath in yaml_files:
                     current_proto = line.split(":", 1)[1].strip().strip('"').strip("'").lower()
                 elif line.startswith("port:") and current_proto:
                     port_val = line.split(":", 1)[1].strip()
-                    if current_proto == "gnoi":
+                    if current_proto == "gnmi":
+                        gnmi_port = port_val
+                    elif current_proto == "gnoi":
                         gnoi_port = port_val
                     elif current_proto == "netconf":
                         netconf_port = port_val
