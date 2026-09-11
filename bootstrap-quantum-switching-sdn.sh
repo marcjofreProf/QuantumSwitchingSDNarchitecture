@@ -770,7 +770,7 @@ tls-cert: /etc/onos/certs/tls.crt
 tls-key: /etc/onos/certs/tls.key
 EOF
     
-    sudo chmod 644 ./onos/certs/.gnmic.yaml
+    sudo chmod 644 ./.gnmic.yaml
 
     log_success "gnmic mTLS configuration generated successfully."
     
