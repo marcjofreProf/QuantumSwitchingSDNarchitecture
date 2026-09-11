@@ -1,4 +1,3 @@
-cat << 'EOF' > inventory/register-devices.sh
 #!/usr/bin/env bash
 # inventory/register-devices.sh
 
