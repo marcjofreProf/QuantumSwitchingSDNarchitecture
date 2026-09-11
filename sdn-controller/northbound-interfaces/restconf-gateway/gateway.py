@@ -17,9 +17,16 @@ def get_gnmic_base_cmd():
     return cmd
 
 def dispatch_southbound_config(action, payload, sb_target):
-    target_device = payload.get("target-node-ip", DEFAULT_TARGET_DEVICE)
-    service_id = payload.get("service-id", "qservice")
-    ingress_port = payload.get("ingress-port", 1)
+    # Handle RESTCONF list wrapper if present
+    if isinstance(payload, dict) and "cross-connect-service" in payload:
+        items = payload["cross-connect-service"]
+        data = items[0] if isinstance(items, list) and items else {}
+    else:
+        data = payload if isinstance(payload, dict) else {}
+
+    target_device = data.get("target-node") or data.get("target-node-ip") or DEFAULT_TARGET_DEVICE
+    service_id = data.get("service-id", "qservice")
+    ingress_port = data.get("ingress-port", 1)
     if_name = f"eth{ingress_port}"
 
     if action == "DELETE":
@@ -29,12 +36,12 @@ def dispatch_southbound_config(action, payload, sb_target):
             "--delete", f"/interfaces/interface[name={if_name}]"
         ]
     else:
-        # Create list key entry first, followed by child config nodes
+        # Use explicit OpenConfig paths instead of direct interface JSON injection
         cmd = get_gnmic_base_cmd() + [
             "--target", target_device,
             "set",
-            "--update", f"/interfaces/interface[name={if_name}]:::json:::{{\"name\":\"{if_name}\"}}",
-            "--update", f"/interfaces/interface[name={if_name}]/config/name:::string:::{service_id}",
+            "--update", f"/interfaces/interface[name={if_name}]/config/name:::string:::{if_name}",
+            "--update", f"/interfaces/interface[name={if_name}]/config/description:::string:::{service_id}",
             "--update", f"/interfaces/interface[name={if_name}]/config/enabled:::bool:::true"
         ]
 
