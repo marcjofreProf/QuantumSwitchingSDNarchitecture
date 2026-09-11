@@ -1,3 +1,4 @@
+cat << 'EOF' > inventory/register-devices.sh
 #!/usr/bin/env bash
 # inventory/register-devices.sh
 
@@ -15,7 +16,6 @@ echo "=================================================================="
 echo "  Registering Quantum Devices in µONOS Topology (onos-topo)"
 echo "=================================================================="
 
-# Locate the onos-cli pod
 CLI_POD=$(kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/name=onos-cli -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || \
           kubectl get pods -n "$NAMESPACE" -l app=onos-cli -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || \
           kubectl get pods -n "$NAMESPACE" 2>/dev/null | grep onos-cli | awk '{print $1}' | head -n 1)
@@ -25,7 +25,7 @@ if [ -z "$CLI_POD" ]; then
     exit 1
 fi
 
-python3 - "$DEVICES_DIR" "$NAMESPACE" "$CLI_POD" << 'EOF'
+python3 - "$DEVICES_DIR" "$NAMESPACE" "$CLI_POD" << 'PYEOF'
 import os
 import sys
 import glob
@@ -50,9 +50,9 @@ if not yaml_files:
 for filepath in yaml_files:
     dev_id = None
     address = None
-    kind = "beaglebone-qswitch"
+    kind = "devicesim"
     role = "quantum-switch"
-    version = "1.0.0"
+    version = "1.0.x"
     gnmi_port = None
     gnoi_port = None
     netconf_port = None
@@ -77,31 +77,6 @@ for filepath in yaml_files:
                         gnoi_port = port
                     elif name == "netconf":
                         netconf_port = port
-    else:
-        # Fallback basic parser if pyyaml is missing
-        with open(filepath, 'r') as f:
-            lines = f.readlines()
-            current_proto = None
-            for line in lines:
-                line = line.strip()
-                if line.startswith("id:"):
-                    dev_id = line.split(":", 1)[1].strip().strip('"').strip("'")
-                elif line.startswith("address:"):
-                    address = line.split(":", 1)[1].strip().strip('"').strip("'")
-                elif line.startswith("kind:"):
-                    kind = line.split(":", 1)[1].strip().strip('"').strip("'")
-                elif line.startswith("role:"):
-                    role = line.split(":", 1)[1].strip().strip('"').strip("'")
-                elif line.startswith("- name:"):
-                    current_proto = line.split(":", 1)[1].strip().strip('"').strip("'").lower()
-                elif line.startswith("port:") and current_proto:
-                    port_val = line.split(":", 1)[1].strip()
-                    if current_proto == "gnmi":
-                        gnmi_port = port_val
-                    elif current_proto == "gnoi":
-                        gnoi_port = port_val
-                    elif current_proto == "netconf":
-                        netconf_port = port_val
 
     if not dev_id or not address:
         print(f"[EXCLUDED] Skipping {filepath}: Missing 'id' or 'address'.")
@@ -109,7 +84,24 @@ for filepath in yaml_files:
 
     host_ip = address.split(":")[0] if ":" in address else address
 
-    # Construct attribute list
+    print(f"[*] Provisioning Topology Entity: '{dev_id}' (Kind: '{kind}') -> Primary: '{address}'")
+
+    # 1. Delete entity if it exists to ensure clean state
+    subprocess.run(
+        ["kubectl", "exec", "-n", namespace, cli_pod, "--", "onos", "topo", "delete", "entity", dev_id],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    )
+
+    # 2. Re-create entity with explicit --kind
+    cmd_create = [
+        "kubectl", "exec", "-n", namespace, cli_pod, "--",
+        "onos", "topo", "create", "entity", dev_id, "--kind", kind
+    ]
+    res_create = subprocess.run(cmd_create, capture_output=True, text=True)
+    if res_create.returncode != 0:
+        print(f"    [WARNING] Failed creating entity '{dev_id}': {res_create.stderr.strip()}")
+
+    # 3. Construct and apply attributes
     attrs = [
         f"address={address}",
         f"target_type={kind}",
@@ -127,23 +119,20 @@ for filepath in yaml_files:
     target_port = gnmi_port if gnmi_port else (netconf_port if netconf_port else "8300")
     configurable_json = f'{{"address": "{host_ip}:{target_port}", "type": "{kind}", "version": "{version}"}}'
     attrs.append(f"onos.topo.Configurable={configurable_json}")
-    
-    print(f"[*] Provisioning Topology Entity: '{dev_id}' -> Primary: '{address}' | NETCONF: '{host_ip}:{netconf_port}' | gNOI: '{host_ip}:{gnoi_port}'")
 
     cmd_set = [
         "kubectl", "exec", "-n", namespace, cli_pod, "--",
         "onos", "topo", "set", "entity", dev_id
     ]
-
     for attr in attrs:
         cmd_set.extend(["-a", attr])
 
     result = subprocess.run(cmd_set, capture_output=True, text=True)
 
     if result.returncode == 0:
-        print(f"    [SUCCESS] Updated topology attributes for '{dev_id}' in onos-topo.")
+        print(f"    [SUCCESS] Created entity '{dev_id}' with Kind ID '{kind}' and updated attributes in onos-topo.")
     else:
         print(f"    [WARNING] Attribute update failed for '{dev_id}'. Output: {result.stderr.strip()}")
 
 print("==================================================================")
-EOF
+PYEOF
