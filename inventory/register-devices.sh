@@ -124,6 +124,10 @@ for filepath in yaml_files:
     if netconf_port:
         attrs.append(f"netconf_address={host_ip}:{netconf_port}")
 
+    target_port = gnmi_port if gnmi_port else (netconf_port if netconf_port else "8300")
+    configurable_json = f'{{"address": "{host_ip}:{target_port}", "type": "{kind}", "version": "{version}"}}'
+    attrs.append(f"onos.topo.Configurable={configurable_json}")
+    
     print(f"[*] Provisioning Topology Entity: '{dev_id}' -> Primary: '{address}' | NETCONF: '{host_ip}:{netconf_port}' | gNOI: '{host_ip}:{gnoi_port}'")
 
     cmd_set = [
