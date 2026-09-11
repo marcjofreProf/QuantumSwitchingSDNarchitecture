@@ -70,7 +70,9 @@ for filepath in yaml_files:
                 if isinstance(proto, dict):
                     name = str(proto.get("name", "")).lower()
                     port = str(proto.get("port", ""))
-                    if name == "gnoi":
+                    if name == "gnmi":
+                        gnmi_port = port
+                    elif name == "gnoi":
                         gnoi_port = port
                     elif name == "netconf":
                         netconf_port = port
@@ -112,6 +114,8 @@ for filepath in yaml_files:
         f"version={version}"
     ]
 
+    if gnmi_port:
+        attrs.append(f"gnmi_address={host_ip}:{gnmi_port}")
     if gnoi_port:
         attrs.append(f"gnoi_address={host_ip}:{gnoi_port}")
     if netconf_port:
