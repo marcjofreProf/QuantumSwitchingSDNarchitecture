@@ -58,10 +58,10 @@ for filepath in yaml_files:
 
     if HAS_YAML:
         with open(filepath, 'r') as f:
-            data = yaml.safe_load(f) or {}
+            data = yaml.safe_load(f) or {}            
             dev_id = data.get("id")
             address = data.get("address")
-            kind = data.get("kind", kind)
+            kind = data.get("kind_id") or data.get("kind", "devicesim")
             role = data.get("role", role)
             version = str(data.get("version", version))
             
@@ -94,7 +94,7 @@ for filepath in yaml_files:
     # 2. Re-create entity with explicit --kind
     cmd_create = [
         "kubectl", "exec", "-n", namespace, cli_pod, "--",
-        "onos", "topo", "create", "entity", dev_id, "--kind", kind
+        "onos", "topo", "create", "entity", dev_id, "-k", kind
     ]
     res_create = subprocess.run(cmd_create, capture_output=True, text=True)
     if res_create.returncode != 0:
@@ -118,6 +118,7 @@ for filepath in yaml_files:
     target_port = gnmi_port if gnmi_port else (netconf_port if netconf_port else "8300")
     configurable_json = f'{{"address": "{host_ip}:{target_port}", "type": "{kind}", "version": "{version}"}}'
     attrs.append(f"onos.topo.Configurable={configurable_json}")
+    attrs.append('onos.topo.TLSOptions={"insecure":true,"plain":true}')
 
     cmd_set = [
         "kubectl", "exec", "-n", namespace, cli_pod, "--",
