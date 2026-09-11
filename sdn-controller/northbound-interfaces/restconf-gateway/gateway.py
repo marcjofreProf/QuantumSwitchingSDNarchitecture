@@ -33,7 +33,7 @@ def dispatch_southbound_config(action, payload, sb_target):
         cmd = get_gnmic_base_cmd() + [
             "--target", target_device,
             "set",
-            "--delete", f"/interfaces/interface[name={if_name}]"
+            "--delete", f"/interfaces/interface[name={if_name}]/config/description"
         ]
     else:
         # Use atomic JSON payload to recreate the interface if it was deleted
