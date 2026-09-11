@@ -1,4 +1,5 @@
 id: "quantum-node-1"
+kind_id: "devicesim"
 display_name: "Physical BeagleBone Quantum Switch 1"
 address: "10.0.0.254:50051"
 kind: "devicesim"
