@@ -18,6 +18,11 @@ log_warn() { echo -e "${YELLOW}[WARNING] $1${NC}"; }
 
 log_info "Starting Quantum-SDN Architecture environment cleanup..."
 
+# Dismantle SDN Adapter Workloads ---
+log_info "Dismantling SDN Adapter..."
+kubectl delete deployment sdn-adapter -n micro-onos --ignore-not-found=true 2>/dev/null || true
+kubectl delete pod sdn-adapter -n micro-onos --force --grace-period=0 2>/dev/null || true
+
 # 2. Uninstall Helm Deployments
 log_info "Uninstalling Helm releases..."
 helm uninstall open5gs -n open5gs 2>/dev/null || true
@@ -128,9 +133,15 @@ kubectl delete namespace controller-osm-vca --force --grace-period=0 2>/dev/null
 # 6. Cleanup Local Docker Images
 if command -v docker >/dev/null 2>&1; then
     log_info "Removing built Docker images..."
+    docker rmi sdn-adapter:1.0.0 2>/dev/null || true
     docker rmi quantum-restconf-gateway:1.0.0 2>/dev/null || true
     docker rmi onosproject/controller-quantum-switching:1.0.0-controller-quantum-switching-1.0.0 2>/dev/null || true
     log_success "Docker images cleaned up."
+fi
+
+# Remove sdn-adapter from K3s containerd ---
+if command -v k3s >/dev/null 2>&1; then
+    sudo k3s ctr images rm docker.io/library/sdn-adapter:1.0.0 2>/dev/null || true
 fi
 
 # 7. Remove Virtual Environment
