@@ -36,14 +36,19 @@ def dispatch_southbound_config(action, payload, sb_target):
             "--delete", f"/interfaces/interface[name={if_name}]"
         ]
     else:
-        # Use explicit OpenConfig paths matching onos-config schema requirements
+        # Pass atomic OpenConfig interface structure to satisfy onos-config schema validation
+        interface_json = json.dumps({
+            "name": if_name,
+            "config": {
+                "name": if_name,
+                "description": service_id,
+                "enabled": True
+            }
+        })
         cmd = get_gnmic_base_cmd() + [
             "--target", target_device,
             "set",
-            "--update", f"/interfaces/interface[name={if_name}]/name:::string:::{if_name}",
-            "--update", f"/interfaces/interface[name={if_name}]/config/name:::string:::{if_name}",
-            "--update", f"/interfaces/interface[name={if_name}]/config/description:::string:::{service_id}",
-            "--update", f"/interfaces/interface[name={if_name}]/config/enabled:::bool:::true"
+            "--update", f"/interfaces/interface[name={if_name}]:::{interface_json}"
         ]
 
     try:
