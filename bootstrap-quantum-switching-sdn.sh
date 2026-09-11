@@ -766,7 +766,6 @@ EOF
 skip-verify: true
 tls-cert: /etc/onos/certs/tls.crt
 tls-key: /etc/onos/certs/tls.key
-tls-ca: /etc/onos/certs/tls.cacrt
 EOF
 
     sudo chmod a+wrx /etc/onos/certs
