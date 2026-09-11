@@ -2,6 +2,7 @@ id: "devicesim-1"
 display_name: "In-Cluster Quantum Simulator"
 address: "devicesim-1.micro-onos.svc.cluster.local:10161"
 kind: "devicesim"
+version: "1.0.x"
 role: "simulator"
 protocols:
   - name: "gnmi"
