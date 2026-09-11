@@ -784,9 +784,11 @@ configure_uonos_controller_settings() {
     log_info "Setting MASTER_ELECTION=false on onos-config deployment..."
     kubectl set env deployment/onos-config -n micro-onos MASTER_ELECTION=false || log_warn "Failed to set MASTER_ELECTION env variable."
 
-    # 2. Wait for onos-cli pod to be ready
-    log_info "Waiting for onos-cli deployment to become ready..."
-    kubectl rollout status deployment/onos-cli -n micro-onos --timeout=60s || true
+    # 2. Wait for onos-config, onos-topo, and onos-cli deployments to become ready
+    log_info "Waiting for µONOS core deployments to settle..."
+    kubectl rollout status deployment/onos-config -n micro-onos --timeout=120s
+    kubectl rollout status deployment/onos-topo -n micro-onos --timeout=120s
+    kubectl rollout status deployment/onos-cli -n micro-onos --timeout=120s
 
     # 3. Configure Topology Aspects for target entities
     log_info "Applying MastershipState and TLSOptions aspects to quantum-node-1..."
@@ -795,7 +797,6 @@ configure_uonos_controller_settings() {
     kubectl exec -n micro-onos deployment/onos-cli -- onos topo set entity quantum-node-1 \
       -a onos.topo.MastershipState='{"none": {}}' \
       -a onos.topo.TLSOptions='{"insecure": true, "plain": true}' || log_warn "Failed to set topo aspects."
-      
 
     # 4. Clear any stale backlogged proposals/transactions
     log_info "Clearing stale transaction queues..."
