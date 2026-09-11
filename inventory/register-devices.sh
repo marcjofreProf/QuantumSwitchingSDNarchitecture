@@ -53,6 +53,7 @@ for filepath in yaml_files:
     kind = "beaglebone-qswitch"
     role = "quantum-switch"
     version = "1.0.0"
+    gnmi_port = None
     gnoi_port = None
     netconf_port = None
 
