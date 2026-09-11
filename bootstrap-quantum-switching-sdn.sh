@@ -873,7 +873,7 @@ EOF
     log_info "Registering protocol endpoints for quantum-node-1 in onos-topo..."
     kubectl exec -n micro-onos deployment/onos-cli -- onos topo set entity quantum-node-1 \
       -a gnmi_address="10.0.0.254:50051" \
-      -a gnoi_address="10.0.0.254:50052" \
+      -a gnoi_address="10.0.0.254:50051" \
       -a netconf_address="10.0.0.254:8300" \
       -a onos.topo.TLSOptions='{"insecure":true,"plain":true}' || log_warn "Failed to set topo aspects."
 
