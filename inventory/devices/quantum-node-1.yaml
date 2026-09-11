@@ -17,3 +17,6 @@ aspects:
     address: "10.0.0.254:50051"
     type: "devicesim"
     version: "1.0.x"
+  onos.topo.TLSOptions:
+    insecure: true
+    plain: true
