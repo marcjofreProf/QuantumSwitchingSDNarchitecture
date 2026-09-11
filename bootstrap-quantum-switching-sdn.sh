@@ -764,13 +764,13 @@ EOF
     sudo chmod 644 /etc/onos/certs/tls.*
     
     # Write user-level gnmic configuration
-    cat << 'EOF' | sudo tee /etc/onos/certs/.gnmic.yaml > /dev/null
+    cat << 'EOF' | sudo tee ./.gnmic.yaml > /dev/null
 skip-verify: true
 tls-cert: /etc/onos/certs/tls.crt
 tls-key: /etc/onos/certs/tls.key
 EOF
     
-    sudo chmod 644 /etc/onos/certs/.gnmic.yaml
+    sudo chmod 644 ./onos/certs/.gnmic.yaml
 
     log_success "gnmic mTLS configuration generated successfully."
     
