@@ -2,6 +2,7 @@ id: "quantum-node-1"
 display_name: "Physical BeagleBone Quantum Switch 1"
 address: "10.0.0.254:50051"
 kind: "devicesim"
+version: "1.0.x"
 role: "quantum-switch"
 protocols:
   - name: "gnmi"
