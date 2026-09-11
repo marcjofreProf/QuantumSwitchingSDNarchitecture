@@ -14,5 +14,5 @@ protocols:
 aspects:
   onos.topo.Configurable:
     address: "10.0.0.254:50051"
-    type: "beaglebone-qswitch"
-    version: "1.0.0"
+    type: "devicesim"
+    version: "1.0.x"
