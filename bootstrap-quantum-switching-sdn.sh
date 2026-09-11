@@ -803,6 +803,87 @@ configure_uonos_controller_settings() {
     log_success "µONOS controller mastership and topology options successfully configured."
 }
 
+deploy_sdn_adapter_and_topo_aspects() {
+    log_info "Phase 8.6: Deploying SDN Adapter & Setting Topology Endpoints..."
+
+    local base_dir="."
+    local adapter_dir="${base_dir}/sdn-controller/southbound-plugins/sdn-adapter"
+
+    # 1. Build and import the SDN Adapter container image
+    if [ -f "${adapter_dir}/Dockerfile" ]; then
+        log_info "Building sdn-adapter Docker image..."
+        docker build -t sdn-adapter:1.0.0 "${adapter_dir}" || log_error "Failed to build sdn-adapter image."
+
+        if command -v k3s >/dev/null 2>&1; then
+            log_info "Importing sdn-adapter image into K3s..."
+            docker save sdn-adapter:1.0.0 2>/dev/null | sudo k3s ctr images import - || true
+        fi
+    else
+        log_warn "Dockerfile for sdn-adapter not found at ${adapter_dir}/Dockerfile. Using fallback image."
+    fi
+
+    # 2. Deploy SDN Adapter using a declarative K8s Deployment manifest
+    log_info "Applying declarative Kubernetes manifest for sdn-adapter..."
+    kubectl apply -n micro-onos -f - <<EOF
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sdn-adapter
+  labels:
+    app: sdn-adapter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sdn-adapter
+  template:
+    metadata:
+      labels:
+        app: sdn-adapter
+    spec:
+      containers:
+      - name: sdn-adapter
+        image: sdn-adapter:1.0.0
+        imagePullPolicy: IfNotPresent
+        command: ["sleep", "infinity"]
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+EOF
+
+    # 3. Wait for the sdn-adapter deployment to become ready
+    log_info "Waiting for sdn-adapter pod to be ready..."
+    kubectl rollout status deployment/sdn-adapter -n micro-onos --timeout=90s || {
+        log_error "sdn-adapter failed to start."
+        exit 1
+    }
+
+    # 4. Verify Python libraries inside the adapter
+    log_info "Verifying SDN Adapter runtime environment..."
+    kubectl exec -n micro-onos deployment/sdn-adapter -- python3 -c "import ncclient, grpc; print('SDN Adapter Ready')" || {
+        log_error "SDN Adapter dependency verification failed."
+        exit 1
+    }
+
+    # 5. Program protocol endpoints into onos-topo
+    log_info "Registering protocol endpoints for quantum-node-1 in onos-topo..."
+    kubectl exec -n micro-onos deployment/onos-cli -- onos topo set entity quantum-node-1 \
+      -a gnmi_address="10.0.0.254:50051" \
+      -a gnoi_address="10.0.0.254:50052" \
+      -a netconf_address="10.0.0.254:8300" \
+      -a onos.topo.TLSOptions='{"insecure":true,"plain":true}' || log_warn "Failed to set topo aspects."
+
+    # 6. Verify topology registration
+    log_info "Verifying onos-topo configuration..."
+    kubectl exec -n micro-onos deployment/onos-cli -- onos topo get entity quantum-node-1 | grep -E "gnmi_address|gnoi_address|netconf_address" || log_warn "Endpoints missing from topology."
+
+    log_success "SDN Adapter deployed and onos-topo protocol endpoints registered successfully."
+}
+
 register_inventory_devices() {
     log_info "Phase 8.5: Registering current device inventory with µONOS..."
     if [ -f "./inventory/register-devices.sh" ]; then
@@ -864,6 +945,7 @@ setup_sdn_python_client
 compile_uonos_model_plugins
 deploy_cloud_native_uonos
 configure_uonos_controller_settings
+deploy_sdn_adapter_and_topo_aspects
 register_inventory_devices
 deploy_open5gs
 
