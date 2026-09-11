@@ -760,8 +760,7 @@ EOF
     kubectl get secret -n micro-onos onos-config-secret -o go-template='{{index .data "tls.crt"}}' | base64 -d | sudo tee /etc/onos/certs/tls.crt > /dev/null
     kubectl get secret -n micro-onos onos-config-secret -o go-template='{{index .data "tls.key"}}' | base64 -d | sudo tee /etc/onos/certs/tls.key > /dev/null
     kubectl get secret -n micro-onos onos-config-secret -o go-template='{{index .data "tls.cacrt"}}' | base64 -d | sudo tee /etc/onos/certs/tls.cacrt > /dev/null
-    sudo chmod 644 /etc/onos/certs/*
-    
+        
     # Write user-level gnmic configuration
     cat << 'EOF' | sudo tee /etc/onos/certs/.gnmic.yaml > /dev/null
 skip-verify: true
@@ -769,7 +768,10 @@ tls-cert: /etc/onos/certs/tls.crt
 tls-key: /etc/onos/certs/tls.key
 tls-ca: /etc/onos/certs/tls.cacrt
 EOF
-    sudo chmod 644 /etc/onos/certs/.gnmic.yaml
+
+    sudo chmod a+wrx /etc/onos/certs
+    sudo chmod a+wrx /etc/onos/certs/*
+    sudo chmod a+wrx /etc/onos/certs/.gnmic.yaml
 
     log_success "gnmic mTLS configuration generated successfully."
     
