@@ -1,12 +1,12 @@
 id: "quantum-node-1"
 display_name: "Physical BeagleBone Quantum Switch 1"
-address: "10.0.0.254:9339"
+address: "10.0.0.254:50051"
 kind: "beaglebone-qswitch"
 role: "quantum-switch"
 protocols:
   - name: "gnmi"
-    port: 9339
+    port: 50051
   - name: "gnoi"
-    port: 9339
+    port: 50051
   - name: "netconf"
-    port: 830
+    port: 8300
