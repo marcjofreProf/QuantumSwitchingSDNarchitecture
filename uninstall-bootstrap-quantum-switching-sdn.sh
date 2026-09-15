@@ -145,15 +145,22 @@ if command -v k3s >/dev/null 2>&1; then
 fi
 
 # 7. Remove Virtual Environment
-log_info "Removing Python Virtual Environment..."
-sudo rm -rf /opt/sdn-venv
+log_info "Removing Python Virtual Environments..."
+sudo rm -rf /opt/sdn-venv 2>/dev/null || true
+rm -rf "$base_dir"/.venv "$base_dir"/venv "$base_dir"/env 2>/dev/null || true
 
 # 8. Delete Dynamically Generated Repository Files
 log_info "Cleaning generated build artifacts, stubs, and model plugins..."
 base_dir="."
 
-rm -f "$base_dir"/proto/*_pb2*.py "$base_dir"/proto/*.pyi "$base_dir"/proto/__init__.py 2>/dev/null || true
+# Recursively remove generated Python stubs, pyi interfaces, and __init__.py files
+find "$base_dir/proto" -type f \( -name "*_pb2*.py" -o -name "*.pyi" -o -name "__init__.py" \) -delete 2>/dev/null || true
 
+# Purge downloaded external gNMI schemas
+rm -rf "$base_dir/proto/github.com" 2>/dev/null || true
+rm -f "$base_dir/proto/gnmi.proto" 2>/dev/null || true
+
+# Purge virtual environments and Python cache
 rm -rf "$base_dir"/.venv "$base_dir"/venv "$base_dir"/env 2>/dev/null || true
 find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 find . -type f \( -name "*.pyc" -o -name "*.pyo" -o -name "*.pyd" \) -delete 2>/dev/null || true
