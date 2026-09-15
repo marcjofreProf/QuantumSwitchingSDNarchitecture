@@ -28,7 +28,9 @@ python3 - "$DEVICES_DIR" "$NAMESPACE" "$CLI_POD" << 'PYEOF'
 import os
 import sys
 import glob
+import json
 import subprocess
+import re
 
 devices_dir = sys.argv[1]
 namespace = sys.argv[2]
@@ -55,15 +57,17 @@ for filepath in yaml_files:
     gnmi_port = None
     gnoi_port = None
     netconf_port = None
+    yaml_aspects = {}
 
     if HAS_YAML:
         with open(filepath, 'r') as f:
-            data = yaml.safe_load(f) or {}            
+            data = yaml.safe_load(f) or {}
             dev_id = data.get("id")
             address = data.get("address")
             kind = data.get("kind_id") or data.get("kind", "devicesim")
             role = data.get("role", role)
             version = str(data.get("version", version))
+            yaml_aspects = data.get("aspects", {})
             
             protocols = data.get("protocols", [])
             for proto in protocols:
@@ -76,12 +80,32 @@ for filepath in yaml_files:
                         gnoi_port = port
                     elif name == "netconf":
                         netconf_port = port
+    else:
+        with open(filepath, 'r') as f:
+            content = f.read()
+            m_id = re.search(r'id:\s*["\']?([^"\x27\n]+)', content)
+            m_addr = re.search(r'address:\s*["\']?([^"\x27\n]+)', content)
+            m_kind = re.search(r'(?:kind_id|kind):\s*["\']?([^"\x27\n]+)', content)
+            m_ver = re.search(r'version:\s*["\']?([^"\x27\n]+)', content)
+            m_role = re.search(r'role:\s*["\']?([^"\x27\n]+)', content)
+            if m_id: dev_id = m_id.group(1).strip()
+            if m_addr: address = m_addr.group(1).strip()
+            if m_kind: kind = m_kind.group(1).strip()
+            if m_ver: version = m_ver.group(1).strip()
+            if m_role: role = m_role.group(1).strip()
 
     if not dev_id or not address:
         print(f"[EXCLUDED] Skipping {filepath}: Missing 'id' or 'address'.")
         continue
 
-    host_ip = address.split(":")[0] if ":" in address else address
+    host_parts = address.split(":")
+    host_ip = host_parts[0]
+    default_addr_port = host_parts[1] if len(host_parts) > 1 else "50051"
+
+    # Protocol port fallbacks to guarantee all address aspects exist
+    gnmi_port = gnmi_port or default_addr_port
+    gnoi_port = gnoi_port or gnmi_port
+    netconf_port = netconf_port or "8300"
 
     print(f"[*] Provisioning Topology Entity: '{dev_id}' (Kind: '{kind}') -> Primary: '{address}'")
 
@@ -100,25 +124,27 @@ for filepath in yaml_files:
     if res_create.returncode != 0:
         print(f"    [WARNING] Failed creating entity '{dev_id}': {res_create.stderr.strip()}")
 
-    # 3. Construct and apply attributes
+    # 3. Construct base attributes
     attrs = [
         f"address={address}",
         f"target_type={kind}",
         f"role={role}",
-        f"version={version}"
+        f"version={version}",
+        f"gnmi_address={host_ip}:{gnmi_port}",
+        f"gnoi_address={host_ip}:{gnoi_port}",
+        f"netconf_address={host_ip}:{netconf_port}"
     ]
 
-    if gnmi_port:
-        attrs.append(f"gnmi_address={host_ip}:{gnmi_port}")
-    if gnoi_port:
-        attrs.append(f"gnoi_address={host_ip}:{gnoi_port}")
-    if netconf_port:
-        attrs.append(f"netconf_address={host_ip}:{netconf_port}")
+    # Apply onos.topo.Configurable and TLSOptions from YAML aspects or generated fallbacks
+    if "onos.topo.Configurable" in yaml_aspects:
+        attrs.append(f"onos.topo.Configurable={json.dumps(yaml_aspects['onos.topo.Configurable'])}")
+    else:
+        attrs.append(f'onos.topo.Configurable={json.dumps({"address": f"{host_ip}:{gnmi_port}", "type": kind, "version": version})}')
 
-    target_port = gnmi_port if gnmi_port else (netconf_port if netconf_port else "8300")
-    configurable_json = f'{{"address": "{host_ip}:{target_port}", "type": "{kind}", "version": "{version}"}}'
-    attrs.append(f"onos.topo.Configurable={configurable_json}")
-    attrs.append('onos.topo.TLSOptions={"insecure":true,"plain":true}')
+    if "onos.topo.TLSOptions" in yaml_aspects:
+        attrs.append(f"onos.topo.TLSOptions={json.dumps(yaml_aspects['onos.topo.TLSOptions'])}")
+    else:
+        attrs.append('onos.topo.TLSOptions={"insecure":true,"plain":true}')
 
     cmd_set = [
         "kubectl", "exec", "-n", namespace, cli_pod, "--",
