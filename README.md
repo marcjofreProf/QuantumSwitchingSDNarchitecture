@@ -127,6 +127,12 @@ for tx in $(kubectl exec -n micro-onos deployment/onos-cli -- onos config get tr
 done
 kubectl get pods -n micro-onos -w
 ```
+Then, re-register the devices in the micro-onos:
+```bash
+kubectl rollout restart deployment -n micro-onos onos-topo
+kubectl rollout status deployment -n micro-onos onos-topo --timeout=60s
+./inventory/register-devices.sh
+```
 
 ## Hardware Debugging Tools
 
