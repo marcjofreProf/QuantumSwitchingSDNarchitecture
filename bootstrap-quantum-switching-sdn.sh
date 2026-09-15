@@ -70,20 +70,21 @@ ensure_sufficient_memory() {
     
     local total_ram_mb
     total_ram_mb=$(free -m | awk '/^Mem:/{print $2}')
-    local min_ram_mb=8000 # 8GB threshold
+    local min_ram_mb=32768 # 32 GB threshold (32 * 1024 MB)
+    local target_swap_mb=8192 # 8 GB target swap (8 * 1024 MB)
     
     log_info "Detected physical RAM: ${total_ram_mb} MB"
     
     if [ "$total_ram_mb" -lt "$min_ram_mb" ]; then
-        log_warn "System RAM (${total_ram_mb}MB) is below recommended ${min_ram_mb}MB."
+        log_warn "System RAM (${total_ram_mb} MB) is below recommended 32 GB (${min_ram_mb} MB)."
         
         local total_swap_mb
         total_swap_mb=$(free -m | awk '/^Swap:/{print $2}')
         
-        if [ "$total_swap_mb" -ge 4000 ]; then
+        if [ "$total_swap_mb" -ge "$target_swap_mb" ]; then
             log_success "Sufficient Swap space (${total_swap_mb} MB) is already configured."
         else
-            log_info "Configuring an 8GB swap file to prevent OOM errors..."
+            log_info "Configuring an 8 GB swap file to prevent OOM errors..."
             
             sudo swapoff -a 2>/dev/null || true
             
@@ -100,10 +101,10 @@ ensure_sufficient_memory() {
                 echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab >/dev/null
             fi
             
-            log_success "8GB swap file successfully enabled and configured."
+            log_success "8 GB swap file successfully enabled and configured."
         fi
     else
-        log_success "Sufficient physical RAM detected."
+        log_success "Sufficient physical RAM detected (32 GB+)."
     fi
 }
 
@@ -493,7 +494,10 @@ install_osm_installer() {
 setup_sdn_python_client() {
     log_info "Phase 7: Provisioning Python environment and compiling Protobuf stubs..."
 
-    local venv_dir="$base_dir/.venv"
+    local repo_dir
+    repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    local venv_dir="${repo_dir}/.venv"
+    local proto_dir="${repo_dir}/proto"
 
     # 1. Ensure user-owned local virtual environment
     if [ ! -d "$venv_dir" ]; then
@@ -501,26 +505,26 @@ setup_sdn_python_client() {
         python3 -m venv "$venv_dir"
     fi
 
-    # 2. Upgrade pip and install packages under active user context (no sudo)
+    # 2. Upgrade pip and install packages under active user context
     "$venv_dir/bin/pip" install --upgrade pip grpcio grpcio-tools grpcio-reflection ncclient xmltodict flask requests
 
     # 3. Dynamic compilation for ALL .proto files in the proto directory
     shopt -s nullglob
-    local proto_files=("$base_dir"/proto/*.proto)
+    local proto_files=("$proto_dir"/*.proto)
     shopt -u nullglob
 
     if [ ${#proto_files[@]} -gt 0 ]; then
         log_info "Compiling ${#proto_files[@]} Protobuf schema(s)..."
         "$venv_dir/bin/python" -m grpc_tools.protoc \
-            -I"$base_dir/proto" \
-            --python_out="$base_dir/proto" \
-            --grpc_python_out="$base_dir/proto" \
+            -I"$proto_dir" \
+            --python_out="$proto_dir" \
+            --grpc_python_out="$proto_dir" \
             "${proto_files[@]}"
 
-        touch "$base_dir/proto/__init__.py"
+        touch "$proto_dir/__init__.py"
         log_success "Protobuf stubs successfully generated."
     else
-        log_warn "No .proto files found in $base_dir/proto/"
+        log_warn "No .proto files found in $proto_dir"
     fi
 
     # 4. Make execution scripts executable
