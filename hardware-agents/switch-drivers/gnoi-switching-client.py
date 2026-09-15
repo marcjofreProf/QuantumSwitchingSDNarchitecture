@@ -1,28 +1,34 @@
 #!/usr/bin/env python3
 import os
 import sys
+import argparse
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
+repo_root = os.path.abspath(os.path.join(current_dir, "../.."))
 
 # --- ELEGANT VENV AUTO-DISCOVERY & RE-EXECUTION ---
+venv_candidates = [
+    os.path.join(repo_root, ".venv", "bin", "python3"),
+    os.path.join(repo_root, ".venv", "bin", "python"),
+    "/opt/sdn-venv/bin/python3",
+    os.path.abspath(os.path.join(current_dir, "../.venv/bin/python3")),
+]
+
+current_exe = os.path.realpath(sys.executable)
+for venv_python in venv_candidates:
+    if os.path.exists(venv_python):
+        target_exe = os.path.realpath(venv_python)
+        if current_exe != target_exe:
+            os.execv(target_exe, [target_exe] + sys.argv)
+        break
+
 try:
     import grpc
 except ModuleNotFoundError:
-    venv_candidates = [
-        "/opt/sdn-venv/bin/python3",
-        os.path.abspath(os.path.join(current_dir, "../../.venv/bin/python3")),
-        os.path.abspath(os.path.join(current_dir, "../.venv/bin/python3")),
-    ]
-    for venv_python in venv_candidates:
-        if os.path.exists(venv_python):
-            os.execl(venv_python, venv_python, *sys.argv)
     print("[ERROR] 'grpc' missing and no virtual environment found. Run the bootstrap script first.")
     sys.exit(1)
 
-import argparse
-
-# Resolve repository root and proto directory (2 levels up from hardware-agents/switch-drivers)
-repo_root = os.path.abspath(os.path.join(current_dir, "../.."))
+# Resolve proto directory
 proto_dir = os.path.join(repo_root, "proto")
 
 if proto_dir not in sys.path:
