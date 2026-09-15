@@ -93,6 +93,41 @@ sudo chmod +x ./bootstrap-quantum-switching-sdn.sh
 
 If the centralized server lacks the RAM/CPU to run a full Kubernetes cluster and µONOS, it can bypass the SDN controller layer for testing or lightweight deployments.
 
+## Recovery after abrupt stop:
+
+To recover the different elements after and abrupt stop and re-start:
+
+```bash
+# 1. Scale down to 0 to kill duplicate rolling pods
+kubectl scale deployment -n micro-onos onos-config onos-topo onos-umbrella-device-provisioner --replicas=0
+
+# 2. Patch finalizers and force delete stuck PVCs and pods
+for pvc in $(kubectl get pvc -n micro-onos --no-headers -o custom-columns=":metadata.name" | grep consensus); do
+  kubectl patch pvc $pvc -n micro-onos -p '{"metadata":{"finalizers":null}}' --type=merge 2>/dev/null || true
+done
+
+for pod in $(kubectl get pods -n micro-onos --no-headers -o custom-columns=":metadata.name" | grep -E "consensus|onos-config|onos-topo|device-provisioner"); do
+  kubectl patch pod $pod -n micro-onos -p '{"metadata":{"finalizers":null}}' --type=merge 2>/dev/null || true
+  kubectl delete pod $pod -n micro-onos --force --grace-period=0 2>/dev/null || true
+done
+
+# 3. Restart K3s engine and wait for API server recovery
+sudo systemctl restart k3s
+echo "Waiting for K3s API server to come back online..."
+until kubectl get nodes >/dev/null 2>&1; do sleep 3; done
+
+# 4. Scale back to 1 replica and apply environment settings
+kubectl scale deployment -n micro-onos onos-config onos-topo onos-umbrella-device-provisioner --replicas=1
+kubectl set env deployment/onos-config -n micro-onos MASTER_ELECTION=false 2>/dev/null || true[cite: 1]
+
+# 5. Clear lingering transaction locks
+sleep 5
+for tx in $(kubectl exec -n micro-onos deployment/onos-cli -- onos config get transactions 2>/dev/null | awk 'NR>1 {print $1}'); do
+  kubectl exec -n micro-onos deployment/onos-cli -- onos config delete transaction "$tx" 2>/dev/null || true[cite: 1]
+done
+kubectl get pods -n micro-onos -w
+```
+
 ## Hardware Debugging Tools
 
 In the full architecture, a central SDN Controller (like µONOS) will manage the network topology and send commands to the switches automatically. 
