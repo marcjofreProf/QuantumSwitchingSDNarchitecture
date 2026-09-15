@@ -158,6 +158,16 @@ python3 ./hardware-agents/switch-drivers/gnoi-switching-client.py <NODE_IP> conn
 # Force the physical switch to disconnect
 python3 ./hardware-agents/switch-drivers/gnoi-switching-client.py <NODE_IP> disconnect
 
+## Check gNMI
+# Check if the hardware node is connected or disconnected
+python3 ./hardware-agents/switch-drivers/gnmif-switching-client.py <NODE_IP> status
+
+# Force the physical switch to connect (cross-connect)
+python3 ./hardware-agents/switch-drivers/gnmi-switching-client.py <NODE_IP> connect
+
+# Force the physical switch to disconnect
+python3 ./hardware-agents/switch-drivers/gnmi-switching-client.py <NODE_IP> disconnect
+
 ## Check NETCONF
 # Check if the hardware node is connected or disconnected
 python3 ./hardware-agents/switch-drivers/netconf-switching-client.py <NODE_IP> status
