@@ -102,20 +102,17 @@ for filepath in yaml_files:
     host_ip = host_parts[0]
     default_addr_port = host_parts[1] if len(host_parts) > 1 else "50051"
 
-    # Protocol port fallbacks to guarantee all address aspects exist
     gnmi_port = gnmi_port or default_addr_port
     gnoi_port = gnoi_port or gnmi_port
     netconf_port = netconf_port or "8300"
 
     print(f"[*] Provisioning Topology Entity: '{dev_id}' (Kind: '{kind}') -> Primary: '{address}'")
 
-    # 1. Delete entity if it exists to ensure clean state
     subprocess.run(
         ["kubectl", "exec", "-n", namespace, cli_pod, "--", "onos", "topo", "delete", "entity", dev_id],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
     )
 
-    # 2. Re-create entity with explicit --kind
     cmd_create = [
         "kubectl", "exec", "-n", namespace, cli_pod, "--",
         "onos", "topo", "create", "entity", dev_id, "-k", kind
@@ -124,7 +121,6 @@ for filepath in yaml_files:
     if res_create.returncode != 0:
         print(f"    [WARNING] Failed creating entity '{dev_id}': {res_create.stderr.strip()}")
 
-    # 3. Construct base attributes
     attrs = [
         f"address={address}",
         f"target_type={kind}",
@@ -135,7 +131,6 @@ for filepath in yaml_files:
         f"netconf_address={host_ip}:{netconf_port}"
     ]
 
-    # Apply onos.topo.Configurable and TLSOptions from YAML aspects or generated fallbacks
     if "onos.topo.Configurable" in yaml_aspects:
         attrs.append(f"onos.topo.Configurable={json.dumps(yaml_aspects['onos.topo.Configurable'])}")
     else:
@@ -160,5 +155,17 @@ for filepath in yaml_files:
     else:
         print(f"    [WARNING] Attribute update failed for '{dev_id}'. Output: {result.stderr.strip()}")
 
-print("==================================================================")
 PYEOF
+
+echo ""
+echo "=================================================================="
+echo "  Restarting onos-config to synchronize target configurations"
+echo "=================================================================="
+kubectl rollout restart deployment -n "$NAMESPACE" onos-config
+kubectl rollout status deployment -n "$NAMESPACE" onos-config --timeout=60s
+
+echo ""
+echo "=================================================================="
+echo "  Current Synchronized Configurations in onos-config"
+echo "=================================================================="
+kubectl exec -n "$NAMESPACE" "$CLI_POD" -- onos config get configurations
