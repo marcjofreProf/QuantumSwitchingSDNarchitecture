@@ -491,32 +491,43 @@ install_osm_installer() {
 }
 
 setup_sdn_python_client() {
-    local base_dir="."  
-    if [ -d "/opt/sdn-venv" ] && [ -f "$base_dir/proto/__init__.py" ]; then
-         log_success "Python environment and Protobuf stubs are already initialized."
-         return 0
-    fi
     log_info "Phase 7: Provisioning Python environment and compiling Protobuf stubs..."
 
-    wait_for_apt_lock
-    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3-venv python3-pip python3-flask
-    
-    sudo python3 -m venv /opt/sdn-venv
-    sudo /opt/sdn-venv/bin/pip install --upgrade pip grpcio grpcio-tools grpcio-reflection ncclient xmltodict flask requests
+    local venv_dir="$base_dir/.venv"
 
-    if [ -f "$base_dir/proto/quantum_gnoi_switching.proto" ]; then
-        log_info "Compiling quantum_gnoi_switching.proto..."
-        /opt/sdn-venv/bin/python -m grpc_tools.protoc -I"$base_dir/proto" \
-            --python_out="$base_dir/proto" --grpc_python_out="$base_dir/proto" \
-            "$base_dir/proto/quantum_gnoi_switching.proto"
-        touch "$base_dir/proto/__init__.py"
-    else
-        log_warn "quantum_gnoi_switching.proto not found in ./proto/ directory!"
+    # 1. Ensure user-owned local virtual environment
+    if [ ! -d "$venv_dir" ]; then
+        log_info "Creating local project virtual environment in $venv_dir..."
+        python3 -m venv "$venv_dir"
     fi
 
+    # 2. Upgrade pip and install packages under active user context (no sudo)
+    "$venv_dir/bin/pip" install --upgrade pip grpcio grpcio-tools grpcio-reflection ncclient xmltodict flask requests
+
+    # 3. Dynamic compilation for ALL .proto files in the proto directory
+    shopt -s nullglob
+    local proto_files=("$base_dir"/proto/*.proto)
+    shopt -u nullglob
+
+    if [ ${#proto_files[@]} -gt 0 ]; then
+        log_info "Compiling ${#proto_files[@]} Protobuf schema(s)..."
+        "$venv_dir/bin/python" -m grpc_tools.protoc \
+            -I"$base_dir/proto" \
+            --python_out="$base_dir/proto" \
+            --grpc_python_out="$base_dir/proto" \
+            "${proto_files[@]}"
+
+        touch "$base_dir/proto/__init__.py"
+        log_success "Protobuf stubs successfully generated."
+    else
+        log_warn "No .proto files found in $base_dir/proto/"
+    fi
+
+    # 4. Make execution scripts executable
     chmod +x "$base_dir"/tests/e2e-path-provisioning/* 2>/dev/null || true
     chmod +x "$base_dir"/hardware-agents/switch-drivers/* 2>/dev/null || true
     chmod +x "$base_dir"/hardware-agents/gnoi-targets/* 2>/dev/null || true
+    chmod +x "$base_dir"/hardware-agents/gnmi-targets/* 2>/dev/null || true
     chmod +x "$base_dir"/hardware-agents/netconf-servers/* 2>/dev/null || true
 
     log_success "Python environment and Protobuf stubs initialized."
