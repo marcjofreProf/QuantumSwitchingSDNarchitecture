@@ -505,10 +505,18 @@ setup_sdn_python_client() {
         python3 -m venv "$venv_dir"
     fi
 
-    # 2. Upgrade pip and install packages under active user context
-    "$venv_dir/bin/pip" install --upgrade pip grpcio grpcio-tools grpcio-reflection ncclient xmltodict flask requests
+    # 2. Upgrade pip and synchronize gRPC dependencies
+    log_info "Installing and upgrading Python dependencies..."
+    "$venv_dir/bin/pip" install --upgrade pip setuptools wheel
+    "$venv_dir/bin/pip" install --upgrade --force-reinstall grpcio grpcio-tools grpcio-reflection ncclient xmltodict flask requests
 
-    # 3. Dynamic compilation for ALL .proto files in the proto directory
+    # 3. Auto-download gnmi.proto if missing
+    if [ ! -f "$proto_dir/gnmi.proto" ]; then
+        log_info "gnmi.proto not found in $proto_dir. Downloading OpenConfig gNMI schema..."
+        curl -fsSL https://raw.githubusercontent.com/openconfig/gnmi/master/proto/gnmi/gnmi.proto -o "$proto_dir/gnmi.proto" || log_warn "Failed to download gnmi.proto"
+    fi
+
+    # 4. Dynamic compilation for ALL .proto files in the proto directory
     shopt -s nullglob
     local proto_files=("$proto_dir"/*.proto)
     shopt -u nullglob
@@ -527,12 +535,12 @@ setup_sdn_python_client() {
         log_warn "No .proto files found in $proto_dir"
     fi
 
-    # 4. Make execution scripts executable
-    chmod +x "$base_dir"/tests/e2e-path-provisioning/* 2>/dev/null || true
-    chmod +x "$base_dir"/hardware-agents/switch-drivers/* 2>/dev/null || true
-    chmod +x "$base_dir"/hardware-agents/gnoi-targets/* 2>/dev/null || true
-    chmod +x "$base_dir"/hardware-agents/gnmi-targets/* 2>/dev/null || true
-    chmod +x "$base_dir"/hardware-agents/netconf-servers/* 2>/dev/null || true
+    # 5. Make execution scripts executable (using repo_dir)
+    chmod +x "$repo_dir"/tests/e2e-path-provisioning/* 2>/dev/null || true
+    chmod +x "$repo_dir"/hardware-agents/switch-drivers/* 2>/dev/null || true
+    chmod +x "$repo_dir"/hardware-agents/gnoi-targets/* 2>/dev/null || true
+    chmod +x "$repo_dir"/hardware-agents/gnmi-targets/* 2>/dev/null || true
+    chmod +x "$repo_dir"/hardware-agents/netconf-servers/* 2>/dev/null || true
 
     log_success "Python environment and Protobuf stubs initialized."
 }
