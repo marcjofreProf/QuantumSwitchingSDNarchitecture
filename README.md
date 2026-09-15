@@ -131,6 +131,8 @@ Then, re-register the devices in the micro-onos:
 ```bash
 kubectl rollout restart deployment -n micro-onos onos-topo
 kubectl rollout status deployment -n micro-onos onos-topo --timeout=60s
+kubectl rollout restart deployment -n micro-onos onos-config
+kubectl rollout status deployment -n micro-onos onos-config --timeout=60s
 ./inventory/register-devices.sh
 ```
 
