@@ -498,6 +498,7 @@ setup_sdn_python_client() {
     repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     local venv_dir="${repo_dir}/.venv"
     local proto_dir="${repo_dir}/proto"
+    local ext_dir="${proto_dir}/github.com/openconfig/gnmi/proto/gnmi_ext"
 
     # 1. Ensure user-owned local virtual environment
     if [ ! -d "$venv_dir" ]; then
@@ -510,15 +511,22 @@ setup_sdn_python_client() {
     "$venv_dir/bin/pip" install --upgrade pip setuptools wheel
     "$venv_dir/bin/pip" install --upgrade --force-reinstall grpcio grpcio-tools grpcio-reflection ncclient xmltodict flask requests
 
-    # 3. Auto-download gnmi.proto if missing
+    # 3. Create missing dependency paths and fetch OpenConfig gNMI schema files
+    mkdir -p "$ext_dir"
+
     if [ ! -f "$proto_dir/gnmi.proto" ]; then
         log_info "gnmi.proto not found in $proto_dir. Downloading OpenConfig gNMI schema..."
-        curl -fsSL https://raw.githubusercontent.com/openconfig/gnmi/master/proto/gnmi/gnmi.proto -o "$proto_dir/gnmi.proto" || log_warn "Failed to download gnmi.proto"
+        curl -fsSL https://raw.githubusercontent.com/openconfig/gnmi/master/proto/gnmi/gnmi.proto -o "$proto_dir/gnmi.proto"
     fi
 
-    # 4. Dynamic compilation for ALL .proto files in the proto directory
+    if [ ! -f "$ext_dir/gnmi_ext.proto" ]; then
+        log_info "Downloading OpenConfig gNMI extension schema (gnmi_ext.proto)..."
+        curl -fsSL https://raw.githubusercontent.com/openconfig/gnmi/master/proto/gnmi_ext/gnmi_ext.proto -o "$ext_dir/gnmi_ext.proto"
+    fi
+
+    # 4. Dynamic compilation for ALL .proto files
     shopt -s nullglob
-    local proto_files=("$proto_dir"/*.proto)
+    local proto_files=("$proto_dir"/*.proto "$ext_dir"/*.proto)
     shopt -u nullglob
 
     if [ ${#proto_files[@]} -gt 0 ]; then
@@ -529,13 +537,14 @@ setup_sdn_python_client() {
             --grpc_python_out="$proto_dir" \
             "${proto_files[@]}"
 
-        touch "$proto_dir/__init__.py"
+        # Initialize Python packages across all generated proto subdirectories
+        find "$proto_dir" -type d -exec touch {}/__init__.py \;
         log_success "Protobuf stubs successfully generated."
     else
         log_warn "No .proto files found in $proto_dir"
     fi
 
-    # 5. Make execution scripts executable (using repo_dir)
+    # 5. Make execution scripts executable
     chmod +x "$repo_dir"/tests/e2e-path-provisioning/* 2>/dev/null || true
     chmod +x "$repo_dir"/hardware-agents/switch-drivers/* 2>/dev/null || true
     chmod +x "$repo_dir"/hardware-agents/gnoi-targets/* 2>/dev/null || true
