@@ -6,21 +6,13 @@ import argparse
 current_dir = os.path.dirname(os.path.abspath(__file__))
 repo_root = os.path.abspath(os.path.join(current_dir, "../.."))
 
-# --- ELEGANT VENV AUTO-DISCOVERY & RE-EXECUTION ---
-venv_candidates = [
-    os.path.join(repo_root, ".venv", "bin", "python3"),
-    os.path.join(repo_root, ".venv", "bin", "python"),
-    "/opt/sdn-venv/bin/python3",
-    os.path.abspath(os.path.join(current_dir, "../.venv/bin/python3")),
-]
+# --- VENV AUTO-DISCOVERY & RE-EXECUTION ---
+venv_dir = os.path.join(repo_root, ".venv")
+venv_python = os.path.join(venv_dir, "bin", "python3")
 
-current_exe = os.path.realpath(sys.executable)
-for venv_python in venv_candidates:
-    if os.path.exists(venv_python):
-        target_exe = os.path.realpath(venv_python)
-        if current_exe != target_exe:
-            os.execv(target_exe, [target_exe] + sys.argv)
-        break
+# Re-execute if python is running outside the project's .venv
+if os.path.isfile(venv_python) and os.path.abspath(sys.prefix) != os.path.abspath(venv_dir):
+    os.execv(venv_python, [venv_python] + sys.argv)
 
 try:
     import grpc
