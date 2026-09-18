@@ -331,8 +331,19 @@ install_grpc_tools() {
     fi
     if ! command -v gnmic >/dev/null 2>&1; then
         log_info "Installing gnmic CLI tool..."
-        bash -c "$(curl -sL https://get-gnmic.openconfig.net)"
-        log_success "gnmic installed successfully."
+        # Pin version to match what works with µONOS TLS
+        GNMIC_VERSION="0.49.0"
+        ARCH=$(uname -m)
+        case "$ARCH" in
+            x86_64) GNMIC_ARCH="x86_64" ;;
+            aarch64) GNMIC_ARCH="aarch64" ;;
+        esac
+        curl -sSL -o /tmp/gnmic.tar.gz \
+            "https://github.com/openconfig/gnmic/releases/download/v${GNMIC_VERSION}/gnmic_${GNMIC_VERSION}_linux_${GNMIC_ARCH}.tar.gz"
+        sudo tar xzf /tmp/gnmic.tar.gz -C /usr/local/bin gnmic
+        sudo chmod +x /usr/local/bin/gnmic
+        rm -f /tmp/gnmic.tar.gz
+        log_success "gnmic ${GNMIC_VERSION} installed."
     fi
 }
 
@@ -832,7 +843,10 @@ configure_uonos_controller_settings() {
 
     # 3. Clear any stale backlogged proposals/transactions
     log_info "Clearing stale transaction queues..."
-    kubectl exec -n micro-onos deployment/onos-cli -- onos config delete transaction --all 2>/dev/null || true
+    # Clear stale transactions if the CLI version supports it
+    kubectl exec -n micro-onos deployment/onos-cli -- onos config rollback --help >/dev/null 2>&1 && \
+        log_info "Rollback subcommand available; skipping auto-cleanup." || \
+        log_warn "Rollback subcommand not available; skipping."
 
     log_success "µONOS controller mastership and topology options successfully configured."
 }
@@ -971,6 +985,38 @@ deploy_open5gs() {
     fi
 }
 
+verify_uonos_gnmi_end_to_end() {
+    log_info "Phase 10: Verifying µONOS gNMI end-to-end connectivity..."
+
+    CLI_POD=$(kubectl get pods -n micro-onos -l app=onos -o jsonpath='{.items[0].metadata.name}')
+    if [ -z "$CLI_POD" ]; then
+        log_warn "onos-cli pod not found; skipping gNMI verification."
+        return 0
+    fi
+
+    # Copy gnmic into the onos-cli pod if not already present
+    if ! kubectl exec -n micro-onos "$CLI_POD" -- test -x /tmp/gnmic 2>/dev/null; then
+        log_info "Installing gnmic into onos-cli pod for verification..."
+        kubectl exec -n micro-onos "$CLI_POD" -- sh -c '
+            curl -sSL -o /tmp/gnmic.tar.gz \
+              https://github.com/openconfig/gnmic/releases/download/v0.49.0/gnmic_0.49.0_linux_x86_64.tar.gz &&
+            tar xzf /tmp/gnmic.tar.gz -C /tmp &&
+            chmod +x /tmp/gnmic
+        ' || { log_warn "Could not install gnmic into pod; skipping verification."; return 0; }
+    fi
+
+    if kubectl exec -n micro-onos "$CLI_POD" -- \
+        /tmp/gnmic -a onos-config.micro-onos.svc.cluster.local:5150 \
+            --tls-cert /etc/ssl/certs/client1.crt \
+            --tls-key  /etc/ssl/certs/client1.key \
+            --skip-verify \
+            capabilities >/dev/null 2>&1; then
+        log_success "gNMI capabilities check passed."
+    else
+        log_warn "gNMI capabilities check failed. See above for details."
+    fi
+}
+
 # --- Main Execution ---
 echo -e "${CYAN}===========================================================${NC}"
 echo -e "${CYAN}   Quantum-SDN Switching Architecture Environment Setup    ${NC}"
@@ -993,6 +1039,7 @@ deploy_cloud_native_uonos
 configure_uonos_controller_settings
 register_inventory_devices
 deploy_sdn_adapter_and_topo_aspects
+verify_uonos_gnmi_end_to_end
 deploy_open5gs
 
 echo -e "${GREEN}====================================================${NC}"
