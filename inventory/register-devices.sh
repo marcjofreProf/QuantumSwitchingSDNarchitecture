@@ -177,6 +177,11 @@ for cfg in device_configs:
 
 PYEOF
 
+# Add to the bottom of inventory/register-devices.sh:
+echo "Flushing onos-config connection pools..."
+kubectl rollout restart deployment/onos-config -n "$NAMESPACE"
+kubectl rollout status deployment/onos-config -n "$NAMESPACE" --timeout=60s
+
 echo ""
 echo "=================================================================="
 echo "  Current Synchronized Configurations in onos-config"
