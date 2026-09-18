@@ -198,7 +198,7 @@ for cfg in device_configs:
 
     result = subprocess.run(cmd_set, capture_output=True, text=True)
 
-        verify = subprocess.run(
+    verify = subprocess.run(
         [
             "kubectl", "exec", "-n", namespace, cli_pod, "--",
             "onos", "topo", "get", "entity", dev_id
