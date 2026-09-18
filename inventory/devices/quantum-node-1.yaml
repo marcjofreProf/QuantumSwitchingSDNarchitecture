@@ -18,4 +18,5 @@ aspects:
     type: "devicesim"
     version: "1.0.x"
   onos.topo.TLSOptions:
+    plain: true
     insecure: true
