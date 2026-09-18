@@ -178,15 +178,6 @@ PYEOF
 
 echo ""
 echo "=================================================================="
-echo "  Hard-Resetting onos-config to clear deadlocked gNMI sessions"
-echo "=================================================================="
-kubectl scale deployment -n "$NAMESPACE" onos-config --replicas=0
-kubectl wait --for=delete pod -l app=onos-config -n "$NAMESPACE" --timeout=30s 2>/dev/null || true
-kubectl scale deployment -n "$NAMESPACE" onos-config --replicas=1
-kubectl rollout status deployment -n "$NAMESPACE" onos-config --timeout=60s
-
-echo ""
-echo "=================================================================="
 echo "  Current Synchronized Configurations in onos-config"
 echo "=================================================================="
 CLI_POD=$(kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/name=onos-cli -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || \
