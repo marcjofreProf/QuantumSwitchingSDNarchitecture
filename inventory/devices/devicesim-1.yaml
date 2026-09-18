@@ -17,5 +17,5 @@ aspects:
     version: "1.0.x"
 
   onos.topo.TLSOptions:
-    plain: false
+    plain: true
     insecure: true
