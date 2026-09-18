@@ -151,15 +151,15 @@ for cfg in device_configs:
     res_create = subprocess.run(cmd_create, capture_output=True, text=True)
 
     attrs = []
-
+    
     if "onos.topo.Configurable" in yaml_aspects:
         configurable = yaml_aspects["onos.topo.Configurable"]
-
+        
         if not isinstance(configurable, dict):
             print(f"    [WARNING] Invalid onos.topo.Configurable "
                   f"for '{dev_id}'")
             continue
-
+        
         attrs.append(
             f"onos.topo.Configurable={json.dumps(configurable, separators=(',', ':'))}"
         )
@@ -172,7 +172,7 @@ for cfg in device_configs:
                 "version": version
             }, separators=(',', ':'))
         )
-
+    
     if "onos.topo.TLSOptions" in yaml_aspects:
         tls_options = yaml_aspects["onos.topo.TLSOptions"]
 
