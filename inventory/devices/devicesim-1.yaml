@@ -19,6 +19,3 @@ aspects:
   onos.topo.TLSOptions:
     plain: false
     insecure: true
-
-  onos.topo.MastershipState:
-    none: {}
