@@ -5,14 +5,17 @@ address: "devicesim-1.micro-onos.svc.cluster.local:10161"
 kind: "devicesim"
 version: "1.0.x"
 role: "simulator"
+
 protocols:
   - name: "gnmi"
     port: 10161
+
 aspects:
   onos.topo.Configurable:
     address: "devicesim-1.micro-onos.svc.cluster.local:10161"
     type: "devicesim"
     version: "1.0.x"
+
   onos.topo.TLSOptions:
     plain: false
     insecure: true
