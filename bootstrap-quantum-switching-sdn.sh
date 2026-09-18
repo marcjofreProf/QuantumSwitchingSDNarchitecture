@@ -822,17 +822,7 @@ configure_uonos_controller_settings() {
     kubectl rollout status deployment/onos-topo -n micro-onos --timeout=120s
     kubectl rollout status deployment/onos-cli -n micro-onos --timeout=120s
 
-    # 3. Configure Topology Aspects for target entities
-    log_info "Applying MastershipState and TLSOptions aspects to quantum-node-1..."
-    kubectl exec -n micro-onos deployment/onos-cli -- onos topo create entity quantum-node-1 -k "devicesim" 2>/dev/null || true
-    
-    # Phase 8.1 & Phase 8.6 update in bootstrap-quantum-switching-sdn.sh:
-    kubectl exec -n micro-onos deployment/onos-cli -- onos topo set entity quantum-node-1 \
-      -a onos.topo.MastershipState='{"none": {}}' \
-      -a onos.topo.TLSOptions='{"insecure": true, "plain": true}' \
-      -a onos.topo.Configurable='{"address":"10.0.0.254:50051","type":"devicesim","version":"1.0.x"}'
-
-    # 4. Clear any stale backlogged proposals/transactions
+    # 3. Clear any stale backlogged proposals/transactions
     log_info "Clearing stale transaction queues..."
     kubectl exec -n micro-onos deployment/onos-cli -- onos config delete transaction --all 2>/dev/null || true
 
@@ -907,18 +897,38 @@ EOF
 
     # 5. Verify topology registration
     log_info "Verifying onos-topo configuration..."
-    kubectl exec -n micro-onos deployment/onos-cli -- onos topo get entity quantum-node-1 | grep -E "gnmi_address|gnoi_address|netconf_address" || log_warn "Endpoints missing from topology."
 
-    log_success "SDN Adapter deployed and onos-topo protocol endpoints registered successfully."
+    if kubectl exec -n micro-onos deployment/onos-cli -- \
+        onos topo get entities >/dev/null 2>&1; then
+        log_success "onos-topo inventory is accessible."
+    else
+        log_warn "Unable to query onos-topo inventory."
+    fi
+
+    log_success "SDN Adapter deployed successfully."
 }
 
 register_inventory_devices() {
     log_info "Phase 8.5: Registering current device inventory with µONOS..."
-    if [ -f "./inventory/register-devices.sh" ]; then
-        ./inventory/register-devices.sh || log_warn "Device registration completed with warnings."
-    else
-        log_warn "./inventory/register-devices.sh script not found. Skipping auto-registration."
+
+    # Ensure inventory registration assets are present
+    if [ ! -f "./inventory/register-devices.sh" ]; then
+        log_error "inventory/register-devices.sh not found."
+        return 1
     fi
+
+    if [ ! -d "./inventory/devices" ]; then
+        log_error "inventory/devices directory not found."
+        return 1
+    fi
+
+    chmod +x "./inventory/register-devices.sh"
+    ./inventory/register-devices.sh || {
+        log_error "Device registration failed."
+        return 1
+    }
+
+    log_success "µONOS device inventory registration completed."
 }
 
 deploy_open5gs() {
@@ -973,8 +983,8 @@ setup_sdn_python_client
 compile_uonos_model_plugins
 deploy_cloud_native_uonos
 configure_uonos_controller_settings
-deploy_sdn_adapter_and_topo_aspects
 register_inventory_devices
+deploy_sdn_adapter_and_topo_aspects
 deploy_open5gs
 
 echo -e "${GREEN}====================================================${NC}"
