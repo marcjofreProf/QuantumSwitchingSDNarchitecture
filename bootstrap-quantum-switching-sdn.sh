@@ -826,9 +826,11 @@ configure_uonos_controller_settings() {
     log_info "Applying MastershipState and TLSOptions aspects to quantum-node-1..."
     kubectl exec -n micro-onos deployment/onos-cli -- onos topo create entity quantum-node-1 -k "devicesim" 2>/dev/null || true
     
+    # Phase 8.1 & Phase 8.6 update in bootstrap-quantum-switching-sdn.sh:
     kubectl exec -n micro-onos deployment/onos-cli -- onos topo set entity quantum-node-1 \
       -a onos.topo.MastershipState='{"none": {}}' \
-      -a onos.topo.TLSOptions='{"insecure": true, "plain": true}' || log_warn "Failed to set topo aspects."
+      -a onos.topo.TLSOptions='{"insecure": true, "plain": true}' \
+      -a onos.topo.Configurable='{"address":"10.0.0.254:50051","type":"devicesim","version":"1.0.x"}'
 
     # 4. Clear any stale backlogged proposals/transactions
     log_info "Clearing stale transaction queues..."
@@ -903,26 +905,7 @@ EOF
         exit 1
     }
 
-    # 5. Program protocol endpoints into onos-topo
-    log_info "Registering protocol endpoints for quantum-node-1 in onos-topo..."
-    kubectl exec -n micro-onos deployment/onos-cli -- onos topo create entity quantum-node-1 -k "devicesim" 2>/dev/null || true
-    kubectl exec -n micro-onos deployment/onos-cli -- onos topo create entity "10.0.0.254" -k "devicesim" 2>/dev/null || true
-    
-    kubectl exec -n micro-onos deployment/onos-cli -- onos topo set entity quantum-node-1 \
-      -a gnmi_address="10.0.0.254:50051" \
-      -a gnoi_address="10.0.0.254:50051" \
-      -a netconf_address="10.0.0.254:8300" \
-      -a onos.topo.TLSOptions='{"insecure":true,"plain":true}' \
-      -a onos.topo.Configurable='{"address":"10.0.0.254:50051","type":"devicesim","version":"1.0.x"}' || log_warn "Failed to set topo aspects."
-    
-    kubectl exec -n micro-onos deployment/onos-cli -- onos topo set entity "10.0.0.254" \
-      -a gnmi_address="10.0.0.254:50051" \
-      -a gnoi_address="10.0.0.254:50051" \
-      -a netconf_address="10.0.0.254:8300" \
-      -a onos.topo.TLSOptions='{"insecure":true,"plain":true}' \
-      -a onos.topo.Configurable='{"address":"10.0.0.254:50051","type":"devicesim","version":"1.0.x"}' || log_warn "Failed to set topo aspects."
-
-    # 6. Verify topology registration
+    # 5. Verify topology registration
     log_info "Verifying onos-topo configuration..."
     kubectl exec -n micro-onos deployment/onos-cli -- onos topo get entity quantum-node-1 | grep -E "gnmi_address|gnoi_address|netconf_address" || log_warn "Endpoints missing from topology."
 
