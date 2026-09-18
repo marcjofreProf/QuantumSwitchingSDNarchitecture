@@ -5,6 +5,7 @@ address: "10.0.0.254:50051"
 kind: "devicesim"
 version: "1.0.x"
 role: "quantum-switch"
+
 protocols:
   - name: "gnmi"
     port: 50051
@@ -12,11 +13,13 @@ protocols:
     port: 50051
   - name: "netconf"
     port: 8300
+
 aspects:
   onos.topo.Configurable:
     address: "10.0.0.254:50051"
     type: "devicesim"
     version: "1.0.x"
+
   onos.topo.TLSOptions:
     plain: true
     insecure: true
