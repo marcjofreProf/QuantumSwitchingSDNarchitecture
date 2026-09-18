@@ -177,16 +177,6 @@ for cfg in device_configs:
 
 PYEOF
 
-# Add to the bottom of inventory/register-devices.sh:
 echo "Flushing onos-config connection pools..."
 kubectl rollout restart deployment/onos-config -n "$NAMESPACE"
 kubectl rollout status deployment/onos-config -n "$NAMESPACE" --timeout=60s
-
-echo ""
-echo "=================================================================="
-echo "  Current Synchronized Configurations in onos-config"
-echo "=================================================================="
-CLI_POD=$(kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/name=onos-cli -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || \
-          kubectl get pods -n "$NAMESPACE" -l app=onos-cli -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || \
-          kubectl get pods -n "$NAMESPACE" 2>/dev/null | grep onos-cli | awk '{print $1}' | head -n 1)
-kubectl exec -n "$NAMESPACE" "$CLI_POD" -- onos config get configurations
