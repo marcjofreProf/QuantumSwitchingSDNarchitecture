@@ -192,3 +192,33 @@ To remove installed binaries, purge the Python virtual environment and compiled 
 sudo chmod +x uninstall-bootstrap-quantum-switching-sdn.sh
 ./uninstall-bootstrap-quantum-switching-sdn.sh
 ```
+
+## Lessons-Learned
+# µONOS gNMI Access
+
+## Northbound gNMI (onos-config:5150)
+
+- Protocol: gRPC over mTLS
+- Client certs: `client1.crt` + `client1.key` (shipped in the onos-cli image)
+- CA: `onfca.crt` (ONF root CA)
+- Server cert verification: **must be skipped** because the server cert
+  is signed by a CA that isn't distributed to the client.
+  Use `--skip-verify` in gnmic.
+- Do NOT use `tls.cacrt` from the onos-config-secret as a CA — it is
+  a leaf certificate, not a CA, and gnmic will reject it.
+
+## Example (from host)
+
+    gnmic -a <onos-config-LB-IP>:5150 \
+      --tls-cert /etc/onos/certs/client1.crt \
+      --tls-key  /etc/onos/certs/client1.key \
+      --skip-verify \
+      capabilities
+
+## Writable paths
+
+The `devicesim` model plugin implements only a very small subset of
+OpenConfig writes. Attempts to write to `/system/config/motd-banner`
+or `/system/clock/config/timezone-name` return `not yet supported`.
+For custom writable paths, build a proper model plugin (see
+`sdn-controller/northbound-interfaces/model-plugin`).
