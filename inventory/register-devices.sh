@@ -131,13 +131,14 @@ for cfg in device_configs:
     version = cfg['version']
     yaml_aspects = cfg['yaml_aspects']
     
-    host_parts = address.split(":")
-    host_ip = host_parts[0]
-    default_addr_port = host_parts[1] if len(host_parts) > 1 else "50051"
-    gnmi_port = cfg['gnmi_port'] or default_addr_port
+    address = cfg['address']
+    kind = cfg['kind']
+    version = cfg['version']
+    yaml_aspects = cfg['yaml_aspects']
 
-    print(f"[*] Provisioning Topology Entity: '{dev_id}' (Kind: '{kind}') -> Primary: '{address}'")
-
+    print(f"[*] Provisioning Topology Entity: '{dev_id}' "
+          f"(Kind: '{kind}') -> Primary: '{address}'")
+    
     subprocess.run(
         ["kubectl", "exec", "-n", namespace, cli_pod, "--", "onos", "topo", "delete", "entity", dev_id],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
@@ -150,16 +151,43 @@ for cfg in device_configs:
     res_create = subprocess.run(cmd_create, capture_output=True, text=True)
 
     attrs = []
+
     if "onos.topo.Configurable" in yaml_aspects:
-        attrs.append(f"onos.topo.Configurable={json.dumps(yaml_aspects['onos.topo.Configurable'])}")
+        configurable = yaml_aspects["onos.topo.Configurable"]
+
+        if not isinstance(configurable, dict):
+            print(f"    [WARNING] Invalid onos.topo.Configurable "
+                  f"for '{dev_id}'")
+            continue
+
+        attrs.append(
+            f"onos.topo.Configurable={json.dumps(configurable, separators=(',', ':'))}"
+        )
     else:
-        attrs.append(f'onos.topo.Configurable={json.dumps({"address": f"{host_ip}:{gnmi_port}", "type": kind, "version": version})}')
-    
+        attrs.append(
+            "onos.topo.Configurable=" +
+            json.dumps({
+                "address": address,
+                "type": kind,
+                "version": version
+            }, separators=(',', ':'))
+        )
+
     if "onos.topo.TLSOptions" in yaml_aspects:
-        attrs.append(f"onos.topo.TLSOptions={json.dumps(yaml_aspects['onos.topo.TLSOptions'])}")
+        tls_options = yaml_aspects["onos.topo.TLSOptions"]
+
+        if not isinstance(tls_options, dict):
+            print(f"    [WARNING] Invalid onos.topo.TLSOptions "
+                  f"for '{dev_id}'")
+            continue
+
+        attrs.append(
+            f"onos.topo.TLSOptions={json.dumps(tls_options, separators=(',', ':'))}"
+        )
     else:
-        # Default fallback for plaintext (non-TLS) gRPC targets
-        attrs.append('onos.topo.TLSOptions={"plain":true,"insecure":true}')
+        attrs.append(
+            'onos.topo.TLSOptions={"plain":true,"insecure":true}'
+        )
 
     cmd_set = [
         "kubectl", "exec", "-n", namespace, cli_pod, "--",
@@ -170,13 +198,23 @@ for cfg in device_configs:
 
     result = subprocess.run(cmd_set, capture_output=True, text=True)
 
-    if result.returncode == 0:
-        print(f"    [SUCCESS] Provisioned entity '{dev_id}' with Kind ID '{kind}' in onos-topo.")
+        verify = subprocess.run(
+        [
+            "kubectl", "exec", "-n", namespace, cli_pod, "--",
+            "onos", "topo", "get", "entity", dev_id
+        ],
+        capture_output=True,
+        text=True
+    )
+
+    if verify.returncode == 0:
+        print(f"    [SUCCESS] Verified topology entity '{dev_id}'.")
+        print(verify.stdout.strip())
     else:
-        print(f"    [WARNING] Attribute update failed for '{dev_id}'. Output: {result.stderr.strip()}")
+        print(
+            f"    [WARNING] Entity '{dev_id}' was created, "
+            f"but verification failed:"
+        )
+        print(verify.stderr.strip())
 
 PYEOF
-
-echo "Flushing onos-config connection pools..."
-kubectl rollout restart deployment/onos-config -n "$NAMESPACE"
-kubectl rollout status deployment/onos-config -n "$NAMESPACE" --timeout=60s
