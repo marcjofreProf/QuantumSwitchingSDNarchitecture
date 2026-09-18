@@ -158,7 +158,7 @@ for cfg in device_configs:
     if "onos.topo.TLSOptions" in yaml_aspects:
         attrs.append(f"onos.topo.TLSOptions={json.dumps(yaml_aspects['onos.topo.TLSOptions'])}")
     else:
-        attrs.append('onos.topo.TLSOptions={"insecure":true}')
+        attrs.append('onos.topo.TLSOptions={"plain":true,"insecure":true}')
 
     cmd_set = [
         "kubectl", "exec", "-n", namespace, cli_pod, "--",
