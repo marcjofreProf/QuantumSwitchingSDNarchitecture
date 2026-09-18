@@ -154,10 +154,11 @@ for cfg in device_configs:
         attrs.append(f"onos.topo.Configurable={json.dumps(yaml_aspects['onos.topo.Configurable'])}")
     else:
         attrs.append(f'onos.topo.Configurable={json.dumps({"address": f"{host_ip}:{gnmi_port}", "type": kind, "version": version})}')
-
+    
     if "onos.topo.TLSOptions" in yaml_aspects:
         attrs.append(f"onos.topo.TLSOptions={json.dumps(yaml_aspects['onos.topo.TLSOptions'])}")
     else:
+        # Default fallback for plaintext (non-TLS) gRPC targets
         attrs.append('onos.topo.TLSOptions={"plain":true,"insecure":true}')
 
     cmd_set = [
