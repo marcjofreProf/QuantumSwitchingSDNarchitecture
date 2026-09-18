@@ -112,11 +112,11 @@ res_topo = subprocess.run(
     capture_output=True, text=True
 )
 if res_topo.returncode == 0:
-    for line in res_topo.stdout.splitlines()[1:]:
+    for line in res_topo.stdout.splitlines():
         parts = line.split()
         if parts:
             ent_id = parts[0]
-            if ent_id not in active_dev_ids and ent_id != "Entity" and not ent_id.startswith("gnmi:"):
+            if ent_id not in active_dev_ids and ent_id not in ["Entity", "ID", "Entity ID"] and not ent_id.startswith("gnmi:"):
                 print(f"[*] Removing stale topology entity: '{ent_id}'")
                 subprocess.run(
                     ["kubectl", "exec", "-n", namespace, cli_pod, "--", "onos", "topo", "delete", "entity", ent_id],
@@ -178,13 +178,18 @@ PYEOF
 
 echo ""
 echo "=================================================================="
-echo "  Restarting onos-config to synchronize target configurations"
+echo "  Hard-Resetting onos-config to clear deadlocked gNMI sessions"
 echo "=================================================================="
-kubectl rollout restart deployment -n "$NAMESPACE" onos-config
+kubectl scale deployment -n "$NAMESPACE" onos-config --replicas=0
+kubectl wait --for=delete pod -l app=onos-config -n "$NAMESPACE" --timeout=30s 2>/dev/null || true
+kubectl scale deployment -n "$NAMESPACE" onos-config --replicas=1
 kubectl rollout status deployment -n "$NAMESPACE" onos-config --timeout=60s
 
 echo ""
 echo "=================================================================="
 echo "  Current Synchronized Configurations in onos-config"
 echo "=================================================================="
+CLI_POD=$(kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/name=onos-cli -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || \
+          kubectl get pods -n "$NAMESPACE" -l app=onos-cli -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || \
+          kubectl get pods -n "$NAMESPACE" 2>/dev/null | grep onos-cli | awk '{print $1}' | head -n 1)
 kubectl exec -n "$NAMESPACE" "$CLI_POD" -- onos config get configurations
