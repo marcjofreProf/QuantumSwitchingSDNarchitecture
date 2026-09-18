@@ -48,6 +48,9 @@ if not yaml_files:
     print(f"[!] No device definition files found in {devices_dir}")
     sys.exit(0)
 
+active_dev_ids = set()
+device_configs = []
+
 for filepath in yaml_files:
     dev_id = None
     address = None
@@ -55,8 +58,6 @@ for filepath in yaml_files:
     role = "quantum-switch"
     version = "1.0.x"
     gnmi_port = None
-    gnoi_port = None
-    netconf_port = None
     yaml_aspects = {}
 
     if HAS_YAML:
@@ -76,10 +77,6 @@ for filepath in yaml_files:
                     port = str(proto.get("port", ""))
                     if name == "gnmi":
                         gnmi_port = port
-                    elif name == "gnoi":
-                        gnoi_port = port
-                    elif name == "netconf":
-                        netconf_port = port
     else:
         with open(filepath, 'r') as f:
             content = f.read()
@@ -98,13 +95,46 @@ for filepath in yaml_files:
         print(f"[EXCLUDED] Skipping {filepath}: Missing 'id' or 'address'.")
         continue
 
+    active_dev_ids.add(dev_id)
+    device_configs.append({
+        'dev_id': dev_id,
+        'address': address,
+        'kind': kind,
+        'role': role,
+        'version': version,
+        'gnmi_port': gnmi_port,
+        'yaml_aspects': yaml_aspects
+    })
+
+# Remove stale topology entities from onos-topo
+res_topo = subprocess.run(
+    ["kubectl", "exec", "-n", namespace, cli_pod, "--", "onos", "topo", "get", "entities"],
+    capture_output=True, text=True
+)
+if res_topo.returncode == 0:
+    for line in res_topo.stdout.splitlines()[1:]:
+        parts = line.split()
+        if parts:
+            ent_id = parts[0]
+            if ent_id not in active_dev_ids and ent_id != "Entity" and not ent_id.startswith("gnmi:"):
+                print(f"[*] Removing stale topology entity: '{ent_id}'")
+                subprocess.run(
+                    ["kubectl", "exec", "-n", namespace, cli_pod, "--", "onos", "topo", "delete", "entity", ent_id],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                )
+
+# Provision active devices cleanly
+for cfg in device_configs:
+    dev_id = cfg['dev_id']
+    address = cfg['address']
+    kind = cfg['kind']
+    version = cfg['version']
+    yaml_aspects = cfg['yaml_aspects']
+    
     host_parts = address.split(":")
     host_ip = host_parts[0]
     default_addr_port = host_parts[1] if len(host_parts) > 1 else "50051"
-
-    gnmi_port = gnmi_port or default_addr_port
-    gnoi_port = gnoi_port or gnmi_port
-    netconf_port = netconf_port or "8300"
+    gnmi_port = cfg['gnmi_port'] or default_addr_port
 
     print(f"[*] Provisioning Topology Entity: '{dev_id}' (Kind: '{kind}') -> Primary: '{address}'")
 
@@ -118,19 +148,8 @@ for filepath in yaml_files:
         "onos", "topo", "create", "entity", dev_id, "-k", kind
     ]
     res_create = subprocess.run(cmd_create, capture_output=True, text=True)
-    if res_create.returncode != 0:
-        print(f"    [WARNING] Failed creating entity '{dev_id}': {res_create.stderr.strip()}")
 
-    attrs = [
-        f"address={address}",
-        f"target_type={kind}",
-        f"role={role}",
-        f"version={version}",
-        f"gnmi_address={host_ip}:{gnmi_port}",
-        f"gnoi_address={host_ip}:{gnoi_port}",
-        f"netconf_address={host_ip}:{netconf_port}"
-    ]
-
+    attrs = []
     if "onos.topo.Configurable" in yaml_aspects:
         attrs.append(f"onos.topo.Configurable={json.dumps(yaml_aspects['onos.topo.Configurable'])}")
     else:
@@ -139,7 +158,7 @@ for filepath in yaml_files:
     if "onos.topo.TLSOptions" in yaml_aspects:
         attrs.append(f"onos.topo.TLSOptions={json.dumps(yaml_aspects['onos.topo.TLSOptions'])}")
     else:
-        attrs.append('onos.topo.TLSOptions={"insecure":true,"plain":true}')
+        attrs.append('onos.topo.TLSOptions={"insecure":true}')
 
     cmd_set = [
         "kubectl", "exec", "-n", namespace, cli_pod, "--",
@@ -151,7 +170,7 @@ for filepath in yaml_files:
     result = subprocess.run(cmd_set, capture_output=True, text=True)
 
     if result.returncode == 0:
-        print(f"    [SUCCESS] Created entity '{dev_id}' with Kind ID '{kind}' and updated attributes in onos-topo.")
+        print(f"    [SUCCESS] Provisioned entity '{dev_id}' with Kind ID '{kind}' in onos-topo.")
     else:
         print(f"    [WARNING] Attribute update failed for '{dev_id}'. Output: {result.stderr.strip()}")
 
