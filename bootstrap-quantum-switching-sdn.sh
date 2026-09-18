@@ -784,29 +784,37 @@ EOF
     # Expose onos-config via LoadBalancer preserving ports 5150 (gNMI) and 5151 (gNOI)
     kubectl patch svc onos-config -n micro-onos -p '{"spec": {"type": "LoadBalancer", "ports": [{"name": "gnmi", "port": 5150, "targetPort": 5150}, {"name": "gnoi", "port": 5151, "targetPort": 5151}]}}' 2>/dev/null || true
 
-    # Extract mTLS certificates for local gNMI tools
-    log_info "Extracting µONOS client certificates for gnmic..."
-    # Extract mTLS certificates for local gNMI tools
+    # Extract mTLS certificates for local gNMI tools from the onos-cli pod,
+    # which ships the correct ONF-signed client certs (client1.crt/key + onfca.crt).
     log_info "Extracting µONOS client certificates for gnmic..."
     sudo mkdir -p /etc/onos/certs
-    kubectl get secret -n micro-onos onos-config-secret -o go-template='{{index .data "tls.crt"}}' | base64 -d | sudo tee /etc/onos/certs/tls.crt > /dev/null
-    kubectl get secret -n micro-onos onos-config-secret -o go-template='{{index .data "tls.key"}}' | base64 -d | sudo tee /etc/onos/certs/tls.key > /dev/null
-    kubectl get secret -n micro-onos onos-config-secret -o go-template='{{index .data "tls.cacrt"}}' | base64 -d | sudo tee /etc/onos/certs/tls.cacrt > /dev/null
 
-    sudo chmod 644 /etc/onos/certs/tls.*
-    
-    # Write user-level gnmic configuration
-    cat << 'EOF' | sudo tee ./.gnmic.yaml > /dev/null
+    CLI_POD=$(kubectl get pods -n micro-onos -l app=onos -o jsonpath='{.items[0].metadata.name}')
+    kubectl cp micro-onos/${CLI_POD}:/etc/ssl/certs/client1.crt /tmp/client1.crt
+    kubectl cp micro-onos/${CLI_POD}:/etc/ssl/certs/client1.key /tmp/client1.key
+    kubectl cp micro-onos/${CLI_POD}:/etc/ssl/certs/onfca.crt  /tmp/onfca.crt
+
+    sudo cp /tmp/client1.crt /etc/onos/certs/client1.crt
+    sudo cp /tmp/client1.key /etc/onos/certs/client1.key
+    sudo cp /tmp/onfca.crt   /etc/onos/certs/onfca.crt
+    sudo chmod 644 /etc/onos/certs/*
+
+    # NOTE: The CA in onos-config-secret ('tls.cacrt') is NOT a valid CA and
+    # will be rejected by gnmic with "not a CA". Use onfca.crt instead.
+    # The server cert is signed by a CA that is not distributed to the client,
+    # so skip-verify is required for now.
+
+    cat << 'EOF' | sudo tee /etc/gnmic/gnmic.yaml > /dev/null
+username: ""
+password: ""
 skip-verify: true
-tls-cert: /etc/onos/certs/tls.crt
-tls-key: /etc/onos/certs/tls.key
+encoding: JSON_IETF
+tls-cert: /etc/onos/certs/client1.crt
+tls-key: /etc/onos/certs/client1.key
 EOF
-    
-    sudo chmod 644 ./.gnmic.yaml
+    sudo chmod 644 /etc/gnmic/gnmic.yaml
 
     log_success "gnmic mTLS configuration generated successfully."
-    
-    log_success "µONOS deployment completed successfully!"
 }
 
 configure_uonos_controller_settings() {
