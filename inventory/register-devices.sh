@@ -367,7 +367,7 @@ for cfg in "${REGISTERED_DEVICES[@]}"; do
         --cert "${CERT_DIR}/client1.crt" \
         --key  "${CERT_DIR}/client1.key" \
         --ca   "${CERT_DIR}/tls.cacrt" \
-        --server-name "onos-config.micro-onos.svc.cluster.local" \
+        --server-name "onos-config.opennetworking.org" \
         || echo "    [WARNING] Set failed for '$cfg' (see above)."
 done
 
