@@ -1,9 +1,9 @@
 id: "quantum-node-1"
-kind_id: "devicesim"
+kind_id: "controller-quantum-switching"
 display_name: "Physical BeagleBone Quantum Switch 1"
 address: "10.0.0.254:50051"
-kind: "devicesim"
-version: "1.0.x"
+kind: "controller-quantum-switching"
+version: "1.0.0"
 role: "quantum-switch"
 
 protocols:
@@ -17,8 +17,8 @@ protocols:
 aspects:
   onos.topo.Configurable:
     address: "10.0.0.254:50051"
-    type: "devicesim"
-    version: "1.0.x"
+    type: "controller-quantum-switching"
+    version: "1.0.0"
 
   onos.topo.TLSOptions:
     plain: true
