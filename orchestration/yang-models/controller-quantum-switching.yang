@@ -7,7 +7,7 @@ module controller-quantum-switching {
     contact "SDN Architecture Team <sdn@example.com>";
     description "Quantum Switching Model";
 
-    revision 2026-01-01 {
+    revision 2026-08-29 {
         description "Initial revision.";
         reference "RFC 8407 Compliance";
     }
