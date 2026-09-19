@@ -509,36 +509,27 @@ setup_sdn_python_client() {
     repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     local venv_dir="${repo_dir}/.venv"
     local proto_dir="${repo_dir}/proto"
-    local ext_dir="${proto_dir}/github.com/openconfig/gnmi/proto/gnmi_ext"
 
-    # 1. Ensure user-owned local virtual environment
-    if [ ! -d "$venv_dir" ]; then
-        log_info "Creating local project virtual environment in $venv_dir..."
-        python3 -m venv "$venv_dir"
-    fi
-
-    # 2. Upgrade pip and synchronize gRPC dependencies
-    log_info "Installing and upgrading Python dependencies..."
-    "$venv_dir/bin/pip" install --upgrade pip setuptools wheel
-    "$venv_dir/bin/pip" install --upgrade --force-reinstall grpcio grpcio-tools grpcio-reflection ncclient xmltodict flask requests
-
-    # 3. Create missing dependency paths and fetch OpenConfig gNMI schema files
-    mkdir -p "$ext_dir"
+    # 3. Fetch OpenConfig gNMI schema files into a flat proto/ directory
+    mkdir -p "$proto_dir"
 
     if [ ! -f "$proto_dir/gnmi.proto" ]; then
         log_info "gnmi.proto not found in $proto_dir. Downloading OpenConfig gNMI schema..."
         curl -fsSL https://raw.githubusercontent.com/openconfig/gnmi/master/proto/gnmi/gnmi.proto -o "$proto_dir/gnmi.proto"
     fi
 
-    if [ ! -f "$ext_dir/gnmi_ext.proto" ]; then
+    if [ ! -f "$proto_dir/gnmi_ext.proto" ]; then
         log_info "Downloading OpenConfig gNMI extension schema (gnmi_ext.proto)..."
-        curl -fsSL https://raw.githubusercontent.com/openconfig/gnmi/master/proto/gnmi_ext/gnmi_ext.proto -o "$ext_dir/gnmi_ext.proto"
+        curl -fsSL https://raw.githubusercontent.com/openconfig/gnmi/master/proto/gnmi_ext/gnmi_ext.proto -o "$proto_dir/gnmi_ext.proto"
     fi
 
-    # 4. Dynamic compilation for ALL .proto files
-    shopt -s nullglob
-    local proto_files=("$proto_dir"/*.proto "$ext_dir"/*.proto)
-    shopt -u nullglob
+    # 4. Compile both proto files into Python stubs
+    "$venv_dir/bin/python" -m grpc_tools.protoc \
+        -I"$proto_dir" \
+        --python_out="$proto_dir" \
+        --grpc_python_out="$proto_dir" \
+        "$proto_dir/gnmi.proto" \
+        "$proto_dir/gnmi_ext.proto"
 
     if [ ${#proto_files[@]} -gt 0 ]; then
         log_info "Compiling ${#proto_files[@]} Protobuf schema(s)..."
@@ -933,9 +924,13 @@ EOF
 register_inventory_devices() {
     log_info "Phase 8.5: Registering current device inventory with µONOS..."
 
-    # Ensure inventory registration assets are present
     if [ ! -f "./inventory/register-devices.sh" ]; then
         log_error "inventory/register-devices.sh not found."
+        return 1
+    fi
+
+    if [ ! -f "./inventory/gnmi_set_with_ext.py" ]; then
+        log_error "inventory/gnmi_set_with_ext.py not found."
         return 1
     fi
 
@@ -945,6 +940,7 @@ register_inventory_devices() {
     fi
 
     chmod +x "./inventory/register-devices.sh"
+    chmod +x "./inventory/gnmi_set_with_ext.py"
     ./inventory/register-devices.sh || {
         log_error "Device registration failed."
         return 1
