@@ -24,6 +24,20 @@ if [ -z "$CLI_POD" ]; then
     exit 1
 fi
 
+# Track device IDs for post-registration verification
+declare -a REGISTERED_DEVICES=()
+for f in "$DEVICES_DIR"/*.yaml "$DEVICES_DIR"/*.yml; do
+    [ -f "$f" ] || continue
+    dev_id=$(grep -E '^[[:space:]]*id:[[:space:]]*' "$f" | head -n1 | \
+             sed -E 's/^[[:space:]]*id:[[:space:]]*["'"'"']?([^"'"'"'#]+).*/\1/' | tr -d ' ')
+    if [ -n "$dev_id" ]; then
+        REGISTERED_DEVICES+=("$dev_id")
+    fi
+done
+
+echo "[*] Devices to register: ${REGISTERED_DEVICES[*]}"
+echo
+
 python3 - "$DEVICES_DIR" "$NAMESPACE" "$CLI_POD" << 'PYEOF'
 import os
 import sys
@@ -216,8 +230,6 @@ for cfg in device_configs:
             f"but verification failed:"
         )
         print(verify.stderr.strip())
-
-PYEOF
 
 PYEOF
 
