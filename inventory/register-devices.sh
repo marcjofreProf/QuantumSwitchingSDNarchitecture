@@ -38,6 +38,168 @@ done
 echo "[*] Devices to register: ${REGISTERED_DEVICES[*]}"
 echo
 
+# ---------------------------------------------------------------------------
+# Phase 1: Build the custom YANG model plugin for the Quantum Switching device
+#
+# The model plugin is what teaches onos-config how to validate Set requests
+# against the BeagleBone's own schema. Without it, onos-config falls back to
+# the built-in "devicesim" plugin, which only implements a small subset of
+# OpenConfig paths.
+#
+# The plugin is built as a Docker image and later added as a sidecar to the
+# onos-config deployment (see Phase 2).
+# ---------------------------------------------------------------------------
+echo
+echo "=================================================================="
+echo "  Building Quantum Switching model plugin"
+echo "=================================================================="
+
+PLUGIN_DIR="$(cd "$(dirname "$0")/.." && pwd)/sdn-controller/northbound-interfaces/model-plugin"
+YANG_SRC="$(cd "$(dirname "$0")/.." && pwd)/orchestration/yang-models/controller-quantum-switching.yang"
+YANG_DST="${PLUGIN_DIR}/yang/controller-quantum-switching.yang"
+
+if ! command -v docker >/dev/null 2>&1; then
+    echo "[!] ERROR: docker not available; cannot build model plugin."
+    exit 1
+fi
+
+mkdir -p "${PLUGIN_DIR}/yang"
+
+if [ ! -f "${YANG_SRC}" ]; then
+    echo "[!] ERROR: YANG model not found at ${YANG_SRC}"
+    echo "    Expected repository file describing the Quantum Switching schema."
+    exit 1
+fi
+
+echo "[*] Copying ${YANG_SRC} → ${YANG_DST}"
+cp "${YANG_SRC}" "${YANG_DST}"
+
+# metadata.yaml is required by the onosproject/model-compiler image.
+# Derive its revision from the YANG file so the two never drift apart.
+YANG_REVISION=$(grep -oE 'revision[[:space:]]+[0-9]{4}-[0-9]{2}-[0-9]{2}' "${YANG_DST}" \
+                | head -n1 | awk '{print $2}')
+YANG_REVISION=${YANG_REVISION:-2026-08-29}
+
+cat > "${PLUGIN_DIR}/metadata.yaml" <<EOF
+name: controller-quantum-switching
+version: 1.0.0
+contactName: "SDN Architecture Team"
+licenseName: "Apache-2.0"
+artifactName: controller-quantum-switching
+goPackage: github.com/onosproject/controller-quantum-switching
+modules:
+  - name: controller-quantum-switching
+    organization: custom
+    revision: "${YANG_REVISION}"
+    file: controller-quantum-switching.yang
+EOF
+
+echo "[*] Running onosproject/model-compiler to generate Go code..."
+PLUGIN_DIR_ABS=$(realpath "${PLUGIN_DIR}")
+docker run --rm -v "${PLUGIN_DIR_ABS}:/config-model" \
+    onosproject/model-compiler:latest
+
+sudo chown -R "$(id -u):$(id -g)" "${PLUGIN_DIR}"
+
+if [ ! -f "${PLUGIN_DIR}/Makefile" ]; then
+    echo "[!] ERROR: model-compiler did not produce a Makefile in ${PLUGIN_DIR}."
+    echo "    The YANG model likely has errors. Re-run:"
+    echo "      docker run --rm -v ${PLUGIN_DIR_ABS}:/config-model onosproject/model-compiler:latest"
+    exit 1
+fi
+
+echo "[*] Building plugin image onosproject/controller-quantum-switching:1.0.0-... "
+(
+    cd "${PLUGIN_DIR}"
+    make image
+) || { echo "[!] ERROR: Failed to build model plugin image."; exit 1; }
+
+PLUGIN_IMAGE="onosproject/controller-quantum-switching:1.0.0-controller-quantum-switching-1.0.0"
+
+if ! docker images --format '{{.Repository}}:{{.Tag}}' | grep -qF "${PLUGIN_IMAGE}"; then
+    echo "[!] ERROR: Expected image ${PLUGIN_IMAGE} was not produced."
+    docker images | grep controller-quantum-switching || true
+    exit 1
+fi
+
+echo "[*] Importing ${PLUGIN_IMAGE} into K3s containerd..."
+docker save "${PLUGIN_IMAGE}" | sudo k3s ctr images import -
+
+echo "[SUCCESS] Model plugin built and imported."
+
+# ---------------------------------------------------------------------------
+# Phase 2: Attach the model plugin as a sidecar to onos-config
+#
+# onos-config loads model plugins as sidecar containers. Adding a new one
+# requires a `helm upgrade` with a values override, followed by a rollout.
+# ---------------------------------------------------------------------------
+echo
+echo "=================================================================="
+echo "  Attaching model plugin to onos-config"
+echo "=================================================================="
+
+ONOS_HELM_DIR="$(cd "$(dirname "$0")/.." && pwd)/onos-helm-charts"
+if [ ! -d "${ONOS_HELM_DIR}/onos-umbrella" ]; then
+    echo "[!] ERROR: ${ONOS_HELM_DIR}/onos-umbrella not found."
+    exit 1
+fi
+
+# Check whether the plugin sidecar is already configured
+CURRENT_SIDECARS=$(kubectl get deploy onos-config -n "${NAMESPACE}" \
+    -o jsonpath='{.spec.template.spec.containers[*].name}' 2>/dev/null || echo "")
+
+if echo "${CURRENT_SIDECARS}" | grep -qw "controller-quantum-switching"; then
+    echo "[*] onos-config already has the controller-quantum-switching sidecar."
+else
+    echo "[*] Adding controller-quantum-switching sidecar via helm upgrade..."
+
+    # Helm values override: append a new sidecar to onos-config.
+    # The exact key path depends on the chart; check the chart's values.yaml
+    # if this does not take effect. Common paths:
+    #   onos-config.plugins.<name>.image / port / ...  (older charts)
+    #   onos-umbrella.onos-config.<name>...           (newer charts)
+    cat > /tmp/uonos-plugin-values.yaml <<EOF
+onos-config:
+  plugins:
+    controller-quantum-switching:
+      image: ${PLUGIN_IMAGE}
+      port: 5155
+      enabled: true
+EOF
+
+    (
+        cd "${ONOS_HELM_DIR}"
+        helm upgrade onos-umbrella ./onos-umbrella \
+            -n "${NAMESPACE}" \
+            -f /tmp/uonos-plugin-values.yaml
+    ) || {
+        echo "[!] WARNING: helm upgrade failed; the plugin may not be loaded."
+        echo "    Inspect the chart's values.yaml and adjust the key path."
+    }
+
+    echo "[*] Waiting for onos-config rollout to complete..."
+    kubectl rollout status deployment/onos-config -n "${NAMESPACE}" --timeout=180s || {
+        echo "[!] WARNING: onos-config rollout did not complete in time."
+    }
+
+    echo "[*] Giving onos-config 15s to initialize the plugin..."
+    sleep 15
+fi
+
+# Verify the sidecar exists
+CURRENT_SIDECARS=$(kubectl get deploy onos-config -n "${NAMESPACE}" \
+    -o jsonpath='{.spec.template.spec.containers[*].name}' 2>/dev/null || echo "")
+
+if ! echo "${CURRENT_SIDECARS}" | grep -qw "controller-quantum-switching"; then
+    echo "[!] WARNING: controller-quantum-switching sidecar is not present on onos-config."
+    echo "    The device will fall back to the devicesim model plugin."
+fi
+
+# Verify onos-config sees the plugin as Loaded
+echo "[*] Checking plugin status inside onos-config..."
+kubectl exec -n "${NAMESPACE}" "$(kubectl get pods -n ${NAMESPACE} -l app=onos -o jsonpath='{.items[0].metadata.name}')" -- \
+    onos config get plugins || true
+
 python3 - "$DEVICES_DIR" "$NAMESPACE" "$CLI_POD" << 'PYEOF'
 import os
 import sys
