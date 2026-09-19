@@ -149,6 +149,13 @@ log_info "Removing Python Virtual Environments..."
 sudo rm -rf /opt/sdn-venv 2>/dev/null || true
 rm -rf "$base_dir"/.venv "$base_dir"/venv "$base_dir"/env 2>/dev/null || true
 
+# 7b. Remove extracted µONOS certs and gnmic configuration
+log_info "Removing extracted µONOS certs and gnmic configuration..."
+sudo rm -rf /etc/onos/certs 2>/dev/null || true
+sudo rm -f  /etc/gnmic/gnmic.yaml 2>/dev/null || true
+sudo rmdir  /etc/gnmic 2>/dev/null || true
+log_success "Certificate and gnmic configuration removed."
+
 # 8. Delete Dynamically Generated Repository Files
 log_info "Cleaning generated build artifacts, stubs, and model plugins..."
 base_dir="."
