@@ -510,7 +510,19 @@ setup_sdn_python_client() {
     local venv_dir="${repo_dir}/.venv"
     local proto_dir="${repo_dir}/proto"
 
-        # 3. Fetch OpenConfig gNMI schemas from a pinned revision (v0.9.1).
+    # 1. Create the project virtual environment if it doesn't exist
+    if [ ! -x "${venv_dir}/bin/python" ]; then
+        log_info "Creating project virtual environment at ${venv_dir}..."
+        python3 -m venv "${venv_dir}"
+    fi
+
+    # 2. Install/upgrade the Python dependencies needed for gNMI stub generation
+    log_info "Installing Python dependencies (grpcio, grpcio-tools, protobuf)..."
+    "${venv_dir}/bin/pip" install --upgrade pip setuptools wheel
+    "${venv_dir}/bin/pip" install --upgrade --force-reinstall \
+        grpcio grpcio-tools protobuf
+
+    # 3. Fetch OpenConfig gNMI schemas from a pinned revision (v0.9.1).
     #    gnmi.proto at this tag imports gnmi_ext.proto via the Go-style
     #    package path "github.com/openconfig/gnmi/proto/gnmi_ext/gnmi_ext.proto",
     #    so gnmi_ext.proto must live at the matching nested path.
