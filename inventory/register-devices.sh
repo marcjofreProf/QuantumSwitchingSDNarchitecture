@@ -171,37 +171,23 @@ CURRENT_SIDECARS=$(kubectl get deploy onos-config -n "${NAMESPACE}" \
 if echo "${CURRENT_SIDECARS}" | grep -qw "controller-quantum-switching"; then
     echo "[*] onos-config already has the controller-quantum-switching sidecar."
 else
-    echo "[*] Adding controller-quantum-switching to onos-config.modelPlugins..."
+    echo "[*] Applying onos-config overrides (LoadBalancer + model plugins)..."
 
-    # Helm REPLACES lists rather than merging them, so we must list all
-    # existing plugins plus the new one. The schema comes from the chart's
-    # onos-config/values.yaml (fields: name, image, port, endpoint).
-    cat > /tmp/uonos-plugin-values.yaml <<EOF
-onos-config:
-  modelPlugins:
-    - name: devicesim-1
-      image: onosproject/devicesim:0.6.0-devicesim-1.0.x
-      port: 5152
-      endpoint: localhost
-    - name: testdevice-1
-      image: onosproject/testdevice-1.0.x:0.6.0-testdevice-1.0.x
-      port: 5153
-      endpoint: localhost
-    - name: testdevice-2
-      image: onosproject/testdevice-2.0.x:0.6.0-testdevice-2.0.x
-      port: 5154
-      endpoint: localhost
-    - name: controller-quantum-switching
-      image: ${PLUGIN_IMAGE}
-      port: 5155
-      endpoint: localhost
-EOF
+    # The overrides live in the tracked file
+    # onos-helm-charts/onos-umbrella/values-quantum-sdn.yaml so that every
+    # helm upgrade — here and in the bootstrap — produces the same Service
+    # type and plugin list.
+    OVERRIDE_VALUES="${ONOS_HELM_DIR}/onos-umbrella/values-quantum-sdn.yaml"
+    if [ ! -f "${OVERRIDE_VALUES}" ]; then
+        echo "[!] ERROR: ${OVERRIDE_VALUES} not found."
+        exit 1
+    fi
 
     (
         cd "${ONOS_HELM_DIR}"
         helm upgrade onos-umbrella ./onos-umbrella \
             -n "${NAMESPACE}" \
-            -f /tmp/uonos-plugin-values.yaml
+            -f "${OVERRIDE_VALUES}"
     ) || {
         echo "[!] ERROR: helm upgrade failed."
         exit 1
