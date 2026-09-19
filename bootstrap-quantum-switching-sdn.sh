@@ -20,6 +20,12 @@ log_success() { echo -e "${GREEN}[SUCCESS] $1${NC}"; }
 log_warn() { echo -e "${YELLOW}[WARNING] $1${NC}"; }
 log_error() { echo -e "${RED}[ERROR] $1${NC}"; exit 1; }
 
+# Remove any stale gnmic config from previous runs. Older versions of this
+# script wrote ./.gnmic.yaml into the repo root, which conflicts with the
+# --insecure flag used when talking to plaintext gNMI targets like the
+# BeagleBone. The canonical gnmic config now lives at /etc/gnmic/gnmic.yaml.
+rm -f ./.gnmic.yaml 2>/dev/null || true
+
 ask_user() {
     local prompt="$1"
     local default="$2"
