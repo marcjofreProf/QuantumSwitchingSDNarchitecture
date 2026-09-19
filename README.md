@@ -129,10 +129,6 @@ kubectl get pods -n micro-onos -w
 ```
 Then, re-register the devices in the micro-onos:
 ```bash
-kubectl rollout restart deployment -n micro-onos onos-topo
-kubectl rollout status deployment -n micro-onos onos-topo --timeout=60s
-kubectl rollout restart deployment -n micro-onos onos-config
-kubectl rollout status deployment -n micro-onos onos-config --timeout=60s
 ./inventory/register-devices.sh
 ```
 
@@ -198,75 +194,125 @@ sudo chmod +x uninstall-bootstrap-quantum-switching-sdn.sh
 
 ## Northbound gNMI (onos-config:5150)
 
-- Protocol: gRPC over mTLS
-- Client certs: `tls.crt` + `tls.key` (shipped in the onos-cli image)
-- CA: `onfca.crt` (ONF root CA)
-- Server cert verification: **must be skipped** because the server cert
-  is signed by a CA that isn't distributed to the client.
-  Use `--skip-verify` in gnmic.
-- Do NOT use `tls.cacrt` from the onos-config-secret as a CA — it is
-  a leaf certificate, not a CA, and gnmic will reject it.
+The northbound API is the entry point for operators and management tools. It is served by `onos-config` and is used for `Get`, `Set`, `Subscribe`,
+and `Capabilities` requests against the whole µONOS deployment.
 
-# Example (from operation terminal to controller)
+- Protocol: gRPC over mTLS
+- Client identity: `client1.crt` + `client1.key` (ONF-signed, shipped in   the `onos-cli` pod at `/etc/ssl/certs/`)
+- Server-side CA: `onfca.crt` (ONF root CA)
+- Server certificate: signed by `ca.opennetworking.org` and issued with a   Common Name (`onos-config.opennetworking.org`) but **no SAN extension**
+- Hostname verification: must be skipped, because the server certificate   has no SAN and modern TLS clients no longer fall back to CN matching.
+  In `gnmic` this is what `--skip-verify` does.
+- Do **not** use `tls.cacrt` from `onos-config-secret` as a client CA — it   is the server's own certificate, not a CA, and gNMI clients will reject
+  it with "not a CA".
+
+The three files inside the `onos-config` pod (`/etc/onos/certs/tls.crt`, `tls.key`, `tls.cacrt`) are the **server's** credential set. The two files
+inside the `onos-cli` pod (`/etc/ssl/certs/client1.crt`, `client1.key`) are the **client's** credential set. Don't mix them.
+
+# Example (from an operator terminal to the controller)
 
     gnmic -a <onos-config-LB-IP>:5150 \
-      --tls-cert /etc/onos/certs/tls.crt \
-      --tls-key  /etc/onos/certs/tls.key \
+      --tls-cert /etc/onos/certs/client1.crt \
+      --tls-key  /etc/onos/certs/client1.key \
       --skip-verify \
       capabilities
 
-## Southbound gNMI (BeagleBone device, e.g. quantum-node-1)
+`--skip-verify` is required because the server certificate has no SAN. Everything else about the TLS handshake is standard.
 
-The southbound direction is the opposite of the northbound one: here `onos-config` is the **client** and the node device is the **server**.
-The connection parameters live in the topology entity's `onos.topo.Configurable` and `onos.topo.TLSOptions` aspects — not in any cert files you pass on the command line.
+## Southbound gNMI (device targets, e.g. quantum-node-1)
 
-- Protocol: gRPC, **plaintext** (no TLS)
-- Server endpoint: `<device-node-IP>:50051`
-- Client certs: **none** — the device does not require or accept mTLS
+The southbound direction connects `onos-config` to each managed device. In this direction `onos-config` is the **client** and the device is the
+**server**. The connection parameters are not stored in cert files on disk — they live in the topology entity's aspects, so `onos-config` can
+read them from `onos-topo` at any time.
+
+- Protocol: gRPC, **plaintext** (no TLS) for the current BeagleBone and the in-cluster `devicesim` simulator
+- Server endpoint: whatever address is written in the `onos.topo.Configurable` aspect (e.g. `10.0.0.254:50051` for the BeagleBone, `localhost:10161` for the in-cluster simulator)
+- Client credentials: **none** — these targets do not require mTLS
 - CA: **none** — plaintext, so there is nothing to verify
-- Server cert verification: **not applicable** — plaintext
-- Required topology aspects on the `quantum-node-1` entity:
-  - `onos.topo.Configurable={"address":"<device-node-IP>:50051","type":"devicesim","version":"1.0.x"}`
-  - `onos.topo.TLSOptions={"plain":true,"insecure":true}`
 
-`plain: true` tells `onos-config` to skip TLS entirely on this target.
-`insecure: true` is redundant when `plain: true` but is harmless and matches what the ONF charts emit by default.
+The connection is described by two aspects on the topology entity:
 
-# Example (from operator terminal to device, bypassing onos-config)
+    onos.topo.Configurable={"address":"<ip>:<port>","type":"<type>","version":"<ver>"}
+    onos.topo.TLSOptions={"plain":true,"insecure":true}
 
-To probe the BeagleBone's own gNMI server directly:
+`plain: true` tells `onos-config` to speak plaintext gRPC to that target.
+`insecure: true` is redundant alongside `plain: true` but harmless, and matches what the ONF Helm charts emit by default. 
+
+# Example (probe the BeagleBone's own gNMI server directly)
 
     gnmic -a 10.0.0.254:50051 \
       --insecure \
       capabilities
 
-Note that `--insecure` here means **plaintext gRPC** in gnmic — no TLS handshake at all. This is the correct flag for a plaintext gNMI
-endpoint. Do **not** pass `--tls-cert`, `--tls-key`, or `--tls-ca` to a plaintext endpoint.
+`gnmic --insecure` means **plaintext gRPC** — no TLS handshake at all. Do not pass `--tls-cert`, `--tls-key`, or `--tls-ca` to a plaintext
+endpoint: doing so triggers a TLS handshake the server didn't ask for, and you will see "error reading server preface: EOF".
 
-## What the current setup does NOT do
+# Example (probe the same device through onos-config)
 
-The BeagleBone's gNMI server is reachable and responds to `Capabilities`,
-but `Set` operations still fail with `not yet supported` because:
+    gnmic -a <onos-config-LB-IP>:5150 \
+      --tls-cert /etc/onos/certs/tls.crt \
+      --tls-key  /etc/onos/certs/tls.key \
+      --skip-verify \
+      get \
+      --path "/system/config/motd-banner" \
+      --target quantum-node-1
 
-- `onos-config` validates every write path against the **model plugin**
-  registered for the target's `type` field.
-- `quantum-node-1` is registered as `type: devicesim`, so `onos-config`
-  loads the `devicesim` model plugin.
-- The `devicesim` plugin only implements a small subset of the
-  OpenConfig writable paths, and it does **not** know your BeagleBone's
-  actual schema.
+Here the northbound hop is mTLS, and `onos-config` re-emits the request southbound to the BeagleBone using the address in `onos.topo.Configurable`.
 
-To make `Set` operations succeed against the BeagleBone you must:
+## Making `Set` operations succeed
 
-1. Write a YANG model describing the BeagleBone's real configuration surface.
-2. Build a custom model plugin from that YANG model (`CGO_ENABLED=1 go build -buildmode=plugin ...`).
-3. Load the plugin into `onos-config`.
-4. Re-register `quantum-node-1` in `onos-topo` with `type: <your-custom-type>` and `version: <model-revision>`, so `onos-config` picks up the new plugin for that target.
+`onos-config` validates every write against the **model plugin** registered for the target's `type` field. If the plugin does not define a
+YANG path as writable, the `Set` will not be applied — regardless of how correct the transport is.
 
-Until step 4 is done, only paths supported by `devicesim` will validate, and in practice that means almost nothing is writable.
+- **`devicesim-1`** uses the built-in `devicesim` model plugin. This simulator is designed to exercise the **µONOS control loop in memory**:
+  it accepts writes for the small set of OpenConfig paths it advertises, tracks them, and returns them on `Get`. It is ideal for verifying that
+  `onos-config`, `onos-topo`, `onos-cli`, and the northbound gNMI transport are all wired up correctly, and for developing automation
+  that needs a device to push config against. It is deliberately not a full YANG implementation, so paths outside its advertised set are
+  returned as "not yet supported" rather than silently accepted.
 
+- **`quantum-node-1`** is registered as a `devicesim` target today, but the intent is to give it its own model plugin derived from the
+  BeagleBone's actual YANG schema. Once that plugin is loaded, the full set of paths that the BeagleBone exposes becomes writable through
+  `onos-config`, and the southbound gNMI connection (plaintext, on port 50051) applies the changes to the physical device.
+
+So the two targets represent two stages of the same workflow:
+
+1. **`devicesim-1`** — validates the µONOS pipeline end-to-end without needing a physical device. Useful for CI, demos, and regression tests.
+2. **`quantum-node-1`** — the target for real control of the BeagleBone, once the BeagleBone's model plugin is in place.
+
+The recommended progression is:
+
+1. Use `devicesim-1` to confirm the transport, extensions, and Set flow.
+2. Write a YANG model describing the BeagleBone's real configuration surface.
+3. Build a model plugin from that YANG model
+   (`CGO_ENABLED=1 go build -buildmode=plugin ...`).
+4. Load the plugin into `onos-config`.
+5. Re-register `quantum-node-1` in `onos-topo` with
+   `type: <your-custom-type>` and `version: <model-revision>`, so
+   `onos-config` picks up the new plugin for that target.
+
+Until step 5 is complete, `Set` operations on `quantum-node-1` are validated against the `devicesim` model plugin — the same one used by
+`devicesim-1` — which is why the two targets behave identically today.
+
+## Extensions 101 and 102
+
+`onos-config` reads `onos-topo` **once at startup** and does not automatically pick up entities added later. When a target is added to
+`onos-topo` after that read, the first `Set` request for that target must carry two gNMI extensions:
+
+- **101** — the target's model plugin **version** (e.g. `"1.0.x"`)
+- **102** — the target's model plugin **type** (e.g. `"devicesim"`)
+
+With these extensions present, `onos-config` loads the corresponding model plugin on the fly and stores the configuration internally,
+applying it to the device when it becomes reachable. `gnmic` does not expose `--ext` on its command line, so the helper script
+`inventory/gnmi_set_with_ext.py` is used to construct the `SetRequest` with both extensions embedded. See `inventory/register-devices.sh` for
+the full invocation.
 
 ## Writable paths
 
-The `devicesim` model plugin implements only a very small subset of OpenConfig writes. Attempts to write to `/system/config/motd-banner`
-or `/system/clock/config/timezone-name` return `not yet supported`. For custom writable paths, build a proper model plugin (see `sdn-controller/northbound-interfaces/model-plugin`).
+The set of writable paths depends entirely on which model plugin is loaded for a given target:
+
+- With the **`devicesim`** plugin, a small, fixed subset of OpenConfig paths is writable — enough to exercise the control loop, not enough to
+  drive a real device.
+- With a **custom model plugin** (e.g. one built from the BeagleBone's YANG model), every path the YANG model marks as `config true` becomes
+  writable through `onos-config`.
+
+For more information on building a custom model plugin, see `sdn-controller/northbound-interfaces/model-plugin`.
