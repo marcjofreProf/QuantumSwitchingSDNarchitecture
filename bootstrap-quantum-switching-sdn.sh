@@ -558,117 +558,6 @@ setup_sdn_python_client() {
     log_success "Python environment and Protobuf stubs initialized."
 }
 
-compile_uonos_model_plugins() {
-    if command -v docker >/dev/null 2>&1 && docker images --format "{{.Repository}}:{{.Tag}}" | grep -q "onosproject/controller-quantum-switching:1.0.0-controller-quantum-switching-1.0.0"; then
-        log_success "µONOS YANG Model Plugin image is already compiled."
-        return 0
-    fi
-    log_info "Phase 7.5: Compiling µONOS YANG Model Plugins..."
-    
-    local yang_target="./orchestration/yang-models/controller-quantum-switching.yang"
-    local plugin_dir="./sdn-controller/northbound-interfaces/model-plugin"
-    local plugin_yang_dir="${plugin_dir}/yang"
-    
-    mkdir -p "$plugin_yang_dir"
-    
-    if [ -f "$yang_target" ]; then
-        log_info "Copying tracked repository YANG model to plugin build workspace..."
-        cp "$yang_target" "$plugin_yang_dir/controller-quantum-switching.yang"
-    else
-        log_warn "YANG model $yang_target not found! Creating fallback skeleton YANG model..."
-        cat <<'EOF' > "$plugin_yang_dir/controller-quantum-switching.yang"
-module controller-quantum-switching {
-    yang-version 1.1;
-    namespace "urn:custom:params:xml:ns:yang:controller-quantum-switching";
-    prefix qswitch;
-
-    organization "Custom";
-    contact "SDN Architecture Team <sdn@example.com>";
-    description "Quantum Switching Model";
-
-    revision 2026-01-01 {
-        description "Initial revision.";
-        reference "RFC 8407 Compliance";
-    }
-
-    container switching {
-        description "Top-level container for switching configurations.";
-        leaf state {
-            type enumeration {
-                enum enabled {
-                    description "Enable switching.";
-                }
-                enum disabled {
-                    description "Disable switching.";
-                }
-            }
-            default enabled;
-            description "Switching operational state.";
-        }
-    }
-}
-EOF
-    fi
-
-    log_info "Sanitizing YANG model for pyang RFC 8407 compliance..."
-    python3 - << 'EOF'
-import re
-
-yang_file = "./sdn-controller/northbound-interfaces/model-plugin/yang/controller-quantum-switching.yang"
-with open(yang_file, "r") as f:
-    content = f.read()
-
-if "contact" not in content:
-    content = re.sub(r'(organization\s+[^;]+;)', r'\1\n    contact "SDN Architecture Team <sdn@example.com>";', content)
-
-if "reference" not in content:
-    content = re.sub(r'(revision\s+[0-9\-]+\s*\{[^}]*description\s+[^;]+;)', r'\1\n        reference "RFC 8407 Compliance";', content)
-
-content = re.sub(r'enum\s+ENABLED\s*;', 'enum enabled {\n            description "Enabled state.";\n        }', content)
-content = re.sub(r'enum\s+DISABLED\s*;', 'enum disabled {\n            description "Disabled state.";\n        }', content)
-content = re.sub(r'enum\s+ENABLED\s*\{', 'enum enabled {\n            description "Enabled state.";', content)
-content = re.sub(r'enum\s+DISABLED\s*\{', 'enum disabled {\n            description "Disabled state.";', content)
-
-with open(yang_file, "w") as f:
-    f.write(content)
-EOF
-
-    echo "1.0.0" > "$plugin_dir/VERSION"
-
-    cat <<EOF > "$plugin_dir/metadata.yaml"
-name: controller-quantum-switching
-version: 1.0.0
-contactName: "SDN Architecture Team"
-licenseName: "Apache-2.0"
-artifactName: controller-quantum-switching
-goPackage: github.com/onosproject/controller-quantum-switching
-modules:
-  - name: controller-quantum-switching
-    organization: custom
-    revision: "2026-01-01"
-    file: controller-quantum-switching.yang
-EOF
-
-    log_info "Executing onosproject/model-compiler..."
-    local abs_plugin_dir
-    abs_plugin_dir=$(realpath "$plugin_dir")
-    docker run --rm -v "${abs_plugin_dir}:/config-model" onosproject/model-compiler:latest
-
-    sudo chown -R $USER:$USER "$plugin_dir"
-
-    log_info "Building the resulting Model Plugin Docker Image..."
-    if [ -f "$plugin_dir/Makefile" ]; then
-        (cd "$plugin_dir" && make image) || log_error "Failed to build the model plugin image."
-        
-        if command -v docker >/dev/null 2>&1 && command -v k3s >/dev/null 2>&1; then
-            log_info "Importing model plugin image into K3s containerd..."
-            docker save onosproject/controller-quantum-switching:1.0.0-controller-quantum-switching-1.0.0 2>/dev/null | sudo k3s ctr images import - || true
-        fi
-    else
-        log_warn "Makefile not found in $plugin_dir. Model compilation may have failed."
-    fi
-}
-
 deploy_cloud_native_uonos() {
     log_info "Phase 8: Evaluating µONOS and Atomix deployment state..."
     
@@ -1032,7 +921,6 @@ setup_helm_repos
 install_grpc_tools
 install_osm_installer
 setup_sdn_python_client
-compile_uonos_model_plugins
 deploy_cloud_native_uonos
 configure_uonos_controller_settings
 deploy_sdn_adapter_and_topo_aspects
