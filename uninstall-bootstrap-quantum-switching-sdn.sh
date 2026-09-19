@@ -154,6 +154,8 @@ log_info "Removing extracted µONOS certs and gnmic configuration..."
 sudo rm -rf /etc/onos/certs 2>/dev/null || true
 sudo rm -f  /etc/gnmic/gnmic.yaml 2>/dev/null || true
 sudo rmdir  /etc/gnmic 2>/dev/null || true
+rm -f ./.gnmic.yaml 2>/dev/null || true
+rm -f "${HOME}/.gnmic.yaml" 2>/dev/null || true
 log_success "Certificate and gnmic configuration removed."
 
 # 8. Delete Dynamically Generated Repository Files
