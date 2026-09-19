@@ -97,7 +97,7 @@ EOF
 echo "[*] Running onosproject/model-compiler to generate Go code..."
 PLUGIN_DIR_ABS=$(realpath "${PLUGIN_DIR}")
 docker run --rm -v "${PLUGIN_DIR_ABS}:/config-model" \
-    onosproject/model-compiler:latest
+    onosproject/model-compiler:v0.11.13
 
 sudo chown -R "$(id -u):$(id -g)" "${PLUGIN_DIR}"
 
