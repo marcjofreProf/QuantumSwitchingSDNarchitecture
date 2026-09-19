@@ -440,21 +440,26 @@ echo "=================================================================="
 #
 # onos-config does not expose a direct "delete configuration" command, but
 # every Set is recorded as a transaction. Rolling back all transactions
-# (newest first) clears the config store.
+# (newest first) clears the config store. FAILED proposals are skipped
+# because they never modified any target's committed state, and rolling
+# them back returns "not the latest change to target" errors.
 # -------------------------------------------------------------------------
 echo "[*] Rolling back previous onos-config transactions..."
 
-# Get the list of transaction indices, newest first
+# Get the list of transaction indices, newest first. Column 3 is the state;
+# we skip FAILED proposals. The rollback command requires this exact order
+# (highest index first) because onos-config rejects out-of-order rollbacks.
 TX_INDICES=$(kubectl exec -n "$NAMESPACE" "$CLI_POD" -- \
     onos config get transactions 2>/dev/null | \
-    awk 'NR>1 && $2 ~ /^[0-9]+$/ {print $2}' | sort -rn)
+    awk 'NR>1 && $2 ~ /^[0-9]+$/ && $3 != "FAILED" {print $2}' | sort -rn)
 
 if [ -n "$TX_INDICES" ]; then
     for idx in $TX_INDICES; do
         echo "    Rolling back transaction index: $idx"
-        kubectl exec -n "$NAMESPACE" "$CLI_POD" -- \
-            onos config rollback "$idx" 2>/dev/null || \
-            echo "    [WARNING] Could not roll back transaction $idx (may already be rolled back)"
+        if ! kubectl exec -n "$NAMESPACE" "$CLI_POD" -- \
+            onos config rollback "$idx" 2>&1; then
+            echo "    [WARNING] Could not roll back transaction $idx (skipping)"
+        fi
     done
 else
     echo "    No previous transactions to roll back."
