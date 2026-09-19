@@ -4,11 +4,6 @@ import sys
 
 import grpc
 
-# The gNMI protobuf stubs are generated into <repo_root>/proto.
-# gnmi.proto imports gnmi_ext.proto via the Go-style package path
-# "github.com/openconfig/gnmi/proto/gnmi_ext/gnmi_ext.proto", so the
-# generated gnmi_ext_pb2 module lives in the nested directory. Both must
-# be importable from the same sys.path entry (proto/).
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROTO_DIR = os.path.abspath(os.path.join(HERE, "..", "proto"))
 if PROTO_DIR not in sys.path:
