@@ -719,10 +719,13 @@ EOF
         kubectl exec -n micro-onos "${CONFIG_POD}" -- \
             cat /etc/onos/certs/tls.cacrt | sudo tee /etc/onos/certs/tls.cacrt >/dev/null
 
+        # The invoking user (not root) will run gnmic, so the key must be
+        # readable by them. Change ownership and keep 0600 on the key.
+        sudo chown "${USER}:${USER}" /etc/onos/certs/client1.key
         sudo chmod 600 /etc/onos/certs/client1.key
         sudo chmod 644 /etc/onos/certs/client1.crt /etc/onos/certs/tls.cacrt
 
-        log_success "Certificates extracted to /etc/onos/certs/."
+        log_success "Certificates extracted to /etc/onos/certs/ (key owned by ${USER})."
     fi
 
     # Write a gnmic config that mirrors what we use interactively.
