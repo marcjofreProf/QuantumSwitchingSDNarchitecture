@@ -12,17 +12,6 @@ YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-# 0. Stop the persistent onos-config port-forward, before anything else.
-#    If it's still running while we delete the µONOS namespace, systemd
-#    will keep restarting it and fill the journal with connection errors.
-log_info "Stopping persistent onos-config port-forward..."
-if systemctl list-unit-files 2>/dev/null | grep -q '^onos-config-port-forward.service'; then
-    sudo systemctl disable --now onos-config-port-forward.service 2>/dev/null || true
-fi
-sudo rm -f /etc/systemd/system/onos-config-port-forward.service 2>/dev/null || true
-sudo systemctl daemon-reload 2>/dev/null || true
-log_success "Port-forward service removed (if it existed)."
-
 log_info() { echo -e "${CYAN}[INFO] $1${NC}"; }
 log_success() { echo -e "${GREEN}[SUCCESS] $1${NC}"; }
 log_warn() { echo -e "${YELLOW}[WARNING] $1${NC}"; }
