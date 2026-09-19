@@ -274,6 +274,17 @@ fi
 
 echo "[*] port-forward onos-config → localhost:5150 established."
 
+# Resolve the project venv Python (has grpc/grpc_tools installed)
+VENV_PY="$(cd "$(dirname "$0")/.." && pwd)/.venv/bin/python"
+if [ ! -x "$VENV_PY" ]; then
+    echo "[!] ERROR: Project venv Python not found at: $VENV_PY"
+    echo "    Create it with:"
+    echo "      python3 -m venv .venv"
+    echo "      .venv/bin/pip install grpcio grpcio-tools protobuf"
+    exit 1
+fi
+echo "[*] Using venv Python: $VENV_PY"
+
 # Ensure the Python gNMI stubs are available on the host
 PROTO_DIR="$(cd "$(dirname "$0")/.." && pwd)/proto"
 if [ ! -f "${PROTO_DIR}/gnmi_pb2.py" ] || [ ! -f "${PROTO_DIR}/gnmi_ext_pb2.py" ]; then
