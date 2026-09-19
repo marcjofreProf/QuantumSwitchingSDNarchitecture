@@ -451,38 +451,16 @@ echo "  Registering devices with onos-config via gNMI extensions"
 echo "=================================================================="
 
 # -------------------------------------------------------------------------
-# Cleanup: Roll back any previous transactions so we start from a clean slate.
-#
-# onos-config does not expose a direct "delete configuration" command, but
-# every Set is recorded as a transaction. Rolling back all transactions
-# (newest first) clears the config store. FAILED proposals are skipped
-# because they never modified any target's committed state, and rolling
-# them back returns "not the latest change to target" errors.
+# Note on cleanup: onos-config's `rollback` command is designed for
+# user-driven "undo my last change" workflows, not for bulk-clearing a
+# config store. Every rollback itself creates a new transaction, and the
+# strict "latest change per target" rule makes out-of-order rollbacks fail.
+# We do NOT attempt automatic cleanup here. To reset the store, delete
+# the micro-onos namespace and re-run the bootstrap.
 # -------------------------------------------------------------------------
-echo "[*] Rolling back previous onos-config transactions..."
-
-# Get the list of transaction indices, newest first. Column 3 is the state;
-# we skip FAILED proposals. The rollback command requires this exact order
-# (highest index first) because onos-config rejects out-of-order rollbacks.
-TX_INDICES=$(kubectl exec -n "$NAMESPACE" "$CLI_POD" -- \
-    onos config get transactions 2>/dev/null | \
-    awk 'NR>1 && $2 ~ /^[0-9]+$/ && $3 != "FAILED" {print $2}' | sort -rn)
-
-if [ -n "$TX_INDICES" ]; then
-    for idx in $TX_INDICES; do
-        echo "    Rolling back transaction index: $idx"
-        if ! kubectl exec -n "$NAMESPACE" "$CLI_POD" -- \
-            onos config rollback "$idx" 2>&1; then
-            echo "    [WARNING] Could not roll back transaction $idx (skipping)"
-        fi
-    done
-else
-    echo "    No previous transactions to roll back."
-fi
-
-echo "[*] Configurations after cleanup:"
+echo "[*] Current onos-config configurations (before Set):"
 kubectl exec -n "$NAMESPACE" "$CLI_POD" -- \
-    onos config get configurations || true
+    onos config get configurations 2>/dev/null || true
 echo
 
 # Extract the client certs from the onos-cli pod to a temp dir on the host.
