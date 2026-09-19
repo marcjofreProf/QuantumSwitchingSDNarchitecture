@@ -317,8 +317,8 @@ for cfg in "${REGISTERED_DEVICES[@]}"; do
         --version "$dev_version" \
         --path "/system/config/motd-banner" \
         --value "Registered via extensions" \
-        --cert "${CERT_DIR}/client1.crt" \
-        --key "${CERT_DIR}/client1.key" \
+        --cert "${CERT_DIR}/tls.crt" \
+        --key  "${CERT_DIR}/tls.key" \
         --skip-verify \
         || echo "    [WARNING] Set failed for '$cfg' (see above)."
 done
