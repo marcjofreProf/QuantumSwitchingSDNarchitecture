@@ -1035,8 +1035,8 @@ setup_sdn_python_client
 compile_uonos_model_plugins
 deploy_cloud_native_uonos
 configure_uonos_controller_settings
-register_inventory_devices
 deploy_sdn_adapter_and_topo_aspects
+register_inventory_devices
 verify_uonos_gnmi_end_to_end
 deploy_open5gs
 
