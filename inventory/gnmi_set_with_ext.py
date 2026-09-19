@@ -1,24 +1,9 @@
-#!/usr/bin/env python3
-"""
-gnmi_set_with_ext.py
-
-Send a gNMI Set request to onos-config, using extensions 101 (version)
-and 102 (device type) to register a previously-unknown target.
-
-This bypasses onos-topo entirely. onos-config will store the config
-internally and apply it when the device becomes reachable.
-"""
-
 import argparse
 import os
 import sys
 
 import grpc
 
-# The gNMI protobuf stubs are generated into <repo_root>/proto.
-# gnmi.proto imports gnmi_ext.proto via the Go-style package path
-# "github.com/openconfig/gnmi/proto/gnmi_ext/gnmi_ext.proto", so the
-# generated gnmi_ext_pb2 module lives in the nested directory.
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROTO_DIR = os.path.abspath(os.path.join(HERE, "..", "proto"))
 if PROTO_DIR not in sys.path:
@@ -74,6 +59,8 @@ def main():
     p.add_argument("--key", required=True, help="Client private key (PEM)")
     p.add_argument("--ca", required=False, default=None,
                    help="Server CA certificate (PEM) to verify the server identity")
+    p.add_argument("--server-name", required=False, default=None,
+                   help="Hostname to verify against the server cert's SAN")
     args = p.parse_args()
 
     with open(args.cert, "rb") as f:
@@ -92,7 +79,11 @@ def main():
         certificate_chain=cert_bytes,
     )
 
-    channel = grpc.secure_channel(args.address, creds)
+    channel_opts = []
+    if args.server_name:
+        channel_opts.append(("grpc.ssl_target_name_override", args.server_name))
+
+    channel = grpc.secure_channel(args.address, creds, options=channel_opts)
     stub = gnmi_grpc.gNMIStub(channel)
 
     request = gnmi.SetRequest(
