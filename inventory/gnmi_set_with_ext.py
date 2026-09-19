@@ -82,6 +82,7 @@ def main():
     channel_opts = []
     if args.server_name:
         channel_opts.append(("grpc.ssl_target_name_override", args.server_name))
+        channel_opts.append(("grpc.default_authority", args.server_name))
 
     channel = grpc.secure_channel(args.address, creds, options=channel_opts)
     stub = gnmi_grpc.gNMIStub(channel)
