@@ -104,7 +104,7 @@ sudo chown -R "$(id -u):$(id -g)" "${PLUGIN_DIR}"
 if [ ! -f "${PLUGIN_DIR}/Makefile" ]; then
     echo "[!] ERROR: model-compiler did not produce a Makefile in ${PLUGIN_DIR}."
     echo "    The YANG model likely has errors. Re-run:"
-    echo "      docker run --rm -v ${PLUGIN_DIR_ABS}:/config-model onosproject/model-compiler:latest"
+    echo "      docker run --rm -v ${PLUGIN_DIR_ABS}:/config-model onosproject/model-compiler:v0.11.13"
     exit 1
 fi
 
@@ -218,10 +218,25 @@ if ! echo "${CURRENT_SIDECARS}" | grep -qw "controller-quantum-switching"; then
     echo "    The device will fall back to the devicesim model plugin."
 fi
 
-# Verify onos-config sees the plugin as Loaded
+# Verify onos-config sees the plugin as Loaded. If it does not, the later
+# Set requests will fail with "unknown method ValidateConfigChunked" or
+# similar, so abort now rather than producing a misleading config list.
 echo "[*] Checking plugin status inside onos-config..."
-kubectl exec -n "${NAMESPACE}" "$(kubectl get pods -n ${NAMESPACE} -l app=onos -o jsonpath='{.items[0].metadata.name}')" -- \
-    onos config get plugins || true
+PLUGIN_TABLE=$(kubectl exec -n "${NAMESPACE}" \
+    "$(kubectl get pods -n "${NAMESPACE}" -l app=onos -o jsonpath='{.items[0].metadata.name}')" -- \
+    onos config get plugins 2>/dev/null || true)
+
+echo "${PLUGIN_TABLE}"
+
+if ! echo "${PLUGIN_TABLE}" | grep -qE '^controller-quantum-switching-1\.0\.0[[:space:]]+Loaded'; then
+    echo "[!] ERROR: controller-quantum-switching plugin is not Loaded in onos-config."
+    echo "    Subsequent Set requests will fail. Inspect onos-config logs:"
+    echo "      kubectl logs -n ${NAMESPACE} deploy/onos-config -c controller-quantum-switching"
+    echo "      kubectl logs -n ${NAMESPACE} deploy/onos-config -c onos-config | grep -i plugin"
+    exit 1
+fi
+
+echo "[SUCCESS] controller-quantum-switching plugin is Loaded."
 
 # ---------------------------------------------------------------------------
 # Phase 1b: Register devices in onos-topo
