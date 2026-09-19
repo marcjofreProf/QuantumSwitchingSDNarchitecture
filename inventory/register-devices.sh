@@ -282,10 +282,11 @@ echo "[*] port-forward onos-config → localhost:5150 established."
 
 # Ensure the Python gNMI stubs are available on the host
 PROTO_DIR="$(cd "$(dirname "$0")/.." && pwd)/proto"
-if [ ! -f "${PROTO_DIR}/gnmi_pb2.py" ]; then
+if [ ! -f "${PROTO_DIR}/gnmi_pb2.py" ] || [ ! -f "${PROTO_DIR}/gnmi_ext_pb2.py" ]; then
     echo "[*] Generating Python gNMI stubs into ${PROTO_DIR}..."
     mkdir -p "${PROTO_DIR}"
-    python3 -m grpc_tools.protoc \
+    VENV_PY="$(cd "$(dirname "$0")/.." && pwd)/.venv/bin/python"
+    "$VENV_PY" -m grpc_tools.protoc \
         -I"${PROTO_DIR}" \
         --python_out="${PROTO_DIR}" \
         --grpc_python_out="${PROTO_DIR}" \
@@ -315,7 +316,7 @@ for cfg in "${REGISTERED_DEVICES[@]}"; do
     echo "[*] Sending Set with extensions to onos-config for '$cfg'"
     echo "    type='$dev_type' version='$dev_version'"
 
-    python3 "$(dirname "$0")/gnmi_set_with_ext.py" \
+    "$VENV_PY" "$(dirname "$0")/gnmi_set_with_ext.py" \
         --address localhost:5150 \
         --target "$cfg" \
         --type "$dev_type" \
