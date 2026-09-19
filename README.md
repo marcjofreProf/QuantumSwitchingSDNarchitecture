@@ -199,7 +199,7 @@ sudo chmod +x uninstall-bootstrap-quantum-switching-sdn.sh
 ## Northbound gNMI (onos-config:5150)
 
 - Protocol: gRPC over mTLS
-- Client certs: `client1.crt` + `client1.key` (shipped in the onos-cli image)
+- Client certs: `tls.crt` + `tls.key` (shipped in the onos-cli image)
 - CA: `onfca.crt` (ONF root CA)
 - Server cert verification: **must be skipped** because the server cert
   is signed by a CA that isn't distributed to the client.
@@ -207,18 +207,66 @@ sudo chmod +x uninstall-bootstrap-quantum-switching-sdn.sh
 - Do NOT use `tls.cacrt` from the onos-config-secret as a CA — it is
   a leaf certificate, not a CA, and gnmic will reject it.
 
-## Example (from host)
+# Example (from operation terminal to controller)
 
     gnmic -a <onos-config-LB-IP>:5150 \
-      --tls-cert /etc/onos/certs/client1.crt \
-      --tls-key  /etc/onos/certs/client1.key \
+      --tls-cert /etc/onos/certs/tls.crt \
+      --tls-key  /etc/onos/certs/tls.key \
       --skip-verify \
       capabilities
 
+## Southbound gNMI (BeagleBone device, e.g. quantum-node-1)
+
+The southbound direction is the opposite of the northbound one: here `onos-config` is the **client** and the node device is the **server**.
+The connection parameters live in the topology entity's `onos.topo.Configurable` and `onos.topo.TLSOptions` aspects — not in any cert files you pass on the command line.
+
+- Protocol: gRPC, **plaintext** (no TLS)
+- Server endpoint: `<device-node-IP>:50051`
+- Client certs: **none** — the device does not require or accept mTLS
+- CA: **none** — plaintext, so there is nothing to verify
+- Server cert verification: **not applicable** — plaintext
+- Required topology aspects on the `quantum-node-1` entity:
+  - `onos.topo.Configurable={"address":"<device-node-IP>:50051","type":"devicesim","version":"1.0.x"}`
+  - `onos.topo.TLSOptions={"plain":true,"insecure":true}`
+
+`plain: true` tells `onos-config` to skip TLS entirely on this target.
+`insecure: true` is redundant when `plain: true` but is harmless and matches what the ONF charts emit by default.
+
+# Example (from operator terminal to device, bypassing onos-config)
+
+To probe the BeagleBone's own gNMI server directly:
+
+    gnmic -a 10.0.0.254:50051 \
+      --insecure \
+      capabilities
+
+Note that `--insecure` here means **plaintext gRPC** in gnmic — no TLS handshake at all. This is the correct flag for a plaintext gNMI
+endpoint. Do **not** pass `--tls-cert`, `--tls-key`, or `--tls-ca` to a plaintext endpoint.
+
+## What the current setup does NOT do
+
+The BeagleBone's gNMI server is reachable and responds to `Capabilities`,
+but `Set` operations still fail with `not yet supported` because:
+
+- `onos-config` validates every write path against the **model plugin**
+  registered for the target's `type` field.
+- `quantum-node-1` is registered as `type: devicesim`, so `onos-config`
+  loads the `devicesim` model plugin.
+- The `devicesim` plugin only implements a small subset of the
+  OpenConfig writable paths, and it does **not** know your BeagleBone's
+  actual schema.
+
+To make `Set` operations succeed against the BeagleBone you must:
+
+1. Write a YANG model describing the BeagleBone's real configuration surface.
+2. Build a custom model plugin from that YANG model (`CGO_ENABLED=1 go build -buildmode=plugin ...`).
+3. Load the plugin into `onos-config`.
+4. Re-register `quantum-node-1` in `onos-topo` with `type: <your-custom-type>` and `version: <model-revision>`, so `onos-config` picks up the new plugin for that target.
+
+Until step 4 is done, only paths supported by `devicesim` will validate, and in practice that means almost nothing is writable.
+
+
 ## Writable paths
 
-The `devicesim` model plugin implements only a very small subset of
-OpenConfig writes. Attempts to write to `/system/config/motd-banner`
-or `/system/clock/config/timezone-name` return `not yet supported`.
-For custom writable paths, build a proper model plugin (see
-`sdn-controller/northbound-interfaces/model-plugin`).
+The `devicesim` model plugin implements only a very small subset of OpenConfig writes. Attempts to write to `/system/config/motd-banner`
+or `/system/clock/config/timezone-name` return `not yet supported`. For custom writable paths, build a proper model plugin (see `sdn-controller/northbound-interfaces/model-plugin`).
