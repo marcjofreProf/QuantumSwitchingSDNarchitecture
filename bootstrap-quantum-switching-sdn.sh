@@ -641,8 +641,34 @@ deploy_cloud_native_uonos() {
         }
     ) || exit 1
 
-    log_info "=== µONOS installation completed ==="
-    
+        log_info "=== µONOS installation completed ==="
+
+    # Wait for the onos-cli and onos-config pods to be scheduled and Ready
+    # before trying to extract certs from them. Helm returns as soon as the
+    # release is registered, but the pods take a few more seconds to come up.
+    log_info "Waiting for onos-cli and onos-config pods to be Ready..."
+    local waited=0
+    local timeout=180
+    while [ "$waited" -lt "$timeout" ]; do
+        CLI_READY=$(kubectl get pods -n micro-onos -l app=onos \
+            -o jsonpath='{.items[?(@.status.phase=="Running")].metadata.name}' 2>/dev/null || echo "")
+        CONFIG_READY=$(kubectl get pods -n micro-onos -l app.kubernetes.io/name=onos-config \
+            -o jsonpath='{.items[?(@.status.phase=="Running")].metadata.name}' 2>/dev/null || echo "")
+        if [ -n "$CLI_READY" ] && [ -n "$CONFIG_READY" ]; then
+            break
+        fi
+        sleep 3
+        waited=$((waited + 3))
+    done
+
+    if [ "$waited" -ge "$timeout" ]; then
+        log_warn "Timed out waiting for onos-cli/onos-config pods after ${timeout}s."
+        log_warn "Cert extraction may fail. Check:"
+        log_warn "  kubectl get pods -n micro-onos"
+    else
+        log_success "onos-cli and onos-config pods are Ready (waited ${waited}s)."
+    fi
+
     log_info "Building and deploying RESTCONF Gateway Container..."
     if command -v docker >/dev/null 2>&1; then
         (cd "$SCRIPT_DIR/sdn-controller/northbound-interfaces/restconf-gateway" && docker build -t quantum-restconf-gateway:1.0.0 .) || log_warn "Skipped building Gateway image."
@@ -708,12 +734,12 @@ EOF
     sudo mkdir -p /etc/onos/certs
 
     CLI_POD=$(kubectl get pods -n micro-onos -l app=onos \
-        -o jsonpath='{.items[0].metadata.name}')
+        -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
     CONFIG_POD=$(kubectl get pods -n micro-onos -l app.kubernetes.io/name=onos-config \
-        -o jsonpath='{.items[0].metadata.name}')
+        -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
 
     if [ -z "${CLI_POD}" ] || [ -z "${CONFIG_POD}" ]; then
-        log_warn "Could not locate onos-cli or onos-config pod; skipping cert extraction."
+        log_warn "Could not locate onos-cli (${CLI_POD}) or onos-config (${CONFIG_POD}) pod; skipping cert extraction."
     else
         kubectl exec -n micro-onos "${CLI_POD}" -- \
             cat /etc/ssl/certs/client1.crt | sudo tee /etc/onos/certs/client1.crt >/dev/null
