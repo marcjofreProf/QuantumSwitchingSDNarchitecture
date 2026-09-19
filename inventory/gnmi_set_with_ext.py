@@ -18,8 +18,11 @@ try:
     from gnmi import gnmi_pb2_grpc as gnmi_grpc
     from gnmi import gnmi_ext_pb2 as gnmi_ext
 except ImportError:
-    # Fallback: protos generated into proto/ directory
-    sys.path.insert(0, "proto")
+    # Fallback: protos live in <repo_root>/proto
+    import os
+    HERE = os.path.dirname(os.path.abspath(__file__))
+    PROTO_DIR = os.path.abspath(os.path.join(HERE, "..", "proto"))
+    sys.path.insert(0, PROTO_DIR)
     import gnmi_pb2 as gnmi
     import gnmi_pb2_grpc as gnmi_grpc
     import gnmi_ext_pb2 as gnmi_ext
