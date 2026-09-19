@@ -1,32 +1,22 @@
-#!/usr/bin/env python3
-"""
-gnmi_set_with_ext.py
-
-Send a gNMI Set request to onos-config, using extensions 101 (version)
-and 102 (device type) to register a previously-unknown target.
-
-This bypasses onos-topo entirely. onos-config will store the config
-internally and apply it when the device becomes reachable.
-"""
-
 import argparse
+import os
 import sys
 
-try:
-    import grpc
-    from gnmi import gnmi_pb2 as gnmi
-    from gnmi import gnmi_pb2_grpc as gnmi_grpc
-    from gnmi import gnmi_ext_pb2 as gnmi_ext
-except ImportError:
-    # Fallback: protos live in <repo_root>/proto
-    import os
-    HERE = os.path.dirname(os.path.abspath(__file__))
-    PROTO_DIR = os.path.abspath(os.path.join(HERE, "..", "proto"))
-    sys.path.insert(0, PROTO_DIR)
-    import gnmi_pb2 as gnmi
-    import gnmi_pb2_grpc as gnmi_grpc
-    import gnmi_ext_pb2 as gnmi_ext
+import grpc
 
+# The gNMI protobuf stubs are generated into <repo_root>/proto.
+# gnmi.proto imports gnmi_ext.proto via the Go-style package path
+# "github.com/openconfig/gnmi/proto/gnmi_ext/gnmi_ext.proto", so the
+# generated gnmi_ext_pb2 module lives in the nested directory. Both must
+# be importable from the same sys.path entry (proto/).
+HERE = os.path.dirname(os.path.abspath(__file__))
+PROTO_DIR = os.path.abspath(os.path.join(HERE, "..", "proto"))
+if PROTO_DIR not in sys.path:
+    sys.path.insert(0, PROTO_DIR)
+
+import gnmi_pb2 as gnmi
+import gnmi_pb2_grpc as gnmi_grpc
+from github.com.openconfig.gnmi.proto.gnmi_ext import gnmi_ext_pb2 as gnmi_ext
 
 def build_extensions(version: str, device_type: str):
     """Build gNMI extensions 101 (version) and 102 (type)."""
