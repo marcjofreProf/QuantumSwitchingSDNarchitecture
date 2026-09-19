@@ -247,10 +247,20 @@ echo "=================================================================="
 echo "  Registering devices with onos-config via gNMI extensions"
 echo "=================================================================="
 
-# Extract the client certs from onos-cli pod to a temp dir on the host
+# Extract the client certs from the onos-cli pod to a temp dir on the host.
+# Use `kubectl exec -- cat` instead of `kubectl cp`, because the cert files
+# inside the pod may be symlinks (Secret volume mount) and `kubectl cp`
+# silently skips symlinks, leaving the destination empty.
 CERT_DIR="$(mktemp -d)"
-kubectl cp "${NAMESPACE}/${CLI_POD}:/etc/ssl/certs/client1.crt" "${CERT_DIR}/client1.crt"
-kubectl cp "${NAMESPACE}/${CLI_POD}:/etc/ssl/certs/client1.key" "${CERT_DIR}/client1.key"
+kubectl exec -n "${NAMESPACE}" "${CLI_POD}" -- cat /etc/ssl/certs/client1.crt > "${CERT_DIR}/client1.crt"
+kubectl exec -n "${NAMESPACE}" "${CLI_POD}" -- cat /etc/ssl/certs/client1.key > "${CERT_DIR}/client1.key"
+
+# Sanity check: both files must be non-empty
+if [ ! -s "${CERT_DIR}/client1.crt" ] || [ ! -s "${CERT_DIR}/client1.key" ]; then
+    echo "[!] ERROR: Failed to extract certs from ${CLI_POD}."
+    echo "    Check: kubectl exec -n ${NAMESPACE} ${CLI_POD} -- ls -l /etc/ssl/certs/"
+    exit 1
+fi
 
 # Start a port-forward to onos-config in the background
 kubectl port-forward -n "$NAMESPACE" svc/onos-config 5150:5150 \
@@ -284,20 +294,24 @@ if [ ! -x "$VENV_PY" ]; then
 fi
 echo "[*] Using venv Python: $VENV_PY"
 
-# Ensure the Python gNMI stubs are available on the host
+# Verify the Python gNMI stubs are present (we do NOT regenerate them here;
+# the bootstrap script is responsible for generating them).
 PROTO_DIR="$(cd "$(dirname "$0")/.." && pwd)/proto"
-if [ ! -f "${PROTO_DIR}/gnmi_pb2.py" ] || [ ! -f "${PROTO_DIR}/gnmi_ext_pb2.py" ]; then
-    echo "[*] Generating Python gNMI stubs into ${PROTO_DIR}..."
-    mkdir -p "${PROTO_DIR}"
-    VENV_PY="$(cd "$(dirname "$0")/.." && pwd)/.venv/bin/python"
-    "$VENV_PY" -m grpc_tools.protoc \
-        -I"${PROTO_DIR}" \
-        --python_out="${PROTO_DIR}" \
-        --grpc_python_out="${PROTO_DIR}" \
-        "${PROTO_DIR}/gnmi.proto" \
-        "${PROTO_DIR}/gnmi_ext.proto" 2>/dev/null || {
-        echo "[!] WARNING: Could not generate stubs; assuming they already exist."
-    }
+GNMI_EXT_PB2="${PROTO_DIR}/github/com/openconfig/gnmi/proto/gnmi_ext/gnmi_ext_pb2.py"
+
+if [ ! -f "${PROTO_DIR}/gnmi_pb2.py" ] || [ ! -f "${PROTO_DIR}/gnmi_pb2_grpc.py" ] || [ ! -f "${GNMI_EXT_PB2}" ]; then
+    echo "[!] ERROR: Python gNMI stubs missing. Expected:"
+    echo "      ${PROTO_DIR}/gnmi_pb2.py"
+    echo "      ${PROTO_DIR}/gnmi_pb2_grpc.py"
+    echo "      ${GNMI_EXT_PB2}"
+    echo "    Regenerate with:"
+    echo "      .venv/bin/python -m grpc_tools.protoc \\"
+    echo "        -I${PROTO_DIR} \\"
+    echo "        --python_out=${PROTO_DIR} \\"
+    echo "        --grpc_python_out=${PROTO_DIR} \\"
+    echo "        ${PROTO_DIR}/gnmi.proto \\"
+    echo "        ${PROTO_DIR}/github.com/openconfig/gnmi/proto/gnmi_ext/gnmi_ext.proto"
+    exit 1
 fi
 
 # Run the extension-based registration for each device
@@ -327,8 +341,8 @@ for cfg in "${REGISTERED_DEVICES[@]}"; do
         --version "$dev_version" \
         --path "/system/config/motd-banner" \
         --value "Registered via extensions" \
-        --cert "${CERT_DIR}/tls.crt" \
-        --key  "${CERT_DIR}/tls.key" \
+        --cert "${CERT_DIR}/client1.crt" \
+        --key  "${CERT_DIR}/client1.key" \
         --skip-verify \
         || echo "    [WARNING] Set failed for '$cfg' (see above)."
 done
