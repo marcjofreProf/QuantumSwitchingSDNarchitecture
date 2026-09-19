@@ -748,14 +748,14 @@ EOF
 setup_onos_config_port_forward() {
     log_info "Phase 8.2: Setting up persistent port-forward for onos-config..."
 
-    # The onos-config Service is a ClusterIP. The only reliable way to reach
-    # it from an operator terminal (or from another LAN host) is a
-    # port-forward bound to a known interface on this host. We bind to
-    # 10.0.0.2, which is a stable secondary IP on eth1 used by the
-    # QuantumServiceOperationSDNarchitecture operator terminal repo.
+    # The onos-config Service is patched to LoadBalancer for external
+    # gNMI/gNOI access, but on single-node K3s the LoadBalancer IP may be
+    # unreachable from operator hosts. This systemd-managed port-forward
+    # provides a guaranteed reachable endpoint on 10.0.0.2.
     #
-    # The forward is managed by systemd so it survives reboots and can be
-    # torn down cleanly by uninstall-bootstrap-quantum-switching-sdn.sh.
+    # It binds to the secondary IP 10.0.0.2 on eth1, which is the address
+    # used by the QuantumServiceOperationSDNarchitecture operator terminal.
+    # Override with ONOS_CONFIG_FORWARD_IP if needed.
 
     local forward_bind_ip="${ONOS_CONFIG_FORWARD_IP:-10.0.0.2}"
     local forward_port_gnmi="${ONOS_CONFIG_FORWARD_PORT_GNMI:-5150}"
