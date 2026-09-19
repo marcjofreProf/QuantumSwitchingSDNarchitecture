@@ -1,0 +1,29 @@
+# Overrides applied to onos-umbrella for the Quantum-SDN deployment.
+# These are tracked in git and referenced by both the bootstrap and
+# register-devices.sh so that every helm upgrade produces the same result.
+
+onos-config:
+  # The default chart value is ClusterIP, which is not reachable from
+  # outside the cluster. LoadBalancer exposes it on the node IP.
+  service:
+    type: LoadBalancer
+
+  # Model plugins loaded as sidecars. The first three ship with the chart;
+  # the last one is built by register-devices.sh from the repo's YANG model.
+  modelPlugins:
+    - name: devicesim-1
+      image: onosproject/devicesim:0.6.0-devicesim-1.0.x
+      port: 5152
+      endpoint: localhost
+    - name: testdevice-1
+      image: onosproject/testdevice-1.0.x:0.6.0-testdevice-1.0.x
+      port: 5153
+      endpoint: localhost
+    - name: testdevice-2
+      image: onosproject/testdevice-2.0.x:0.6.0-testdevice-2.0.x
+      port: 5154
+      endpoint: localhost
+    - name: controller-quantum-switching
+      image: onosproject/controller-quantum-switching:1.0.0-controller-quantum-switching-1.0.0
+      port: 5155
+      endpoint: localhost
