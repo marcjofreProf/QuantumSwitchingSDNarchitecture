@@ -248,10 +248,9 @@ echo "  Registering devices with onos-config via gNMI extensions"
 echo "=================================================================="
 
 # Extract the client certs from onos-cli pod to a temp dir on the host
-kubectl cp "${NAMESPACE}/${CLI_POD}:/etc/onos/certs/tls.crt" \
-    "${CERT_DIR}/tls.crt" >/dev/null
-kubectl cp "${NAMESPACE}/${CLI_POD}:/etc/onos/certs/tls.key" \
-    "${CERT_DIR}/tls.key" >/dev/null
+CERT_DIR="$(mktemp -d)"
+kubectl cp "${NAMESPACE}/${CLI_POD}:/etc/ssl/certs/client1.crt" "${CERT_DIR}/client1.crt"
+kubectl cp "${NAMESPACE}/${CLI_POD}:/etc/ssl/certs/client1.key" "${CERT_DIR}/client1.key"
 
 # Start a port-forward to onos-config in the background
 kubectl port-forward -n "$NAMESPACE" svc/onos-config 5150:5150 \
