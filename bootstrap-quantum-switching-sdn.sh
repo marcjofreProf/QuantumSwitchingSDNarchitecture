@@ -745,6 +745,75 @@ EOF
     log_success "gnmic mTLS configuration generated successfully."
 }
 
+setup_onos_config_port_forward() {
+    log_info "Phase 8.2: Setting up persistent port-forward for onos-config..."
+
+    # The onos-config Service is a ClusterIP. The only reliable way to reach
+    # it from an operator terminal (or from another LAN host) is a
+    # port-forward bound to a known interface on this host. We bind to
+    # 10.0.0.2, which is a stable secondary IP on eth1 used by the
+    # QuantumServiceOperationSDNarchitecture operator terminal repo.
+    #
+    # The forward is managed by systemd so it survives reboots and can be
+    # torn down cleanly by uninstall-bootstrap-quantum-switching-sdn.sh.
+
+    local forward_bind_ip="${ONOS_CONFIG_FORWARD_IP:-10.0.0.2}"
+    local forward_port_gnmi="${ONOS_CONFIG_FORWARD_PORT_GNMI:-5150}"
+    local forward_port_gnoi="${ONOS_CONFIG_FORWARD_PORT_GNOI:-5151}"
+
+    # Verify the bind IP actually exists on this host
+    if ! ip -o addr show | grep -qw "${forward_bind_ip}"; then
+        log_warn "Bind IP ${forward_bind_ip} not present on this host."
+        log_warn "Set ONOS_CONFIG_FORWARD_IP=<your-IP> and re-run if needed."
+        log_warn "Skipping port-forward setup."
+        return 0
+    fi
+
+    log_info "Creating systemd unit onos-config-port-forward.service..."
+    sudo tee /etc/systemd/system/onos-config-port-forward.service >/dev/null <<EOF
+[Unit]
+Description=Persistent port-forward to onos-config (${forward_bind_ip}:${forward_port_gnmi})
+After=k3s.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment="KUBECONFIG=${HOME}/.kube/config"
+ExecStart=/usr/local/bin/kubectl port-forward -n micro-onos \\
+    --address ${forward_bind_ip} \\
+    svc/onos-config \\
+    ${forward_port_gnmi}:5150 ${forward_port_gnoi}:5151
+Restart=always
+RestartSec=5
+User=${USER}
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    sudo systemctl daemon-reload
+    sudo systemctl enable --now onos-config-port-forward.service
+
+    # Wait for the forward to come up
+    log_info "Waiting for port-forward to come up..."
+    local ok=false
+    for i in $(seq 1 20); do
+        if ss -ltn 2>/dev/null | grep -qE ":${forward_port_gnmi}\b"; then
+            ok=true
+            break
+        fi
+        sleep 0.5
+    done
+
+    if [ "$ok" = true ]; then
+        log_success "Port-forward active: ${forward_bind_ip}:${forward_port_gnmi} -> onos-config:5150"
+    else
+        log_warn "Port-forward did not come up within 10s. Check:"
+        log_warn "  sudo systemctl status onos-config-port-forward.service"
+        log_warn "  sudo journalctl -u onos-config-port-forward.service -n 50"
+    fi
+}
+
 configure_uonos_controller_settings() {
     log_info "Phase 8.1: Configuring µONOS Controller Mastership & TLS Settings..."
 
@@ -957,6 +1026,7 @@ install_grpc_tools
 install_osm_installer
 setup_sdn_python_client
 deploy_cloud_native_uonos
+setup_onos_config_port_forward
 configure_uonos_controller_settings
 deploy_sdn_adapter_and_topo_aspects
 register_inventory_devices
