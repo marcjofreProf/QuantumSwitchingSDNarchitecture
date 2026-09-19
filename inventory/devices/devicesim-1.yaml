@@ -1,7 +1,7 @@
 id: "devicesim-1"
 kind_id: "devicesim"
 display_name: "In-Cluster Quantum Simulator"
-address: "devicesim-1.micro-onos.svc.cluster.local:10161"
+address: "localhost:10161"
 kind: "devicesim"
 version: "1.0.x"
 role: "simulator"
@@ -12,7 +12,7 @@ protocols:
 
 aspects:
   onos.topo.Configurable:
-    address: "devicesim-1.micro-onos.svc.cluster.local:10161"
+    address: "localhost:10161"
     type: "devicesim"
     version: "1.0.x"
 
