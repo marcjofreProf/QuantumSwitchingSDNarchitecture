@@ -156,7 +156,9 @@ base_dir="."
 # Recursively remove generated Python stubs, pyi interfaces, and __init__.py files
 find "$base_dir/proto" -type f \( -name "*_pb2*.py" -o -name "*.pyi" -o -name "__init__.py" \) -delete 2>/dev/null || true
 
-# Purge downloaded external gNMI schemas
+# Remove the gNMI extension proto source and any copied Python helpers
+rm -f "$base_dir/proto/gnmi_ext.proto" 2>/dev/null || true
+rm -f "$base_dir/inventory/gnmi_set_with_ext.py" 2>/dev/null || true
 rm -rf "$base_dir/proto/github.com" 2>/dev/null || true
 rm -f "$base_dir/proto/gnmi.proto" 2>/dev/null || true
 
