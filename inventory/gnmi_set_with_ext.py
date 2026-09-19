@@ -1,9 +1,24 @@
+#!/usr/bin/env python3
+"""
+gnmi_set_with_ext.py
+
+Send a gNMI Set request to onos-config, using extensions 101 (version)
+and 102 (device type) to register a previously-unknown target.
+
+This bypasses onos-topo entirely. onos-config will store the config
+internally and apply it when the device becomes reachable.
+"""
+
 import argparse
 import os
 import sys
 
 import grpc
 
+# The gNMI protobuf stubs are generated into <repo_root>/proto.
+# gnmi.proto imports gnmi_ext.proto via the Go-style package path
+# "github.com/openconfig/gnmi/proto/gnmi_ext/gnmi_ext.proto", so the
+# generated gnmi_ext_pb2 module lives in the nested directory.
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROTO_DIR = os.path.abspath(os.path.join(HERE, "..", "proto"))
 if PROTO_DIR not in sys.path:
@@ -12,6 +27,7 @@ if PROTO_DIR not in sys.path:
 import gnmi_pb2 as gnmi
 import gnmi_pb2_grpc as gnmi_grpc
 from github.com.openconfig.gnmi.proto.gnmi_ext import gnmi_ext_pb2 as gnmi_ext
+
 
 def build_extensions(version: str, device_type: str):
     """Build gNMI extensions 101 (version) and 102 (type)."""
@@ -56,8 +72,8 @@ def main():
                    help="String value to set")
     p.add_argument("--cert", required=True, help="Client cert (PEM)")
     p.add_argument("--key", required=True, help="Client private key (PEM)")
-    p.add_argument("--skip-verify", action="store_true", default=True,
-                   help="Skip server cert verification (default: on)")
+    p.add_argument("--ca", required=False, default=None,
+                   help="Server CA certificate (PEM) to verify the server identity")
     args = p.parse_args()
 
     with open(args.cert, "rb") as f:
@@ -65,20 +81,18 @@ def main():
     with open(args.key, "rb") as f:
         key_bytes = f.read()
 
+    root_bytes = None
+    if args.ca:
+        with open(args.ca, "rb") as f:
+            root_bytes = f.read()
+
     creds = grpc.ssl_channel_credentials(
-        root_certificates=None,
+        root_certificates=root_bytes,
         private_key=key_bytes,
         certificate_chain=cert_bytes,
     )
-    channel_opts = []
-    if args.skip_verify:
-        # gRPC Python does not expose "skip verify" directly for ssl
-        # creds; the workaround is to set the target name to a bogus
-        # value so verification always fails as intended. If your
-        # server cert matches --address, drop --skip-verify.
-        channel_opts.append(("grpc.ssl_target_name_override", args.target))
 
-    channel = grpc.secure_channel(args.address, creds, options=channel_opts)
+    channel = grpc.secure_channel(args.address, creds)
     stub = gnmi_grpc.gNMIStub(channel)
 
     request = gnmi.SetRequest(
