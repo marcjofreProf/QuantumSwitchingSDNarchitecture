@@ -247,9 +247,6 @@ echo "=================================================================="
 echo "  Registering devices with onos-config via gNMI extensions"
 echo "=================================================================="
 
-# Locate onos-config in-cluster address
-ONOS_CONFIG_ADDR="onos-config.${NAMESPACE}.svc.cluster.local:5150"
-
 # Extract the client certs from onos-cli pod to a temp dir on the host
 CERT_DIR="$(mktemp -d)"
 trap 'rm -rf "$CERT_DIR"' EXIT
