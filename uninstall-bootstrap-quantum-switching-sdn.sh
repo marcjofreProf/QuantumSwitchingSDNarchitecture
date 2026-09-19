@@ -153,14 +153,18 @@ rm -rf "$base_dir"/.venv "$base_dir"/venv "$base_dir"/env 2>/dev/null || true
 log_info "Cleaning generated build artifacts, stubs, and model plugins..."
 base_dir="."
 
-# Recursively remove generated Python stubs, pyi interfaces, and __init__.py files
-find "$base_dir/proto" -type f \( -name "*_pb2*.py" -o -name "*.pyi" -o -name "__init__.py" \) -delete 2>/dev/null || true
+# Remove generated Python stubs (both flat and nested layouts)
+find "$base_dir/proto" -type f \
+    \( -name "*_pb2*.py" -o -name "*.pyi" -o -name "__init__.py" \) \
+    -delete 2>/dev/null || true
 
-# Remove the gNMI extension proto source and any copied Python helpers
-rm -f "$base_dir/proto/gnmi_ext.proto" 2>/dev/null || true
-rm -f "$base_dir/inventory/gnmi_set_with_ext.py" 2>/dev/null || true
-rm -rf "$base_dir/proto/github.com" 2>/dev/null || true
-rm -f "$base_dir/proto/gnmi.proto" 2>/dev/null || true
+# Remove downloaded .proto sources and the nested gNMI extension tree
+rm -f  "$base_dir/proto/gnmi.proto" 2>/dev/null || true
+rm -rf "$base_dir/proto/github.com"  2>/dev/null || true
+rm -rf "$base_dir/proto/github"      2>/dev/null || true
+
+# Remove the gNMI extension Set helper (tracked in-repo? then comment this out)
+rm -f  "$base_dir/inventory/gnmi_set_with_ext.py" 2>/dev/null || true
 
 # Purge virtual environments and Python cache
 rm -rf "$base_dir"/.venv "$base_dir"/venv "$base_dir"/env 2>/dev/null || true
