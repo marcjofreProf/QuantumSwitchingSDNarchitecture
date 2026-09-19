@@ -156,7 +156,7 @@ python3 ./hardware-agents/switch-drivers/gnoi-switching-client.py <NODE_IP> disc
 
 ## Check gNMI
 # Check if the hardware node is connected or disconnected
-python3 ./hardware-agents/switch-drivers/gnmif-switching-client.py <NODE_IP> status
+python3 ./hardware-agents/switch-drivers/gnmi-switching-client.py <NODE_IP> status
 
 # Force the physical switch to connect (cross-connect)
 python3 ./hardware-agents/switch-drivers/gnmi-switching-client.py <NODE_IP> connect
@@ -250,12 +250,11 @@ endpoint: doing so triggers a TLS handshake the server didn't ask for, and you w
 # Example (probe the same device through onos-config)
 
     gnmic -a <onos-config-LB-IP>:5150 \
-      --tls-cert /etc/onos/certs/tls.crt \
-      --tls-key  /etc/onos/certs/tls.key \
+      --tls-cert /etc/onos/certs/client1.crt \
+      --tls-key  /etc/onos/certs/client1.key \
       --skip-verify \
       get \
-      --path "/system/config/motd-banner" \
-      --target quantum-node-1
+      --path "/switching/state"
 
 Here the northbound hop is mTLS, and `onos-config` re-emits the request southbound to the BeagleBone using the address in `onos.topo.Configurable`.
 
@@ -264,55 +263,50 @@ Here the northbound hop is mTLS, and `onos-config` re-emits the request southbou
 `onos-config` validates every write against the **model plugin** registered for the target's `type` field. If the plugin does not define a
 YANG path as writable, the `Set` will not be applied — regardless of how correct the transport is.
 
-- **`devicesim-1`** uses the built-in `devicesim` model plugin. This simulator is designed to exercise the **µONOS control loop in memory**:
-  it accepts writes for the small set of OpenConfig paths it advertises, tracks them, and returns them on `Get`. It is ideal for verifying that
-  `onos-config`, `onos-topo`, `onos-cli`, and the northbound gNMI transport are all wired up correctly, and for developing automation
-  that needs a device to push config against. It is deliberately not a full YANG implementation, so paths outside its advertised set are
-  returned as "not yet supported" rather than silently accepted.
+The current deployment has two distinct targets:
 
-- **`quantum-node-1`** is registered as a `devicesim` target today, but the intent is to give it its own model plugin derived from the
-  BeagleBone's actual YANG schema. Once that plugin is loaded, the full set of paths that the BeagleBone exposes becomes writable through
-  `onos-config`, and the southbound gNMI connection (plaintext, on port 50051) applies the changes to the physical device.
+- **`devicesim-1`** uses the built-in `devicesim` model plugin. It exercises the µONOS control loop in memory and is useful for CI and
+  regression tests. It does **not** push config to a real device.
 
-So the two targets represent two stages of the same workflow:
+- **`quantum-node-1`** is bound to the **custom `controller-quantum-switching` model plugin** built from the BeagleBone's YANG schema (see
+  `orchestration/yang-models/controller-quantum-switching.yang`). Writes to paths the YANG model marks as `config true` (e.g.
+  `/switching/state`) are validated against the custom schema and pushed to the BeagleBone at `10.0.0.254:50051` over plaintext gNMI.
 
-1. **`devicesim-1`** — validates the µONOS pipeline end-to-end without needing a physical device. Useful for CI, demos, and regression tests.
-2. **`quantum-node-1`** — the target for real control of the BeagleBone, once the BeagleBone's model plugin is in place.
+The custom model plugin is built and loaded automatically by `inventory/register-devices.sh` (Phase 1 and Phase 2). No manual steps are
+required.
 
-The recommended progression is:
+### Custom model plugin workflow (for reference)
 
-1. Use `devicesim-1` to confirm the transport, extensions, and Set flow.
-2. Write a YANG model describing the BeagleBone's real configuration surface.
-3. Build a model plugin from that YANG model
-   (`CGO_ENABLED=1 go build -buildmode=plugin ...`).
-4. Load the plugin into `onos-config`.
-5. Re-register `quantum-node-1` in `onos-topo` with
-   `type: <your-custom-type>` and `version: <model-revision>`, so
-   `onos-config` picks up the new plugin for that target.
+If you need to change the schema, the end-to-end loop is:
 
-Until step 5 is complete, `Set` operations on `quantum-node-1` are validated against the `devicesim` model plugin — the same one used by
-`devicesim-1` — which is why the two targets behave identically today.
+1. Edit `orchestration/yang-models/controller-quantum-switching.yang`.
+2. Run `./inventory/register-devices.sh`.
+   The script rebuilds the plugin image, imports it into K3s, and `helm upgrade`s `onos-config` with the new sidecar.
+3. Verify with:
+   ```
+   kubectl exec -n micro-onos deploy/onos-cli -- onos config get plugins
+   ```
+   You should see `controller-quantum-switching-1.0.0  Loaded`.
+
+### Writable paths
+
+The set of writable paths depends on which model plugin is loaded:
+
+- With **`devicesim`**, a small, fixed subset of OpenConfig paths is writable.
+- With the **`controller-quantum-switching`** plugin, every leaf marked `config true` in the custom YANG model is writable through
+  `onos-config`.
+
+For more information on building a custom model plugin, see `sdn-controller/northbound-interfaces/model-plugin`.
 
 ## Extensions 101 and 102
 
 `onos-config` reads `onos-topo` **once at startup** and does not automatically pick up entities added later. When a target is added to
 `onos-topo` after that read, the first `Set` request for that target must carry two gNMI extensions:
 
-- **101** — the target's model plugin **version** (e.g. `"1.0.x"`)
-- **102** — the target's model plugin **type** (e.g. `"devicesim"`)
+- **101** — the target's model plugin **version** (e.g. `"1.0.0"`)
+- **102** — the target's model plugin **type** (e.g. `"controller-quantum-switching"`)
 
 With these extensions present, `onos-config` loads the corresponding model plugin on the fly and stores the configuration internally,
 applying it to the device when it becomes reachable. `gnmic` does not expose `--ext` on its command line, so the helper script
 `inventory/gnmi_set_with_ext.py` is used to construct the `SetRequest` with both extensions embedded. See `inventory/register-devices.sh` for
 the full invocation.
-
-## Writable paths
-
-The set of writable paths depends entirely on which model plugin is loaded for a given target:
-
-- With the **`devicesim`** plugin, a small, fixed subset of OpenConfig paths is writable — enough to exercise the control loop, not enough to
-  drive a real device.
-- With a **custom model plugin** (e.g. one built from the BeagleBone's YANG model), every path the YANG model marks as `config true` becomes
-  writable through `onos-config`.
-
-For more information on building a custom model plugin, see `sdn-controller/northbound-interfaces/model-plugin`.
