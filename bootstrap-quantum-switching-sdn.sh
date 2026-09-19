@@ -628,8 +628,14 @@ deploy_cloud_native_uonos() {
         kubectl create namespace micro-onos 2>/dev/null || true
     
         log_info "Installing µONOS..."
+        OVERRIDE_VALUES="./onos-umbrella/values-quantum-sdn.yaml"
+        if [ ! -f "${OVERRIDE_VALUES}" ]; then
+            log_error "Missing ${OVERRIDE_VALUES}"
+            exit 1
+        fi
         helm upgrade --install onos-umbrella ./onos-umbrella \
-            -n micro-onos || {
+            -n micro-onos \
+            -f "${OVERRIDE_VALUES}" || {
             log_error "Failed to install µONOS."
             exit 1
         }
@@ -690,11 +696,8 @@ spec:
 EOF
 
         log_success "RESTCONF Gateway deployed on NodePort 30181."
-    fi
+    fi    
     
-    # Expose onos-config via LoadBalancer preserving ports 5150 (gNMI) and 5151 (gNOI)
-    kubectl patch svc onos-config -n micro-onos -p '{"spec": {"type": "LoadBalancer", "ports": [{"name": "gnmi", "port": 5150, "targetPort": 5150}, {"name": "gnoi", "port": 5151, "targetPort": 5151}]}}' 2>/dev/null || true
-
     # Extract the µONOS client certs and CA for local gNMI tools.
     #
     # The client identity (client1.crt/key) lives in the onos-cli pod's
