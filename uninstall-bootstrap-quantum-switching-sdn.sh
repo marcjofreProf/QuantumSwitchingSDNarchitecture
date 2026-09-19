@@ -183,6 +183,7 @@ rm -f "$plugin_dir"/VERSION "$plugin_dir"/metadata.yaml "$plugin_dir"/Makefile "
 rm -f "$plugin_dir"/yang/controller-quantum-switching.yang 2>/dev/null || true
 rm -rf "$plugin_dir"/build "$plugin_dir"/proto 2>/dev/null || true
 rm -f "$plugin_dir"/*.go 2>/dev/null || true
+rm -f "$plugin_dir"/metadata.yaml "$plugin_dir"/controller-quantum-switching-model.yaml 2>/dev/null || true
 
 rm -f get-docker.sh get_helm.sh install_osm.sh grpcurl_*.tar.gz helm-*-linux-amd64.tar.gz 2>/dev/null || true
 
