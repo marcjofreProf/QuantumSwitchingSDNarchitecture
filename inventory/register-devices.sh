@@ -108,6 +108,11 @@ if [ ! -f "${PLUGIN_DIR}/Makefile" ]; then
     exit 1
 fi
 
+# Fix the pinned libc6-compat version that no longer exists in Alpine 3.17
+if [ -f "${PLUGIN_DIR}/Dockerfile" ]; then
+    sed -i 's/libc6-compat=[0-9.]*-r[0-9]*/libc6-compat/g' "${PLUGIN_DIR}/Dockerfile"
+fi
+
 echo "[*] Building plugin image onosproject/controller-quantum-switching:1.0.0-... "
 (
     cd "${PLUGIN_DIR}"
