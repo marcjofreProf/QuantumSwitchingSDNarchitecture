@@ -689,26 +689,40 @@ EOF
     # Expose onos-config via LoadBalancer preserving ports 5150 (gNMI) and 5151 (gNOI)
     kubectl patch svc onos-config -n micro-onos -p '{"spec": {"type": "LoadBalancer", "ports": [{"name": "gnmi", "port": 5150, "targetPort": 5150}, {"name": "gnoi", "port": 5151, "targetPort": 5151}]}}' 2>/dev/null || true
 
-    # Extract mTLS certificates for local gNMI tools from the onos-cli pod,
-    # which ships the correct ONF-signed client certs (client1.crt/key + onfca.crt).
+    # Extract the µONOS client certs and CA for local gNMI tools.
+    #
+    # The client identity (client1.crt/key) lives in the onos-cli pod's
+    # /etc/ssl/certs/. The server CA (tls.cacrt) lives in the onos-config
+    # pod's /etc/onos/certs/. Both are Secret-mounted as symlinks, so use
+    # `kubectl exec -- cat` rather than `kubectl cp` (which skips symlinks).
     log_info "Extracting µONOS client certificates for gnmic..."
     sudo mkdir -p /etc/onos/certs
 
-    CLI_POD=$(kubectl get pods -n micro-onos -l app=onos -o jsonpath='{.items[0].metadata.name}')
-    kubectl cp micro-onos/${CLI_POD}:/etc/ssl/certs/client1.crt /tmp/client1.crt
-    kubectl cp micro-onos/${CLI_POD}:/etc/ssl/certs/client1.key /tmp/client1.key
-    kubectl cp micro-onos/${CLI_POD}:/etc/ssl/certs/onfca.crt  /tmp/onfca.crt
+    CLI_POD=$(kubectl get pods -n micro-onos -l app=onos \
+        -o jsonpath='{.items[0].metadata.name}')
+    CONFIG_POD=$(kubectl get pods -n micro-onos -l app.kubernetes.io/name=onos-config \
+        -o jsonpath='{.items[0].metadata.name}')
 
-    sudo cp /tmp/client1.crt /etc/onos/certs/client1.crt
-    sudo cp /tmp/client1.key /etc/onos/certs/client1.key
-    sudo cp /tmp/onfca.crt   /etc/onos/certs/onfca.crt
-    sudo chmod 644 /etc/onos/certs/*
+    if [ -z "${CLI_POD}" ] || [ -z "${CONFIG_POD}" ]; then
+        log_warn "Could not locate onos-cli or onos-config pod; skipping cert extraction."
+    else
+        kubectl exec -n micro-onos "${CLI_POD}" -- \
+            cat /etc/ssl/certs/client1.crt | sudo tee /etc/onos/certs/client1.crt >/dev/null
+        kubectl exec -n micro-onos "${CLI_POD}" -- \
+            cat /etc/ssl/certs/client1.key | sudo tee /etc/onos/certs/client1.key >/dev/null
+        kubectl exec -n micro-onos "${CONFIG_POD}" -- \
+            cat /etc/onos/certs/tls.cacrt | sudo tee /etc/onos/certs/tls.cacrt >/dev/null
 
-    # NOTE: The CA in onos-config-secret ('tls.cacrt') is NOT a valid CA and
-    # will be rejected by gnmic with "not a CA". Use onfca.crt instead.
-    # The server cert is signed by a CA that is not distributed to the client,
-    # so skip-verify is required for now.
+        sudo chmod 600 /etc/onos/certs/client1.key
+        sudo chmod 644 /etc/onos/certs/client1.crt /etc/onos/certs/tls.cacrt
 
+        log_success "Certificates extracted to /etc/onos/certs/."
+    fi
+
+    # Write a gnmic config that mirrors what we use interactively.
+    # The server cert has no SAN, so skip-verify is required.
+    # The client identity is client1.crt/client1.key.
+    sudo mkdir -p /etc/gnmic
     cat << 'EOF' | sudo tee /etc/gnmic/gnmic.yaml > /dev/null
 username: ""
 password: ""
