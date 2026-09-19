@@ -430,6 +430,36 @@ echo "=================================================================="
 echo "  Registering devices with onos-config via gNMI extensions"
 echo "=================================================================="
 
+# -------------------------------------------------------------------------
+# Cleanup: Roll back any previous transactions so we start from a clean slate.
+#
+# onos-config does not expose a direct "delete configuration" command, but
+# every Set is recorded as a transaction. Rolling back all transactions
+# (newest first) clears the config store.
+# -------------------------------------------------------------------------
+echo "[*] Rolling back previous onos-config transactions..."
+
+# Get the list of transaction indices, newest first
+TX_INDICES=$(kubectl exec -n "$NAMESPACE" "$CLI_POD" -- \
+    onos config get transactions 2>/dev/null | \
+    awk 'NR>1 && $2 ~ /^[0-9]+$/ {print $2}' | sort -rn)
+
+if [ -n "$TX_INDICES" ]; then
+    for idx in $TX_INDICES; do
+        echo "    Rolling back transaction index: $idx"
+        kubectl exec -n "$NAMESPACE" "$CLI_POD" -- \
+            onos config rollback "$idx" 2>/dev/null || \
+            echo "    [WARNING] Could not roll back transaction $idx (may already be rolled back)"
+    done
+else
+    echo "    No previous transactions to roll back."
+fi
+
+echo "[*] Configurations after cleanup:"
+kubectl exec -n "$NAMESPACE" "$CLI_POD" -- \
+    onos config get configurations || true
+echo
+
 # Extract the client certs from the onos-cli pod to a temp dir on the host.
 # Use `kubectl exec -- cat` instead of `kubectl cp`, because the cert files
 # inside the pod may be symlinks (Secret volume mount) and `kubectl cp`
