@@ -510,41 +510,43 @@ setup_sdn_python_client() {
     local venv_dir="${repo_dir}/.venv"
     local proto_dir="${repo_dir}/proto"
 
-    # 3. Fetch OpenConfig gNMI schema files into a flat proto/ directory
-    mkdir -p "$proto_dir"
+        # 3. Fetch OpenConfig gNMI schemas from a pinned revision (v0.9.1).
+    #    gnmi.proto at this tag imports gnmi_ext.proto via the Go-style
+    #    package path "github.com/openconfig/gnmi/proto/gnmi_ext/gnmi_ext.proto",
+    #    so gnmi_ext.proto must live at the matching nested path.
+    local ext_nested="${proto_dir}/github.com/openconfig/gnmi/proto/gnmi_ext"
+    mkdir -p "$ext_nested"
 
     if [ ! -f "$proto_dir/gnmi.proto" ]; then
-        log_info "gnmi.proto not found in $proto_dir. Downloading OpenConfig gNMI schema..."
-        curl -fsSL https://raw.githubusercontent.com/openconfig/gnmi/master/proto/gnmi/gnmi.proto -o "$proto_dir/gnmi.proto"
+        log_info "Downloading gnmi.proto (v0.9.1)..."
+        curl -fsSL https://raw.githubusercontent.com/openconfig/gnmi/v0.9.1/proto/gnmi/gnmi.proto \
+            -o "$proto_dir/gnmi.proto"
     fi
 
-    if [ ! -f "$proto_dir/gnmi_ext.proto" ]; then
-        log_info "Downloading OpenConfig gNMI extension schema (gnmi_ext.proto)..."
-        curl -fsSL https://raw.githubusercontent.com/openconfig/gnmi/master/proto/gnmi_ext/gnmi_ext.proto -o "$proto_dir/gnmi_ext.proto"
+    if [ ! -f "$ext_nested/gnmi_ext.proto" ]; then
+        log_info "Downloading gnmi_ext.proto (v0.9.1)..."
+        curl -fsSL https://raw.githubusercontent.com/openconfig/gnmi/v0.9.1/proto/gnmi_ext/gnmi_ext.proto \
+            -o "$ext_nested/gnmi_ext.proto"
     fi
 
     # 4. Compile both proto files into Python stubs
+    log_info "Compiling gNMI Protobuf stubs..."
     "$venv_dir/bin/python" -m grpc_tools.protoc \
         -I"$proto_dir" \
         --python_out="$proto_dir" \
         --grpc_python_out="$proto_dir" \
         "$proto_dir/gnmi.proto" \
-        "$proto_dir/gnmi_ext.proto"
+        "$ext_nested/gnmi_ext.proto"
 
-    if [ ${#proto_files[@]} -gt 0 ]; then
-        log_info "Compiling ${#proto_files[@]} Protobuf schema(s)..."
-        "$venv_dir/bin/python" -m grpc_tools.protoc \
-            -I"$proto_dir" \
-            --python_out="$proto_dir" \
-            --grpc_python_out="$proto_dir" \
-            "${proto_files[@]}"
+    # 5. Drop Python package markers along the nested gNMI extension path
+    touch "$proto_dir/__init__.py"
+    for d in github github/com github/com/openconfig github/com/openconfig/gnmi \
+             github/com/openconfig/gnmi/proto github/com/openconfig/gnmi/proto/gnmi_ext; do
+        mkdir -p "$proto_dir/$d"
+        touch "$proto_dir/$d/__init__.py"
+    done
 
-        # Initialize Python packages across all generated proto subdirectories
-        find "$proto_dir" -type d -exec touch {}/__init__.py \;
-        log_success "Protobuf stubs successfully generated."
-    else
-        log_warn "No .proto files found in $proto_dir"
-    fi
+    log_success "Protobuf stubs successfully generated."
 
     # 5. Make execution scripts executable
     chmod +x "$repo_dir"/tests/e2e-path-provisioning/* 2>/dev/null || true
