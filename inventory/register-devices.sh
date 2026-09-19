@@ -101,6 +101,13 @@ docker run --rm -v "${PLUGIN_DIR_ABS}:/config-model" \
 
 sudo chown -R "$(id -u):$(id -g)" "${PLUGIN_DIR}"
 
+# The Makefile reads ./VERSION to build the image tag. model-compiler does
+# not write this file; it must exist beforehand or the image tag becomes
+# "-controller-quantum-switching-1.0.0" (no version), which Docker rejects.
+# See: https://github.com/onosproject/config-models/blob/master/Makefile
+PLUGIN_VERSION="1.0.0"
+echo "${PLUGIN_VERSION}" > "${PLUGIN_DIR}/VERSION"
+
 if [ ! -f "${PLUGIN_DIR}/Makefile" ]; then
     echo "[!] ERROR: model-compiler did not produce a Makefile in ${PLUGIN_DIR}."
     echo "    The YANG model likely has errors. Re-run:"
@@ -119,7 +126,7 @@ echo "[*] Building plugin image onosproject/controller-quantum-switching:1.0.0-.
     make image
 ) || { echo "[!] ERROR: Failed to build model plugin image."; exit 1; }
 
-PLUGIN_IMAGE="onosproject/controller-quantum-switching:1.0.0-controller-quantum-switching-1.0.0"
+PLUGIN_IMAGE="onosproject/controller-quantum-switching:${PLUGIN_VERSION}-controller-quantum-switching-${PLUGIN_VERSION}"
 
 if ! docker images --format '{{.Repository}}:{{.Tag}}' | grep -qF "${PLUGIN_IMAGE}"; then
     echo "[!] ERROR: Expected image ${PLUGIN_IMAGE} was not produced."
