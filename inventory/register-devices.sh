@@ -519,13 +519,25 @@ for cfg in "${REGISTERED_DEVICES[@]}"; do
     echo "[*] Sending Set with extensions to onos-config for '$cfg'"
     echo "    type='$dev_type' version='$dev_version'"
 
+    # Per-device path/value
+    case "$cfg" in
+        quantum-node-1)
+            set_path="/switching/state"
+            set_value="enabled"
+            ;;
+        *)
+            set_path="/system/config/motd-banner"
+            set_value="Registered via extensions"
+            ;;
+    esac
+
     "$VENV_PY" "$(dirname "$0")/gnmi_set_with_ext.py" \
         --address localhost:5150 \
         --target "$cfg" \
         --type "$dev_type" \
         --version "$dev_version" \
-        --path "/system/config/motd-banner" \
-        --value "Registered via extensions" \
+        --path "$set_path" \
+        --value "$set_value" \
         --cert "${CERT_DIR}/client1.crt" \
         --key  "${CERT_DIR}/client1.key" \
         --ca   "${CERT_DIR}/tls.cacrt" \
