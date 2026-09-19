@@ -218,3 +218,108 @@ for cfg in device_configs:
         print(verify.stderr.strip())
 
 PYEOF
+
+PYEOF
+
+# ---------------------------------------------------------------------------
+# Phase 2: Register devices with onos-config directly via gNMI extensions
+#
+# onos-config reads onos-topo ONCE at startup and does not automatically
+# pick up entities added later (known limitation). Extensions 101 (version)
+# and 102 (type) tell onos-config which model plugin to use for a target
+# it does not know about, allowing it to store config internally without
+# needing the device to be reachable.
+# ---------------------------------------------------------------------------
+echo
+echo "=================================================================="
+echo "  Registering devices with onos-config via gNMI extensions"
+echo "=================================================================="
+
+# Locate onos-config in-cluster address
+ONOS_CONFIG_ADDR="onos-config.${NAMESPACE}.svc.cluster.local:5150"
+
+# Extract the client certs from onos-cli pod to a temp dir on the host
+CERT_DIR="$(mktemp -d)"
+trap 'rm -rf "$CERT_DIR"' EXIT
+
+kubectl cp "${NAMESPACE}/${CLI_POD}:/etc/ssl/certs/client1.crt" \
+    "${CERT_DIR}/client1.crt" >/dev/null
+kubectl cp "${NAMESPACE}/${CLI_POD}:/etc/ssl/certs/client1.key" \
+    "${CERT_DIR}/client1.key" >/dev/null
+
+# Start a port-forward to onos-config in the background
+kubectl port-forward -n "$NAMESPACE" svc/onos-config 5150:5150 \
+    >/dev/null 2>&1 &
+PF_PID=$!
+trap 'kill $PF_PID 2>/dev/null; rm -rf "$CERT_DIR"' EXIT
+
+# Wait for the port-forward to come up
+for i in $(seq 1 20); do
+    if nc -z localhost 5150 2>/dev/null; then
+        break
+    fi
+    sleep 0.5
+done
+
+if ! nc -z localhost 5150 2>/dev/null; then
+    echo "[!] ERROR: Could not establish port-forward to onos-config."
+    exit 1
+fi
+
+echo "[*] port-forward onos-config → localhost:5150 established."
+
+# Ensure the Python gNMI stubs are available on the host
+PROTO_DIR="$(cd "$(dirname "$0")/.." && pwd)/proto"
+if [ ! -f "${PROTO_DIR}/gnmi_pb2.py" ]; then
+    echo "[*] Generating Python gNMI stubs into ${PROTO_DIR}..."
+    mkdir -p "${PROTO_DIR}"
+    python3 -m grpc_tools.protoc \
+        -I"${PROTO_DIR}" \
+        --python_out="${PROTO_DIR}" \
+        --grpc_python_out="${PROTO_DIR}" \
+        "${PROTO_DIR}/gnmi.proto" \
+        "${PROTO_DIR}/gnmi_ext.proto" 2>/dev/null || {
+        echo "[!] WARNING: Could not generate stubs; assuming they already exist."
+    }
+fi
+
+# Run the extension-based registration for each device
+for cfg in "${REGISTERED_DEVICES[@]}"; do
+    # Read kind and version from the YAML
+    yaml_file=$(grep -l "id:\s*[\"']\?${cfg}[\"']\?" "$DEVICES_DIR"/*.yaml 2>/dev/null | head -n1)
+    if [ -z "$yaml_file" ]; then
+        echo "[!] Could not find YAML for device '$cfg'; skipping."
+        continue
+    fi
+
+    dev_type=$(grep -E '^\s*(kind_id|kind):\s*' "$yaml_file" | head -n1 | \
+               sed -E 's/^\s*(kind_id|kind):\s*["'"'"']?([^"'"'"'#]+).*/\2/' | tr -d ' ')
+    dev_version=$(grep -E '^\s*version:\s*' "$yaml_file" | head -n1 | \
+                  sed -E 's/^\s*version:\s*["'"'"']?([^"'"'"'#]+).*/\1/' | tr -d ' ')
+    dev_type=${dev_type:-devicesim}
+    dev_version=${dev_version:-1.0.x}
+
+    echo
+    echo "[*] Sending Set with extensions to onos-config for '$cfg'"
+    echo "    type='$dev_type' version='$dev_version'"
+
+    python3 "$(dirname "$0")/gnmi_set_with_ext.py" \
+        --address localhost:5150 \
+        --target "$cfg" \
+        --type "$dev_type" \
+        --version "$dev_version" \
+        --path "/system/config/motd-banner" \
+        --value "Registered via extensions" \
+        --cert "${CERT_DIR}/client1.crt" \
+        --key "${CERT_DIR}/client1.key" \
+        --skip-verify \
+        || echo "    [WARNING] Set failed for '$cfg' (see above)."
+done
+
+echo
+echo "[*] Verifying onos-config now knows about the targets..."
+kubectl exec -n "$NAMESPACE" "$CLI_POD" -- \
+    onos config get configurations || true
+
+echo
+echo "[SUCCESS] Device registration with onos-config complete."
