@@ -122,8 +122,16 @@ if ! docker images --format '{{.Repository}}:{{.Tag}}' | grep -qF "${PLUGIN_IMAG
     exit 1
 fi
 
+# Ensure the image is present in K3s containerd. Re-importing is cheap and
+# idempotent, so do it unconditionally rather than guarding on a check.
 echo "[*] Importing ${PLUGIN_IMAGE} into K3s containerd..."
 docker save "${PLUGIN_IMAGE}" | sudo k3s ctr images import -
+
+# Sanity check
+if ! sudo k3s ctr images ls -q | grep -qF "docker.io/${PLUGIN_IMAGE}"; then
+    echo "[!] ERROR: ${PLUGIN_IMAGE} is not present in K3s containerd."
+    exit 1
+fi
 
 echo "[SUCCESS] Model plugin built and imported."
 
@@ -151,20 +159,30 @@ CURRENT_SIDECARS=$(kubectl get deploy onos-config -n "${NAMESPACE}" \
 if echo "${CURRENT_SIDECARS}" | grep -qw "controller-quantum-switching"; then
     echo "[*] onos-config already has the controller-quantum-switching sidecar."
 else
-    echo "[*] Adding controller-quantum-switching sidecar via helm upgrade..."
+    echo "[*] Adding controller-quantum-switching to onos-config.modelPlugins..."
 
-    # Helm values override: append a new sidecar to onos-config.
-    # The exact key path depends on the chart; check the chart's values.yaml
-    # if this does not take effect. Common paths:
-    #   onos-config.plugins.<name>.image / port / ...  (older charts)
-    #   onos-umbrella.onos-config.<name>...           (newer charts)
+    # Helm REPLACES lists rather than merging them, so we must list all
+    # existing plugins plus the new one. The schema comes from the chart's
+    # onos-config/values.yaml (fields: name, image, port, endpoint).
     cat > /tmp/uonos-plugin-values.yaml <<EOF
 onos-config:
-  plugins:
-    controller-quantum-switching:
+  modelPlugins:
+    - name: devicesim-1
+      image: onosproject/devicesim:0.6.0-devicesim-1.0.x
+      port: 5152
+      endpoint: localhost
+    - name: testdevice-1
+      image: onosproject/testdevice-1.0.x:0.6.0-testdevice-1.0.x
+      port: 5153
+      endpoint: localhost
+    - name: testdevice-2
+      image: onosproject/testdevice-2.0.x:0.6.0-testdevice-2.0.x
+      port: 5154
+      endpoint: localhost
+    - name: controller-quantum-switching
       image: ${PLUGIN_IMAGE}
       port: 5155
-      enabled: true
+      endpoint: localhost
 EOF
 
     (
@@ -173,8 +191,8 @@ EOF
             -n "${NAMESPACE}" \
             -f /tmp/uonos-plugin-values.yaml
     ) || {
-        echo "[!] WARNING: helm upgrade failed; the plugin may not be loaded."
-        echo "    Inspect the chart's values.yaml and adjust the key path."
+        echo "[!] ERROR: helm upgrade failed."
+        exit 1
     }
 
     echo "[*] Waiting for onos-config rollout to complete..."
@@ -200,6 +218,9 @@ echo "[*] Checking plugin status inside onos-config..."
 kubectl exec -n "${NAMESPACE}" "$(kubectl get pods -n ${NAMESPACE} -l app=onos -o jsonpath='{.items[0].metadata.name}')" -- \
     onos config get plugins || true
 
+# ---------------------------------------------------------------------------
+# Phase 1b: Register devices in onos-topo
+# ---------------------------------------------------------------------------
 python3 - "$DEVICES_DIR" "$NAMESPACE" "$CLI_POD" << 'PYEOF'
 import os
 import sys
@@ -396,7 +417,7 @@ for cfg in device_configs:
 PYEOF
 
 # ---------------------------------------------------------------------------
-# Phase 2: Register devices with onos-config directly via gNMI extensions
+# Phase 3: Register devices with onos-config directly via gNMI extensions
 #
 # onos-config reads onos-topo ONCE at startup and does not automatically
 # pick up entities added later (known limitation). Extensions 101 (version)
