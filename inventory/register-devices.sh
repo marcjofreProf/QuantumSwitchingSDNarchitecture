@@ -251,9 +251,32 @@ echo "=================================================================="
 # Use `kubectl exec -- cat` instead of `kubectl cp`, because the cert files
 # inside the pod may be symlinks (Secret volume mount) and `kubectl cp`
 # silently skips symlinks, leaving the destination empty.
+# Extract the client certs from the onos-cli pod
 CERT_DIR="$(mktemp -d)"
 kubectl exec -n "${NAMESPACE}" "${CLI_POD}" -- cat /etc/ssl/certs/client1.crt > "${CERT_DIR}/client1.crt"
 kubectl exec -n "${NAMESPACE}" "${CLI_POD}" -- cat /etc/ssl/certs/client1.key > "${CERT_DIR}/client1.key"
+
+# Also extract the server's CA from the onos-config pod so the Python
+# client can verify the server certificate properly.
+CONFIG_POD=$(kubectl get pods -n "${NAMESPACE}" -l app.kubernetes.io/name=onos-config -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || \
+             kubectl get pods -n "${NAMESPACE}" -l app=onos -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+
+if [ -n "${CONFIG_POD}" ]; then
+    kubectl exec -n "${NAMESPACE}" "${CONFIG_POD}" -- cat /etc/onos/certs/tls.cacrt > "${CERT_DIR}/tls.cacrt" 2>/dev/null || true
+fi
+
+# Sanity check
+for f in client1.crt client1.key; do
+    if [ ! -s "${CERT_DIR}/${f}" ]; then
+        echo "[!] ERROR: Failed to extract ${f} from ${CLI_POD}."
+        exit 1
+    fi
+done
+
+if [ ! -s "${CERT_DIR}/tls.cacrt" ]; then
+    echo "[!] WARNING: Could not extract server CA (tls.cacrt) from onos-config."
+    echo "    Python client will fail server verification."
+fi
 
 # Sanity check: both files must be non-empty
 if [ ! -s "${CERT_DIR}/client1.crt" ] || [ ! -s "${CERT_DIR}/client1.key" ]; then
@@ -343,7 +366,7 @@ for cfg in "${REGISTERED_DEVICES[@]}"; do
         --value "Registered via extensions" \
         --cert "${CERT_DIR}/client1.crt" \
         --key  "${CERT_DIR}/client1.key" \
-        --skip-verify \
+        --ca   "${CERT_DIR}/tls.cacrt" \
         || echo "    [WARNING] Set failed for '$cfg' (see above)."
 done
 
