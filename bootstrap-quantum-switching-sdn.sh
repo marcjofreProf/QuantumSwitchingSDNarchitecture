@@ -724,6 +724,19 @@ deploy_cloud_native_uonos() {
             log_error "Missing ${OVERRIDE_VALUES}"
             exit 1
         fi
+
+        log_info "Purging any stale µONOS TLS secrets so cert-issuer regenerates them..."
+        kubectl delete secret -n micro-onos --ignore-not-found \
+            onos-config-secret \
+            onos-cli-secret \
+            onos-topo-secret \
+            onos-umbrella-secret 2>/dev/null || true
+
+        log_info "Purging any stale cert-issuer Job..."
+        kubectl delete job -n micro-onos --ignore-not-found \
+            onos-umbrella-cert-issuer \
+            cert-issuer 2>/dev/null || true
+        
         helm upgrade --install onos-umbrella ./onos-umbrella \
             -n micro-onos \
             -f "${OVERRIDE_VALUES}" || {
@@ -732,7 +745,61 @@ deploy_cloud_native_uonos() {
         }
     ) || exit 1
 
-        log_info "=== µONOS installation completed ==="
+    log_info "Waiting for the onos-umbrella cert-issuer Job to complete..."
+    local cert_waited=0
+    local cert_timeout=300
+    local cert_done=false
+
+    while [ "$cert_waited" -lt "$cert_timeout" ]; do
+        job=$(kubectl get job -n micro-onos -l app.kubernetes.io/name=cert-issuer \
+              -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+        if [ -z "$job" ]; then
+            job=$(kubectl get job -n micro-onos \
+                  -o jsonpath='{.items[?(@.metadata.name=="onos-umbrella-cert-issuer")].metadata.name}' 2>/dev/null || true)
+        fi
+        if [ -n "$job" ] && kubectl wait --for=condition=Complete job/"$job" \
+                -n micro-onos --timeout=10s >/dev/null 2>&1; then
+            cert_done=true
+            log_success "cert-issuer Job '$job' completed (waited ${cert_waited}s)."
+            break
+        fi
+        sleep 3
+        cert_waited=$((cert_waited + 3))
+    done
+
+    if [ "$cert_done" != true ]; then
+        log_warn "cert-issuer did not complete within ${cert_timeout}s; will verify secrets directly."
+    fi
+
+    # Verify onos-config-secret has all three keys the pods expect
+    log_info "Verifying onos-config-secret contains tls.crt, tls.key, tls.cacrt..."
+    local verify_waited=0
+    local verify_ok=false
+    while [ "$verify_waited" -lt 120 ]; do
+        if kubectl get secret onos-config-secret -n micro-onos \
+               -o jsonpath='{.data.tls\.crt}' 2>/dev/null | grep -q . && \
+           kubectl get secret onos-config-secret -n micro-onos \
+               -o jsonpath='{.data.tls\.key}' 2>/dev/null | grep -q . && \
+           kubectl get secret onos-config-secret -n micro-onos \
+               -o jsonpath='{.data.tls\.cacrt}' 2>/dev/null | grep -q .; then
+            verify_ok=true
+            break
+        fi
+        sleep 3
+        verify_waited=$((verify_waited + 3))
+    done
+
+    if [ "$verify_ok" != true ]; then
+        log_error "onos-config-secret is still missing one of tls.crt/tls.key/tls.cacrt after 120s."
+        log_error "Inspect the cert-issuer:"
+        log_error "  kubectl get jobs -n micro-onos"
+        log_error "  kubectl logs -n micro-onos job/$job"
+        exit 1
+    fi
+
+    log_success "onos-config-secret is complete (tls.crt, tls.key, tls.cacrt)."
+    
+    log_info "=== µONOS installation completed ==="
 
     # Wait for the onos-cli and onos-config pods to be scheduled and Ready
     # before trying to extract certs from them.
@@ -744,9 +811,9 @@ deploy_cloud_native_uonos() {
 
     while [ "$waited" -lt "$timeout" ]; do
         # Use specific labels. onos-cli uses app=onos-cli, onos-config uses app=onos-config.
-        cli_pod=$(kubectl get pods -n micro-onos -l app=onos-cli \
+        cli_pod=$(kubectl get pods -n micro-onos -l app.kubernetes.io/name=onos-cli \
             -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
-        config_pod=$(kubectl get pods -n micro-onos -l app=onos-config \
+        config_pod=$(kubectl get pods -n micro-onos -l app.kubernetes.io/name=onos-config \
             -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
 
         if [ -n "$cli_pod" ] && [ -n "$config_pod" ]; then
@@ -832,9 +899,9 @@ EOF
     log_info "Extracting µONOS client certificates for gnmic..."
     sudo mkdir -p /etc/onos/certs
 
-    CLI_POD=$(kubectl get pods -n micro-onos -l app=onos-cli \
+    CLI_POD=$(kubectl get pods -n micro-onos -l app.kubernetes.io/name=onos-cli \
         -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
-    CONFIG_POD=$(kubectl get pods -n micro-onos -l app=onos-config \
+    CONFIG_POD=$(kubectl get pods -n micro-onos -l app.kubernetes.io/name=onos-config \
         -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
 
     if [ -z "${CLI_POD}" ] || [ -z "${CONFIG_POD}" ]; then
@@ -1041,7 +1108,8 @@ deploy_open5gs() {
 verify_uonos_gnmi_end_to_end() {
     log_info "Phase 10: Verifying µONOS gNMI end-to-end connectivity..."
 
-    CLI_POD=$(kubectl get pods -n micro-onos -l app=onos -o jsonpath='{.items[0].metadata.name}')
+    CLI_POD=$(kubectl get pods -n micro-onos -l app.kubernetes.io/name=onos-cli \
+    -o jsonpath='{.items[0].metadata.name}')
     if [ -z "$CLI_POD" ]; then
         log_warn "onos-cli pod not found; skipping gNMI verification."
         return 0
