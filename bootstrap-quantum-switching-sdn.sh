@@ -661,6 +661,91 @@ EOF
     log_success "Quantum-Switching model plugin built and imported into K3s."
 }
 
+generate_uonos_certs() {
+    log_info "Phase 7.7: Generating µONOS TLS certificates with openssl..."
+
+    local repo_dir
+    repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    local cert_dir="${repo_dir}/.certs/uonos"
+    local ns="micro-onos"
+
+    if ! command -v openssl >/dev/null 2>&1; then
+        log_error "openssl not available; cannot generate certificates."
+    fi
+
+    rm -rf "$cert_dir"
+    mkdir -p "$cert_dir"
+    chmod 700 "$cert_dir"
+
+    # --- CA ---
+    openssl genrsa -out "$cert_dir/ca.key" 4096 2>/dev/null
+    openssl req -x509 -new -nodes -key "$cert_dir/ca.key" -sha256 -days 3650 \
+        -subj "/C=US/ST=CA/L=Menlo Park/O=ONF/OU=Engineering/CN=ca.opennetworking.org" \
+        -out "$cert_dir/tls.cacrt"
+
+    # --- Server cert ---
+    cat > "$cert_dir/server.ext" <<'EOF'
+subjectAltName=DNS:onos-config,DNS:onos-config.micro-onos,DNS:onos-config.micro-onos.svc,DNS:onos-config.micro-onos.svc.cluster.local,DNS:onos-topo,DNS:onos-topo.micro-onos,DNS:localhost,IP:127.0.0.1
+extendedKeyUsage=serverAuth,clientAuth
+EOF
+
+    openssl genrsa -out "$cert_dir/tls.key" 4096 2>/dev/null
+    openssl req -new -key "$cert_dir/tls.key" \
+        -subj "/C=US/ST=CA/L=Menlo Park/O=ONF/OU=Engineering/CN=onos-config.opennetworking.org" \
+        -out "$cert_dir/server.csr"
+    openssl x509 -req -in "$cert_dir/server.csr" \
+        -CA "$cert_dir/tls.cacrt" -CAkey "$cert_dir/ca.key" -CAcreateserial \
+        -out "$cert_dir/tls.crt" -days 3650 -sha256 \
+        -extfile "$cert_dir/server.ext" 2>/dev/null
+
+    # --- Client cert ---
+    cat > "$cert_dir/client.ext" <<'EOF'
+extendedKeyUsage=clientAuth
+EOF
+
+    openssl genrsa -out "$cert_dir/client1.key" 4096 2>/dev/null
+    openssl req -new -key "$cert_dir/client1.key" \
+        -subj "/C=US/ST=CA/L=Menlo Park/O=ONF/OU=Engineering/CN=client1" \
+        -out "$cert_dir/client1.csr"
+    openssl x509 -req -in "$cert_dir/client1.csr" \
+        -CA "$cert_dir/tls.cacrt" -CAkey "$cert_dir/ca.key" -CAcreateserial \
+        -out "$cert_dir/client1.crt" -days 3650 -sha256 \
+        -extfile "$cert_dir/client.ext" 2>/dev/null
+
+    # --- Sanity ---
+    local f
+    for f in tls.crt tls.key tls.cacrt client1.crt client1.key; do
+        if [ ! -s "$cert_dir/$f" ]; then
+            log_error "Cert generation failed: $f missing or empty in $cert_dir"
+        fi
+    done
+
+    kubectl create namespace "$ns" 2>/dev/null || true
+
+    log_info "Installing onos-config-secret (tls.crt, tls.key, tls.cacrt)..."
+    kubectl create secret generic onos-config-secret -n "$ns" \
+        --from-file=tls.crt="$cert_dir/tls.crt" \
+        --from-file=tls.key="$cert_dir/tls.key" \
+        --from-file=tls.cacrt="$cert_dir/tls.cacrt" \
+        --dry-run=client -o yaml | kubectl apply -f -
+
+    log_info "Installing onos-cli-secret (client1.crt, client1.key, client1.cacrt)..."
+    kubectl create secret generic onos-cli-secret -n "$ns" \
+        --from-file=client1.crt="$cert_dir/client1.crt" \
+        --from-file=client1.key="$cert_dir/client1.key" \
+        --from-file=client1.cacrt="$cert_dir/tls.cacrt" \
+        --dry-run=client -o yaml | kubectl apply -f -
+
+    log_info "Installing onos-topo-secret (shared server cert)..."
+    kubectl create secret generic onos-topo-secret -n "$ns" \
+        --from-file=tls.crt="$cert_dir/tls.crt" \
+        --from-file=tls.key="$cert_dir/tls.key" \
+        --from-file=tls.cacrt="$cert_dir/tls.cacrt" \
+        --dry-run=client -o yaml | kubectl apply -f -
+
+    log_success "µONOS TLS certificates generated and secrets installed."
+}
+
 deploy_cloud_native_uonos() {
     log_info "Phase 8: Evaluating µONOS and Atomix deployment state..."
     
@@ -745,59 +830,20 @@ deploy_cloud_native_uonos() {
         }
     ) || exit 1
 
-    log_info "Waiting for the onos-umbrella cert-issuer Job to complete..."
-    local cert_waited=0
-    local cert_timeout=300
-    local cert_done=false
+    # The chart's cert-issuer Job writes only tls.cacrt and tls.key —
+    # never tls.crt — which crashes every µONOS pod that mounts
+    # onos-config-secret. Override its output with our own certs.
+    log_info "Overwriting chart-generated certs with openssl-generated certs..."
+    generate_uonos_certs
 
-    while [ "$cert_waited" -lt "$cert_timeout" ]; do
-        job=$(kubectl get job -n micro-onos -l app.kubernetes.io/name=cert-issuer \
-              -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
-        if [ -z "$job" ]; then
-            job=$(kubectl get job -n micro-onos \
-                  -o jsonpath='{.items[?(@.metadata.name=="onos-umbrella-cert-issuer")].metadata.name}' 2>/dev/null || true)
-        fi
-        if [ -n "$job" ] && kubectl wait --for=condition=Complete job/"$job" \
-                -n micro-onos --timeout=10s >/dev/null 2>&1; then
-            cert_done=true
-            log_success "cert-issuer Job '$job' completed (waited ${cert_waited}s)."
-            break
-        fi
-        sleep 3
-        cert_waited=$((cert_waited + 3))
-    done
-
-    if [ "$cert_done" != true ]; then
-        log_warn "cert-issuer did not complete within ${cert_timeout}s; will verify secrets directly."
-    fi
-
-    # Verify onos-config-secret has all three keys the pods expect
-    log_info "Verifying onos-config-secret contains tls.crt, tls.key, tls.cacrt..."
-    local verify_waited=0
-    local verify_ok=false
-    while [ "$verify_waited" -lt 120 ]; do
-        if kubectl get secret onos-config-secret -n micro-onos \
-               -o jsonpath='{.data.tls\.crt}' 2>/dev/null | grep -q . && \
-           kubectl get secret onos-config-secret -n micro-onos \
-               -o jsonpath='{.data.tls\.key}' 2>/dev/null | grep -q . && \
-           kubectl get secret onos-config-secret -n micro-onos \
-               -o jsonpath='{.data.tls\.cacrt}' 2>/dev/null | grep -q .; then
-            verify_ok=true
-            break
-        fi
-        sleep 3
-        verify_waited=$((verify_waited + 3))
-    done
-
-    if [ "$verify_ok" != true ]; then
-        log_error "onos-config-secret is still missing one of tls.crt/tls.key/tls.cacrt after 120s."
-        log_error "Inspect the cert-issuer:"
-        log_error "  kubectl get jobs -n micro-onos"
-        log_error "  kubectl logs -n micro-onos job/$job"
-        exit 1
-    fi
-
-    log_success "onos-config-secret is complete (tls.crt, tls.key, tls.cacrt)."
+    log_info "Restarting crashing µONOS pods so they pick up the new secrets..."
+    kubectl delete pod -n micro-onos -l app.kubernetes.io/name=onos-config \
+        --grace-period=0 --force 2>/dev/null || true
+    kubectl delete pod -n micro-onos -l app.kubernetes.io/name=topo-discovery \
+        --grace-period=0 --force 2>/dev/null || true
+    kubectl delete pod -n micro-onos -l app.kubernetes.io/name=device-provisioner \
+        --grace-period=0 --force 2>/dev/null || true
+    sleep 8
     
     log_info "=== µONOS installation completed ==="
 
@@ -1156,6 +1202,7 @@ install_grpc_tools
 install_osm_installer
 setup_sdn_python_client
 build_quantum_switching_plugin
+generate_uonos_certs
 deploy_cloud_native_uonos
 configure_uonos_controller_settings
 deploy_sdn_adapter_and_topo_aspects
