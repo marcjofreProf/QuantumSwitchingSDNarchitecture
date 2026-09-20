@@ -1204,7 +1204,11 @@ EOF
     log_info "Verifying onos-topo configuration..."
 
     if kubectl exec -n micro-onos deployment/onos-cli -- \
-        onos topo get entities >/dev/null 2>&1; then
+        onos topo get entities \
+            --service-address onos-topo:5150 \
+            --tls-cert-path /etc/ssl/certs/client1.crt \
+            --tls-key-path  /etc/ssl/certs/client1.key \
+            >/dev/null 2>&1; then
         log_success "onos-topo inventory is accessible."
     else
         log_warn "Unable to query onos-topo inventory."
