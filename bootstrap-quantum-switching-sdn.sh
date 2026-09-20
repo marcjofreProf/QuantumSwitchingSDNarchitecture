@@ -661,6 +661,63 @@ EOF
     log_success "Quantum-Switching model plugin built and imported into K3s."
 }
 
+patch_all_uonos_secrets() {
+    log_info "Phase 7.8: Patching every µONOS Secret that is missing tls.crt..."
+
+    local repo_dir
+    repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    local cert_dir="${repo_dir}/.certs/uonos"
+    local ns="micro-onos"
+
+    if [ ! -s "$cert_dir/tls.crt" ]; then
+        log_error "Canonical tls.crt missing at $cert_dir/tls.crt; cannot patch secrets."
+    fi
+
+    local tls_crt_b64
+    local client_crt_b64
+    local ca_b64
+    tls_crt_b64=$(base64 -w0 "$cert_dir/tls.crt")
+    client_crt_b64=$(base64 -w0 "$cert_dir/client1.crt")
+    ca_b64=$(base64 -w0 "$cert_dir/tls.cacrt")
+
+    local secrets
+    secrets=$(kubectl get secrets -n "$ns" -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || true)
+
+    local patched=0
+    for secret in $secrets; do
+        local has_key has_crt has_client_key has_client_crt
+        has_key=$(kubectl get secret "$secret" -n "$ns" \
+                  -o jsonpath='{.data.tls\.key}' 2>/dev/null | wc -c)
+        has_crt=$(kubectl get secret "$secret" -n "$ns" \
+                  -o jsonpath='{.data.tls\.crt}' 2>/dev/null | wc -c)
+        has_client_key=$(kubectl get secret "$secret" -n "$ns" \
+                         -o jsonpath='{.data.client1\.key}' 2>/dev/null | wc -c)
+        has_client_crt=$(kubectl get secret "$secret" -n "$ns" \
+                         -o jsonpath='{.data.client1\.crt}' 2>/dev/null | wc -c)
+
+        local patch=""
+        if [ "$has_key" -gt 0 ] && [ "$has_crt" -eq 0 ]; then
+            log_info "  Patching $secret: adding tls.crt"
+            patch="{\"data\":{\"tls.crt\":\"$tls_crt_b64\"}}"
+        fi
+        if [ "$has_client_key" -gt 0 ] && [ "$has_client_crt" -eq 0 ]; then
+            log_info "  Patching $secret: adding client1.crt"
+            if [ -n "$patch" ]; then
+                patch="${patch%?}},"
+                patch="${patch}\"client1.crt\":\"$client_crt_b64\"}}"
+            else
+                patch="{\"data\":{\"client1.crt\":\"$client_crt_b64\"}}"
+            fi
+        fi
+        if [ -n "$patch" ]; then
+            kubectl patch secret "$secret" -n "$ns" --type=merge -p "$patch" >/dev/null
+            patched=$((patched + 1))
+        fi
+    done
+
+    log_success "Patched $patched Secret(s) with missing certs."
+}
+
 generate_uonos_certs() {
     log_info "Phase 7.7: Generating µONOS TLS certificates with openssl..."
 
@@ -835,6 +892,7 @@ deploy_cloud_native_uonos() {
     # onos-config-secret. Override its output with our own certs.
     log_info "Overwriting chart-generated certs with openssl-generated certs..."
     generate_uonos_certs
+    patch_all_uonos_secrets
 
     log_info "Restarting crashing µONOS pods so they pick up the new secrets..."
     kubectl delete pod -n micro-onos -l app.kubernetes.io/name=onos-config \
