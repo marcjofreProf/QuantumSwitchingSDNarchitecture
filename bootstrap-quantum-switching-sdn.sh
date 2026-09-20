@@ -1057,29 +1057,6 @@ EOF
     log_success "gnmic mTLS configuration generated successfully."
 }
 
-configure_uonos_controller_settings() {
-    log_info "Phase 8.1: Configuring µONOS Controller Mastership & TLS Settings..."
-
-    ## 1. Disable Master Election at the Deployment level
-    #log_info "Setting MASTER_ELECTION=false on onos-config deployment..."
-    #kubectl set env deployment/onos-config -n micro-onos MASTER_ELECTION=false || log_warn "Failed to set MASTER_ELECTION env variable."
-        
-    # 2. Wait for onos-config, onos-topo, and onos-cli deployments to become ready
-    log_info "Waiting for µONOS core deployments to settle..."
-    kubectl rollout status deployment/onos-config -n micro-onos --timeout=120s
-    kubectl rollout status deployment/onos-topo -n micro-onos --timeout=120s
-    kubectl rollout status deployment/onos-cli -n micro-onos --timeout=120s
-
-    # 3. Clear any stale backlogged proposals/transactions
-    log_info "Clearing stale transaction queues..."
-    # Clear stale transactions if the CLI version supports it
-    kubectl exec -n micro-onos deployment/onos-cli -- onos config rollback --help >/dev/null 2>&1 && \
-        log_info "Rollback subcommand available; skipping auto-cleanup." || \
-        log_warn "Rollback subcommand not available; skipping."
-
-    log_success "µONOS controller mastership and topology options successfully configured."
-}
-
 deploy_sdn_adapter_and_topo_aspects() {
     log_info "Phase 8.6: Deploying SDN Adapter & Setting Topology Endpoints..."
 
@@ -1285,7 +1262,6 @@ install_osm_installer
 setup_sdn_python_client
 build_quantum_switching_plugin
 deploy_cloud_native_uonos
-configure_uonos_controller_settings
 deploy_sdn_adapter_and_topo_aspects
 register_inventory_devices
 verify_uonos_gnmi_end_to_end
