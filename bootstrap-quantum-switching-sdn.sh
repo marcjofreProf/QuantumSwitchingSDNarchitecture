@@ -15,6 +15,9 @@ NC='\033[0m' # No Color
 
 export KUBECONFIG=${KUBECONFIG:-$HOME/.kube/config}
 
+# Cache sudo credentials up front so the script doesn't prompt repeatedly
+sudo -v
+
 log_info() { echo -e "${CYAN}[INFO] $1${NC}"; }
 log_success() { echo -e "${GREEN}[SUCCESS] $1${NC}"; }
 log_warn() { echo -e "${YELLOW}[WARNING] $1${NC}"; }
@@ -116,7 +119,8 @@ ensure_sufficient_memory() {
 
 create_repo_structure() {
     log_info "Phase 1: Ensuring repository directory structure..."
-    local base_dir="."
+    local base_dir
+    base_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
     mkdir -p "$base_dir"/.github/workflows \
              "$base_dir"/docs/architecture \
@@ -800,7 +804,8 @@ configure_uonos_controller_settings() {
 deploy_sdn_adapter_and_topo_aspects() {
     log_info "Phase 8.6: Deploying SDN Adapter & Setting Topology Endpoints..."
 
-    local base_dir="."
+    local base_dir
+    base_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     local adapter_dir="${base_dir}/sdn-controller/southbound-plugins/sdn-adapter"
 
     # 1. Build and import the SDN Adapter container image
