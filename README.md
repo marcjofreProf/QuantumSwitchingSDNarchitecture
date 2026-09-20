@@ -57,16 +57,31 @@ To onboard a new physical switch or virtual target into the control plane:
 
 1. Create a YAML definition file inside inventory/devices/ (e.g., inventory/devices/quantum-node-2.yaml):
 ```text
-id: "quantum-node-2"
-display_name: "Physical Quantum Switch 2"
-address: "10.0.0.253:9339"
-kind: "beaglebone-qswitch"
+id: "quantum-node-1"
+kind_id: "controller-quantum-switching"
+display_name: "Physical BeagleBone Quantum Switch 1"
+address: "10.0.0.254:50051"
+kind: "controller-quantum-switching"
+version: "1.0.0"
 role: "quantum-switch"
+
 protocols:
+  - name: "gnmi"
+    port: 50051
   - name: "gnoi"
-    port: 9339
+    port: 50051
   - name: "netconf"
-    port: 830
+    port: 8300
+
+aspects:
+  onos.topo.Configurable:
+    address: "10.0.0.254:50051"
+    type: "controller-quantum-switching"
+    version: "1.0.0"
+
+  onos.topo.TLSOptions:
+    plain: true
+    insecure: true
 ```
 
 2. Execute the registration runner:
@@ -85,11 +100,12 @@ gnmic -a localhost:30150 --skip-verify get --path /interfaces/interface
 To quickly set up the repository structure and install all necessary cloud-native dependencies (Docker, Kubernetes/Kind, Helm, Protoc, µONOS, Open5GS, and optionally OSM), use the provided bootstrap script.
 
 **1. Clone the repository and navigate into it:**
+```bash
 git clone https://github.com/marcjofreProf/QuantumSwitchingSDNarchitecture.git
 cd QuantumSwitchingSDNarchitecture
-
 sudo chmod +x ./bootstrap-quantum-switching-sdn.sh
 ./bootstrap-quantum-switching-sdn.sh
+```
 
 If the centralized server lacks the RAM/CPU to run a full Kubernetes cluster and µONOS, it can bypass the SDN controller layer for testing or lightweight deployments.
 
