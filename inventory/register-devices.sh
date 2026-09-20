@@ -239,7 +239,10 @@ CLI_POD_FOR_CHECK=$(kubectl get pods -n "${NAMESPACE}" \
 PLUGIN_LOADED=false
 for attempt in 1 2 3 4 5 6 7 8 9 10; do
     PLUGIN_TABLE=$(kubectl exec -n "${NAMESPACE}" "$CLI_POD_FOR_CHECK" -- \
-        onos config get plugins 2>/dev/null || true)
+    onos config get plugins \
+        --tls-cert-path /etc/ssl/certs/client1.crt \
+        --tls-key-path  /etc/ssl/certs/client1.key \
+        2>/dev/null || true)
     if echo "${PLUGIN_TABLE}" | grep -qE '^controller-quantum-switching-1\.0\.0[[:space:]]+Loaded'; then
         PLUGIN_LOADED=true
         break
@@ -482,7 +485,10 @@ echo "=================================================================="
 # -------------------------------------------------------------------------
 echo "[*] Current onos-config configurations (before Set):"
 kubectl exec -n "$NAMESPACE" "$CLI_POD" -- \
-    onos config get configurations 2>/dev/null || true
+    onos config get configurations \
+        --tls-cert-path /etc/ssl/certs/client1.crt \
+        --tls-key-path  /etc/ssl/certs/client1.key \
+        2>/dev/null || true
 echo
 
 # Extract the client certs from the onos-cli pod to a temp dir on the host.
@@ -624,7 +630,9 @@ done
 echo
 echo "[*] Verifying onos-config now knows about the targets..."
 kubectl exec -n "$NAMESPACE" "$CLI_POD" -- \
-    onos config get configurations || true
+    onos config get configurations \
+        --tls-cert-path /etc/ssl/certs/client1.crt \
+        --tls-key-path  /etc/ssl/certs/client1.key || true
 
 echo
 echo "[SUCCESS] Device registration with onos-config complete."
