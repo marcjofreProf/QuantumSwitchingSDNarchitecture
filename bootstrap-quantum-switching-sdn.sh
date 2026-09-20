@@ -673,9 +673,7 @@ patch_all_uonos_secrets() {
         log_error "Canonical tls.crt missing at $cert_dir/tls.crt; cannot patch secrets."
     fi
 
-    local tls_crt_b64
-    local client_crt_b64
-    local ca_b64
+    local tls_crt_b64 client_crt_b64 ca_b64
     tls_crt_b64=$(base64 -w0 "$cert_dir/tls.crt")
     client_crt_b64=$(base64 -w0 "$cert_dir/client1.crt")
     ca_b64=$(base64 -w0 "$cert_dir/tls.cacrt")
@@ -695,24 +693,39 @@ patch_all_uonos_secrets() {
         has_client_crt=$(kubectl get secret "$secret" -n "$ns" \
                          -o jsonpath='{.data.client1\.crt}' 2>/dev/null | wc -c)
 
-        local patch=""
+        # Build the list of keys this Secret is missing
+        local missing_keys=""
         if [ "$has_key" -gt 0 ] && [ "$has_crt" -eq 0 ]; then
-            log_info "  Patching $secret: adding tls.crt"
-            patch="{\"data\":{\"tls.crt\":\"$tls_crt_b64\"}}"
+            missing_keys="$missing_keys tls.crt"
         fi
         if [ "$has_client_key" -gt 0 ] && [ "$has_client_crt" -eq 0 ]; then
-            log_info "  Patching $secret: adding client1.crt"
-            if [ -n "$patch" ]; then
-                patch="${patch%?}},"
-                patch="${patch}\"client1.crt\":\"$client_crt_b64\"}}"
+            missing_keys="$missing_keys client1.crt"
+        fi
+
+        if [ -z "$missing_keys" ]; then
+            continue
+        fi
+
+        # Build a well-formed JSON merge patch
+        local patch='{"data":{'
+        local first=true
+        local key
+        for key in $missing_keys; do
+            if [ "$first" = true ]; then
+                first=false
             else
-                patch="{\"data\":{\"client1.crt\":\"$client_crt_b64\"}}"
+                patch="$patch,"
             fi
-        fi
-        if [ -n "$patch" ]; then
-            kubectl patch secret "$secret" -n "$ns" --type=merge -p "$patch" >/dev/null
-            patched=$((patched + 1))
-        fi
+            case "$key" in
+                tls.crt)       patch="$patch\"tls.crt\":\"$tls_crt_b64\"" ;;
+                client1.crt)   patch="$patch\"client1.crt\":\"$client_crt_b64\"" ;;
+            esac
+        done
+        patch="$patch}}"
+
+        log_info "  Patching $secret (adding:$missing_keys)"
+        kubectl patch secret "$secret" -n "$ns" --type=merge -p "$patch" >/dev/null
+        patched=$((patched + 1))
     done
 
     log_success "Patched $patched Secret(s) with missing certs."
@@ -1260,7 +1273,6 @@ install_grpc_tools
 install_osm_installer
 setup_sdn_python_client
 build_quantum_switching_plugin
-generate_uonos_certs
 deploy_cloud_native_uonos
 configure_uonos_controller_settings
 deploy_sdn_adapter_and_topo_aspects
