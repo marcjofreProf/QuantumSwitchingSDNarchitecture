@@ -610,7 +610,13 @@ deploy_cloud_native_uonos() {
     fi
 
     log_info "Using local ONOS Helm repository: $ONOS_HELM_DIR"
-
+    log_info "Purging any existing onos-umbrella release and micro-onos namespace..."
+    helm uninstall onos-umbrella -n micro-onos 2>/dev/null || true
+    kubectl delete namespace micro-onos --force --grace-period=0 2>/dev/null || true
+    while kubectl get namespace micro-onos >/dev/null 2>&1; do
+        log_info "Waiting for micro-onos namespace to terminate..."
+        sleep 2
+    done
    (
         cd "$ONOS_HELM_DIR" || exit 1
     
@@ -648,18 +654,26 @@ deploy_cloud_native_uonos() {
         log_info "=== µONOS installation completed ==="
 
     # Wait for the onos-cli and onos-config pods to be scheduled and Ready
-    # before trying to extract certs from them. Helm returns as soon as the
-    # release is registered, but the pods take a few more seconds to come up.
+    # before trying to extract certs from them.
     log_info "Waiting for onos-cli and onos-config pods to be Ready..."
     local waited=0
-    local timeout=180
+    local timeout=600
+    local cli_pod=""
+    local config_pod=""
+
     while [ "$waited" -lt "$timeout" ]; do
-        CLI_READY=$(kubectl get pods -n micro-onos -l app=onos \
-            -o jsonpath='{.items[?(@.status.phase=="Running")].metadata.name}' 2>/dev/null || echo "")
-        CONFIG_READY=$(kubectl get pods -n micro-onos -l app.kubernetes.io/name=onos-config \
-            -o jsonpath='{.items[?(@.status.phase=="Running")].metadata.name}' 2>/dev/null || echo "")
-        if [ -n "$CLI_READY" ] && [ -n "$CONFIG_READY" ]; then
-            break
+        # Use specific labels. onos-cli uses app=onos-cli, onos-config uses app=onos-config.
+        cli_pod=$(kubectl get pods -n micro-onos -l app=onos-cli \
+            -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+        config_pod=$(kubectl get pods -n micro-onos -l app=onos-config \
+            -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+
+        if [ -n "$cli_pod" ] && [ -n "$config_pod" ]; then
+            # Wait for both pods to be fully Ready
+            if kubectl wait --for=condition=Ready pod/"$cli_pod" -n micro-onos --timeout=10s >/dev/null 2>&1 && \
+               kubectl wait --for=condition=Ready pod/"$config_pod" -n micro-onos --timeout=10s >/dev/null 2>&1; then
+                break
+            fi
         fi
         sleep 3
         waited=$((waited + 3))
@@ -737,9 +751,9 @@ EOF
     log_info "Extracting µONOS client certificates for gnmic..."
     sudo mkdir -p /etc/onos/certs
 
-    CLI_POD=$(kubectl get pods -n micro-onos -l app=onos \
+    CLI_POD=$(kubectl get pods -n micro-onos -l app=onos-cli \
         -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
-    CONFIG_POD=$(kubectl get pods -n micro-onos -l app.kubernetes.io/name=onos-config \
+    CONFIG_POD=$(kubectl get pods -n micro-onos -l app=onos-config \
         -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
 
     if [ -z "${CLI_POD}" ] || [ -z "${CONFIG_POD}" ]; then
@@ -781,9 +795,9 @@ EOF
 configure_uonos_controller_settings() {
     log_info "Phase 8.1: Configuring µONOS Controller Mastership & TLS Settings..."
 
-    # 1. Disable Master Election at the Deployment level
-    log_info "Setting MASTER_ELECTION=false on onos-config deployment..."
-    kubectl set env deployment/onos-config -n micro-onos MASTER_ELECTION=false || log_warn "Failed to set MASTER_ELECTION env variable."
+    ## 1. Disable Master Election at the Deployment level
+    #log_info "Setting MASTER_ELECTION=false on onos-config deployment..."
+    #kubectl set env deployment/onos-config -n micro-onos MASTER_ELECTION=false || log_warn "Failed to set MASTER_ELECTION env variable."
 
     # 2. Wait for onos-config, onos-topo, and onos-cli deployments to become ready
     log_info "Waiting for µONOS core deployments to settle..."
