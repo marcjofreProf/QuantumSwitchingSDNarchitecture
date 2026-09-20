@@ -580,6 +580,87 @@ setup_sdn_python_client() {
     log_success "Python environment and Protobuf stubs initialized."
 }
 
+build_quantum_switching_plugin() {
+    log_info "Phase 7.5: Building Quantum-Switching model plugin image (pre-µONOS)..."
+
+    local repo_dir
+    repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+    local PLUGIN_DIR="${repo_dir}/sdn-controller/northbound-interfaces/model-plugin"
+    local YANG_SRC="${repo_dir}/orchestration/yang-models/controller-quantum-switching.yang"
+    local YANG_DST="${PLUGIN_DIR}/yang/controller-quantum-switching.yang"
+    local PLUGIN_VERSION="1.0.0"
+    local PLUGIN_IMAGE="onosproject/controller-quantum-switching:${PLUGIN_VERSION}-controller-quantum-switching-${PLUGIN_VERSION}"
+
+    if ! command -v docker >/dev/null 2>&1; then
+        log_error "docker not available; cannot build model plugin."
+    fi
+
+    if [ ! -f "${YANG_SRC}" ]; then
+        log_error "YANG model not found at ${YANG_SRC}"
+    fi
+
+    mkdir -p "${PLUGIN_DIR}/yang"
+    log_info "Copying ${YANG_SRC} → ${YANG_DST}"
+    cp "${YANG_SRC}" "${YANG_DST}"
+
+    # Derive the revision from the YANG file so metadata never drifts
+    local YANG_REVISION
+    YANG_REVISION=$(grep -oE 'revision[[:space:]]+[0-9]{4}-[0-9]{2}-[0-9]{2}' "${YANG_DST}" \
+                    | head -n1 | awk '{print $2}')
+    YANG_REVISION=${YANG_REVISION:-2026-08-29}
+
+    cat > "${PLUGIN_DIR}/metadata.yaml" <<EOF
+name: controller-quantum-switching
+version: ${PLUGIN_VERSION}
+contactName: "SDN Architecture Team"
+licenseName: "Apache-2.0"
+artifactName: controller-quantum-switching
+goPackage: github.com/onosproject/controller-quantum-switching
+modules:
+  - name: controller-quantum-switching
+    organization: custom
+    revision: "${YANG_REVISION}"
+    file: controller-quantum-switching.yang
+EOF
+
+    log_info "Running onosproject/model-compiler to generate Go code..."
+    local PLUGIN_DIR_ABS
+    PLUGIN_DIR_ABS=$(realpath "${PLUGIN_DIR}")
+    docker run --rm -v "${PLUGIN_DIR_ABS}:/config-model" \
+        onosproject/model-compiler:v0.11.13
+
+    sudo chown -R "$(id -u):$(id -g)" "${PLUGIN_DIR}"
+
+    echo "${PLUGIN_VERSION}" > "${PLUGIN_DIR}/VERSION"
+
+    if [ ! -f "${PLUGIN_DIR}/Makefile" ]; then
+        log_error "model-compiler did not produce a Makefile in ${PLUGIN_DIR}. YANG model likely has errors."
+    fi
+
+    # Fix the pinned libc6-compat version that no longer exists in Alpine 3.17
+    if [ -f "${PLUGIN_DIR}/Dockerfile" ]; then
+        sed -i 's/libc6-compat=[0-9.]*-r[0-9]*/libc6-compat/g' "${PLUGIN_DIR}/Dockerfile"
+    fi
+
+    log_info "Building plugin image ${PLUGIN_IMAGE}..."
+    ( cd "${PLUGIN_DIR}" && make image ) || log_error "Failed to build model plugin image."
+
+    if ! docker images --format '{{.Repository}}:{{.Tag}}' | grep -qF "${PLUGIN_IMAGE}"; then
+        docker images | grep controller-quantum-switching || true
+        log_error "Expected image ${PLUGIN_IMAGE} was not produced."
+    fi
+
+    log_info "Importing ${PLUGIN_IMAGE} into K3s containerd..."
+    docker save "${PLUGIN_IMAGE}" | sudo k3s ctr images import - || true
+
+    if ! sudo k3s ctr images ls -q | grep -qF "docker.io/${PLUGIN_IMAGE}"; then
+        log_error "${PLUGIN_IMAGE} is not present in K3s containerd after import."
+    fi
+
+    log_success "Quantum-Switching model plugin built and imported into K3s."
+}
+
 deploy_cloud_native_uonos() {
     log_info "Phase 8: Evaluating µONOS and Atomix deployment state..."
     
@@ -1006,6 +1087,7 @@ setup_helm_repos
 install_grpc_tools
 install_osm_installer
 setup_sdn_python_client
+build_quantum_switching_plugin
 deploy_cloud_native_uonos
 configure_uonos_controller_settings
 deploy_sdn_adapter_and_topo_aspects
