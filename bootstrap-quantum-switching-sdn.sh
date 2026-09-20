@@ -662,73 +662,52 @@ EOF
 }
 
 patch_all_uonos_secrets() {
-    log_info "Phase 7.8: Patching every µONOS Secret that is missing tls.crt..."
+    log_info "Phase 7.8: Overwriting cert bundles in every µONOS Secret..."
 
     local repo_dir
     repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     local cert_dir="${repo_dir}/.certs/uonos"
     local ns="micro-onos"
 
-    if [ ! -s "$cert_dir/tls.crt" ]; then
-        log_error "Canonical tls.crt missing at $cert_dir/tls.crt; cannot patch secrets."
+    if [ ! -s "$cert_dir/tls.crt" ] || [ ! -s "$cert_dir/tls.key" ]; then
+        log_error "Canonical certs missing in $cert_dir; cannot patch secrets."
     fi
 
-    local tls_crt_b64 client_crt_b64 ca_b64
+    local tls_crt_b64 tls_key_b64 ca_b64 client_crt_b64 client_key_b64
     tls_crt_b64=$(base64 -w0 "$cert_dir/tls.crt")
-    client_crt_b64=$(base64 -w0 "$cert_dir/client1.crt")
+    tls_key_b64=$(base64 -w0 "$cert_dir/tls.key")
     ca_b64=$(base64 -w0 "$cert_dir/tls.cacrt")
+    client_crt_b64=$(base64 -w0 "$cert_dir/client1.crt")
+    client_key_b64=$(base64 -w0 "$cert_dir/client1.key")
 
     local secrets
     secrets=$(kubectl get secrets -n "$ns" -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || true)
 
     local patched=0
     for secret in $secrets; do
-        local has_key has_crt has_client_key has_client_crt
-        has_key=$(kubectl get secret "$secret" -n "$ns" \
-                  -o jsonpath='{.data.tls\.key}' 2>/dev/null | wc -c)
-        has_crt=$(kubectl get secret "$secret" -n "$ns" \
-                  -o jsonpath='{.data.tls\.crt}' 2>/dev/null | wc -c)
+        local has_tls_key has_client_key
+        has_tls_key=$(kubectl get secret "$secret" -n "$ns" \
+            -o jsonpath='{.data.tls\.key}' 2>/dev/null | wc -c)
         has_client_key=$(kubectl get secret "$secret" -n "$ns" \
-                         -o jsonpath='{.data.client1\.key}' 2>/dev/null | wc -c)
-        has_client_crt=$(kubectl get secret "$secret" -n "$ns" \
-                         -o jsonpath='{.data.client1\.crt}' 2>/dev/null | wc -c)
+            -o jsonpath='{.data.client1\.key}' 2>/dev/null | wc -c)
 
-        # Build the list of keys this Secret is missing
-        local missing_keys=""
-        if [ "$has_key" -gt 0 ] && [ "$has_crt" -eq 0 ]; then
-            missing_keys="$missing_keys tls.crt"
+        if [ "$has_tls_key" -gt 0 ]; then
+            log_info "  Overwriting tls.* bundle in $secret"
+            kubectl patch secret "$secret" -n "$ns" --type=merge \
+                -p "{\"data\":{\"tls.crt\":\"$tls_crt_b64\",\"tls.key\":\"$tls_key_b64\",\"tls.cacrt\":\"$ca_b64\"}}" \
+                >/dev/null
+            patched=$((patched + 1))
         fi
-        if [ "$has_client_key" -gt 0 ] && [ "$has_client_crt" -eq 0 ]; then
-            missing_keys="$missing_keys client1.crt"
+        if [ "$has_client_key" -gt 0 ]; then
+            log_info "  Overwriting client1.* bundle in $secret"
+            kubectl patch secret "$secret" -n "$ns" --type=merge \
+                -p "{\"data\":{\"client1.crt\":\"$client_crt_b64\",\"client1.key\":\"$client_key_b64\",\"client1.cacrt\":\"$ca_b64\"}}" \
+                >/dev/null
+            patched=$((patched + 1))
         fi
-
-        if [ -z "$missing_keys" ]; then
-            continue
-        fi
-
-        # Build a well-formed JSON merge patch
-        local patch='{"data":{'
-        local first=true
-        local key
-        for key in $missing_keys; do
-            if [ "$first" = true ]; then
-                first=false
-            else
-                patch="$patch,"
-            fi
-            case "$key" in
-                tls.crt)       patch="$patch\"tls.crt\":\"$tls_crt_b64\"" ;;
-                client1.crt)   patch="$patch\"client1.crt\":\"$client_crt_b64\"" ;;
-            esac
-        done
-        patch="$patch}}"
-
-        log_info "  Patching $secret (adding:$missing_keys)"
-        kubectl patch secret "$secret" -n "$ns" --type=merge -p "$patch" >/dev/null
-        patched=$((patched + 1))
     done
 
-    log_success "Patched $patched Secret(s) with missing certs."
+    log_success "Overwrote cert bundles in $patched Secret(s)."
 }
 
 generate_uonos_certs() {
@@ -818,7 +797,7 @@ EOF
 
 deploy_cloud_native_uonos() {
     log_info "Phase 8: Evaluating µONOS and Atomix deployment state..."
-    
+
     local uonos_active=false
     if kubectl get ns micro-onos >/dev/null 2>&1 && \
        kubectl get pods -n micro-onos 2>/dev/null | grep -qE 'onos-topo|onos-config|restconf-gateway'; then
@@ -835,7 +814,7 @@ deploy_cloud_native_uonos() {
         log_info "µONOS is not currently operational. Proceeding with deployment..."
     fi
 
-   log_info "=== Installing µONOS ==="
+    log_info "=== Installing µONOS ==="
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     local ONOS_HELM_DIR="$SCRIPT_DIR/onos-helm-charts"
 
@@ -853,15 +832,16 @@ deploy_cloud_native_uonos() {
         log_info "Waiting for micro-onos namespace to terminate..."
         sleep 2
     done
-   (
+
+    (
         cd "$ONOS_HELM_DIR" || exit 1
-    
+
         log_info "Building ONOS Helm dependencies..."
         helm dependency build ./onos-umbrella || {
             log_error "Failed to build ONOS Helm dependencies."
             exit 1
         }
-    
+
         log_info "Installing Atomix 1.1.2..."
         helm upgrade --install atomix atomix/atomix \
             --version 1.1.2 \
@@ -869,10 +849,10 @@ deploy_cloud_native_uonos() {
             log_error "Failed to install Atomix."
             exit 1
         }
-    
+
         log_info "Creating micro-onos namespace..."
         kubectl create namespace micro-onos 2>/dev/null || true
-    
+
         log_info "Installing µONOS..."
         OVERRIDE_VALUES="./onos-umbrella/values-quantum-sdn.yaml"
         if [ ! -f "${OVERRIDE_VALUES}" ]; then
@@ -891,7 +871,7 @@ deploy_cloud_native_uonos() {
         kubectl delete job -n micro-onos --ignore-not-found \
             onos-umbrella-cert-issuer \
             cert-issuer 2>/dev/null || true
-        
+
         helm upgrade --install onos-umbrella ./onos-umbrella \
             -n micro-onos \
             -f "${OVERRIDE_VALUES}" || {
@@ -900,73 +880,44 @@ deploy_cloud_native_uonos() {
         }
     ) || exit 1
 
-    # The chart's cert-issuer Job writes only tls.cacrt and tls.key —
-    # never tls.crt — which crashes every µONOS pod that mounts
-    # onos-config-secret. Override its output with our own certs.
-    log_info "Overwriting chart-generated certs with openssl-generated certs..."
+    # -----------------------------------------------------------------
+    # Certificates: the chart's cert-issuer writes an incomplete bundle
+    # (tls.cacrt + tls.key but no tls.crt) and runs as an async
+    # post-install hook, so its Secrets appear AFTER helm returns.
+    # Strategy:
+    #   1. Generate our own matching triplet with openssl.
+    #   2. Overwrite every Secret that already exists.
+    #   3. Wait for the per-component Secrets the hook creates.
+    #   4. Overwrite those too, so key+cert always match.
+    #   5. Restart every pod that mounts a TLS Secret.
+    # -----------------------------------------------------------------
+
+    log_info "Generating matching µONOS TLS certs with openssl..."
     generate_uonos_certs
+
+    log_info "Overwriting cert bundles in Secrets that already exist..."
     patch_all_uonos_secrets
 
-    # The chart's cert-issuer runs as a post-install hook and creates the
-    # per-component Secrets (topo-discovery, device-provisioner, ...) AFTER
-    # helm returns. Wait for them, then inject the missing tls.crt into each.
-    log_info "Waiting for chart-generated component Secrets and patching them..."
-    local cert_dir_abs
-    cert_dir_abs="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/.certs/uonos"
-    local tls_crt_b64
-    tls_crt_b64=$(base64 -w0 "${cert_dir_abs}/tls.crt")
-    local client_crt_b64
-    client_crt_b64=$(base64 -w0 "${cert_dir_abs}/client1.crt")
-
-    for i in $(seq 1 30); do
-        local got_td=false got_dp=false
-        kubectl get secret onos-umbrella-topo-discovery-secret \
-            -n micro-onos >/dev/null 2>&1 && got_td=true
-        kubectl get secret onos-umbrella-device-provisioner-secret \
-            -n micro-onos >/dev/null 2>&1 && got_dp=true
-
-        if [ "$got_td" = true ] && [ "$got_dp" = true ]; then
-            break
-        fi
+    log_info "Waiting for chart-generated component Secrets to appear..."
+    for i in $(seq 1 60); do
+        all_present=true
+        for s in onos-umbrella-topo-discovery-secret \
+                 onos-umbrella-device-provisioner-secret ; do
+            kubectl get secret "$s" -n micro-onos >/dev/null 2>&1 || all_present=false
+        done
+        [ "$all_present" = true ] && break
         sleep 2
     done
 
-    for secret in onos-umbrella-topo-discovery-secret onos-umbrella-device-provisioner-secret; do
-        if ! kubectl get secret "$secret" -n micro-onos >/dev/null 2>&1; then
-            log_warn "$secret not found; skipping."
-            continue
-        fi
-
-        # Add tls.crt if the Secret has tls.key but not tls.crt
-        local has_key has_crt
-        has_key=$(kubectl get secret "$secret" -n micro-onos \
-                  -o jsonpath='{.data.tls\.key}' 2>/dev/null | wc -c)
-        has_crt=$(kubectl get secret "$secret" -n micro-onos \
-                  -o jsonpath='{.data.tls\.crt}' 2>/dev/null | wc -c)
-        if [ "$has_key" -gt 0 ] && [ "$has_crt" -eq 0 ]; then
-            log_info "  Adding tls.crt to $secret"
-            kubectl patch secret "$secret" -n micro-onos --type=merge \
-                -p "{\"data\":{\"tls.crt\":\"$tls_crt_b64\"}}" >/dev/null
-        fi
-
-        # Add client1.crt if it has client1.key but not client1.crt
-        local has_ck has_cc
-        has_ck=$(kubectl get secret "$secret" -n micro-onos \
-                 -o jsonpath='{.data.client1\.key}' 2>/dev/null | wc -c)
-        has_cc=$(kubectl get secret "$secret" -n micro-onos \
-                 -o jsonpath='{.data.client1\.crt}' 2>/dev/null | wc -c)
-        if [ "$has_ck" -gt 0 ] && [ "$has_cc" -eq 0 ]; then
-            log_info "  Adding client1.crt to $secret"
-            kubectl patch secret "$secret" -n micro-onos --type=merge \
-                -p "{\"data\":{\"client1.crt\":\"$client_crt_b64\"}}" >/dev/null
-        fi
-    done
+    log_info "Overwriting cert bundles in chart-generated component Secrets..."
+    patch_all_uonos_secrets
 
     log_info "Restarting all µONOS pods so they pick up the matching CAs..."
     # Every µONOS pod mounts one of the TLS Secrets we just rewrote. If a
-    # pod keeps running with the chart's CA in memory and the newly started
-    # pod uses our CA, TLS handshakes fail with "bad certificate". Force
-    # every one of them to remount.
+    # pod keeps running with the chart's CA in memory and a newly started
+    # pod uses our CA, TLS handshakes fail with "bad certificate" or
+    # "private key does not match public key". Force every one of them to
+    # remount the corrected Secrets.
     for label in \
         app.kubernetes.io/name=onos-config \
         app.kubernetes.io/name=onos-cli \
@@ -977,13 +928,13 @@ deploy_cloud_native_uonos() {
             --grace-period=0 --force 2>/dev/null || true
     done
 
-    # Consensus pods (Atomix Raft) don't mount TLS Secrets, but restart
+    # Consensus pods (Atomix Raft) do not mount TLS Secrets, but restart
     # them anyway to clear any stale gRPC sessions with onos-config.
     kubectl delete pod -n micro-onos -l name=onos-umbrella-consensus \
         --grace-period=0 --force 2>/dev/null || true
 
     sleep 10
-    
+
     log_info "=== µONOS installation completed ==="
 
     # Wait for the onos-cli and onos-config pods to be scheduled and Ready
@@ -995,14 +946,12 @@ deploy_cloud_native_uonos() {
     local config_pod=""
 
     while [ "$waited" -lt "$timeout" ]; do
-        # Use specific labels. onos-cli uses app=onos-cli, onos-config uses app=onos-config.
         cli_pod=$(kubectl get pods -n micro-onos -l app.kubernetes.io/name=onos-cli \
             -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
         config_pod=$(kubectl get pods -n micro-onos -l app.kubernetes.io/name=onos-config \
             -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
 
         if [ -n "$cli_pod" ] && [ -n "$config_pod" ]; then
-            # Wait for both pods to be fully Ready
             if kubectl wait --for=condition=Ready pod/"$cli_pod" -n micro-onos --timeout=10s >/dev/null 2>&1 && \
                kubectl wait --for=condition=Ready pod/"$config_pod" -n micro-onos --timeout=10s >/dev/null 2>&1; then
                 break
@@ -1023,7 +972,7 @@ deploy_cloud_native_uonos() {
     log_info "Building and deploying RESTCONF Gateway Container..."
     if command -v docker >/dev/null 2>&1; then
         (cd "$SCRIPT_DIR/sdn-controller/northbound-interfaces/restconf-gateway" && docker build -t quantum-restconf-gateway:1.0.0 .) || log_warn "Skipped building Gateway image."
-        
+
         if command -v k3s >/dev/null 2>&1; then
             docker save quantum-restconf-gateway:1.0.0 2>/dev/null | sudo k3s ctr images import - || true
         fi
@@ -1073,8 +1022,8 @@ spec:
 EOF
 
         log_success "RESTCONF Gateway deployed on NodePort 30181."
-    fi    
-    
+    fi
+
     # Extract the µONOS client certs and CA for local gNMI tools.
     #
     # The client identity (client1.crt/key) lives in the onos-cli pod's
@@ -1109,7 +1058,6 @@ EOF
     fi
 
     # Write a gnmic config that mirrors what we use interactively.
-    # The server cert has no SAN, so skip-verify is required.
     # The client identity is client1.crt/client1.key.
     sudo mkdir -p /etc/gnmic
     cat << 'EOF' | sudo tee /etc/gnmic/gnmic.yaml > /dev/null
