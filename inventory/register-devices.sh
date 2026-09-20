@@ -215,19 +215,37 @@ fi
 # Set requests will fail with "unknown method ValidateConfigChunked" or
 # similar, so abort now rather than producing a misleading config list.
 echo "[*] Checking plugin status inside onos-config..."
-PLUGIN_TABLE=$(kubectl exec -n "${NAMESPACE}" \
-    "$(kubectl get pods -n "${NAMESPACE}" -l app=onos -o jsonpath='{.items[0].metadata.name}')" -- \
-    onos config get plugins 2>/dev/null || true)
+
+# onos-config restarted shortly before this script runs; give it time and
+# retry the plugin query. The plugin sidecar needs a few seconds after the
+# main container to register itself.
+CLI_POD_FOR_CHECK=$(kubectl get pods -n "${NAMESPACE}" \
+    -l app.kubernetes.io/name=onos-cli \
+    -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+
+PLUGIN_LOADED=false
+for attempt in 1 2 3 4 5 6 7 8 9 10; do
+    PLUGIN_TABLE=$(kubectl exec -n "${NAMESPACE}" "$CLI_POD_FOR_CHECK" -- \
+        onos config get plugins 2>/dev/null || true)
+    if echo "${PLUGIN_TABLE}" | grep -qE '^controller-quantum-switching-1\.0\.0[[:space:]]+Loaded'; then
+        PLUGIN_LOADED=true
+        break
+    fi
+    echo "    [attempt $attempt] plugin not Loaded yet; retrying in 6s..."
+    sleep 6
+done
 
 echo "${PLUGIN_TABLE}"
 
-if ! echo "${PLUGIN_TABLE}" | grep -qE '^controller-quantum-switching-1\.0\.0[[:space:]]+Loaded'; then
+if [ "$PLUGIN_LOADED" != true ]; then
     echo "[!] ERROR: controller-quantum-switching plugin is not Loaded in onos-config."
-    echo "    Subsequent Set requests will fail. Inspect onos-config logs:"
+    echo "    Inspect onos-config logs:"
     echo "      kubectl logs -n ${NAMESPACE} deploy/onos-config -c controller-quantum-switching"
     echo "      kubectl logs -n ${NAMESPACE} deploy/onos-config -c onos-config | grep -i plugin"
     exit 1
 fi
+
+echo "[SUCCESS] controller-quantum-switching plugin is Loaded."
 
 echo "[SUCCESS] controller-quantum-switching plugin is Loaded."
 
