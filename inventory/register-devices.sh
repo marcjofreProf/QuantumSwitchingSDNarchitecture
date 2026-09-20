@@ -350,7 +350,11 @@ for filepath in yaml_files:
 
 # Remove stale topology entities from onos-topo
 res_topo = subprocess.run(
-    ["kubectl", "exec", "-n", namespace, cli_pod, "--", "onos", "topo", "get", "entities"],
+    ["kubectl", "exec", "-n", namespace, cli_pod, "--", "onos",
+     "topo", "get", "entities",
+     "--service-address", "onos-topo:5150",
+     "--tls-cert-path", "/etc/ssl/certs/client1.crt",
+     "--tls-key-path",  "/etc/ssl/certs/client1.key"],
     capture_output=True, text=True
 )
 if res_topo.returncode == 0:
@@ -361,7 +365,11 @@ if res_topo.returncode == 0:
             if ent_id not in active_dev_ids and ent_id not in ["Entity", "ID", "Entity ID"] and not ent_id.startswith("gnmi:"):
                 print(f"[*] Removing stale topology entity: '{ent_id}'")
                 subprocess.run(
-                    ["kubectl", "exec", "-n", namespace, cli_pod, "--", "onos", "topo", "delete", "entity", ent_id],
+                    ["kubectl", "exec", "-n", namespace, cli_pod, "--", "onos",
+                     "topo", "delete", "entity", ent_id,
+                     "--service-address", "onos-topo:5150",
+                     "--tls-cert-path", "/etc/ssl/certs/client1.crt",
+                     "--tls-key-path",  "/etc/ssl/certs/client1.key"],
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
                 )
 
@@ -382,13 +390,20 @@ for cfg in device_configs:
           f"(Kind: '{kind}') -> Primary: '{address}'")
     
     subprocess.run(
-        ["kubectl", "exec", "-n", namespace, cli_pod, "--", "onos", "topo", "delete", "entity", dev_id],
+        ["kubectl", "exec", "-n", namespace, cli_pod, "--", "onos",
+         "topo", "delete", "entity", dev_id,
+         "--service-address", "onos-topo:5150",
+         "--tls-cert-path", "/etc/ssl/certs/client1.crt",
+         "--tls-key-path",  "/etc/ssl/certs/client1.key"],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
     )
 
     cmd_create = [
         "kubectl", "exec", "-n", namespace, cli_pod, "--",
-        "onos", "topo", "create", "entity", dev_id, "-k", kind
+        "onos", "topo", "create", "entity", dev_id, "-k", kind,
+        "--service-address", "onos-topo:5150",
+        "--tls-cert-path", "/etc/ssl/certs/client1.crt",
+        "--tls-key-path",  "/etc/ssl/certs/client1.key"
     ]
     res_create = subprocess.run(cmd_create, capture_output=True, text=True)
 
@@ -433,7 +448,10 @@ for cfg in device_configs:
 
     cmd_set = [
         "kubectl", "exec", "-n", namespace, cli_pod, "--",
-        "onos", "topo", "set", "entity", dev_id
+        "onos", "topo", "set", "entity", dev_id,
+        "--service-address", "onos-topo:5150",
+        "--tls-cert-path", "/etc/ssl/certs/client1.crt",
+        "--tls-key-path",  "/etc/ssl/certs/client1.key"
     ]
     for attr in attrs:
         cmd_set.extend(["-a", attr])
@@ -443,7 +461,10 @@ for cfg in device_configs:
     verify = subprocess.run(
         [
             "kubectl", "exec", "-n", namespace, cli_pod, "--",
-            "onos", "topo", "get", "entity", dev_id
+            "onos", "topo", "get", "entity", dev_id,
+            "--service-address", "onos-topo:5150",
+            "--tls-cert-path", "/etc/ssl/certs/client1.crt",
+            "--tls-key-path",  "/etc/ssl/certs/client1.key"
         ],
         capture_output=True,
         text=True
