@@ -710,6 +710,64 @@ patch_all_uonos_secrets() {
     log_success "Overwrote cert bundles in $patched Secret(s)."
 }
 
+mount_onos_cli_certs() {
+    log_info "Phase 7.9: Mounting our certs into onos-cli..."
+
+    local repo_dir
+    repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    local cert_dir="${repo_dir}/.certs/uonos"
+    local ns="micro-onos"
+
+    if [ ! -s "$cert_dir/tls.cacrt" ]; then
+        log_error "Missing $cert_dir/tls.cacrt; cannot mount certs into onos-cli."
+    fi
+
+    # Ensure onfca.crt is present in the Secret under the name the pod reads
+    kubectl patch secret onos-cli-secret -n "$ns" --type=merge \
+        -p "{\"data\":{\"onfca.crt\":\"$(base64 -w0 "$cert_dir/tls.cacrt")\"}}" \
+        >/dev/null
+
+    # Add the Secret volume and the three subPath mounts if not already present
+    if ! kubectl get deployment onos-cli -n "$ns" \
+            -o jsonpath='{.spec.template.spec.volumes[?(@.name=="onos-cli-certs")].name}' \
+            2>/dev/null | grep -q onos-cli-certs; then
+        log_info "  Adding onos-cli-certs volume + subPath mounts to onos-cli Deployment"
+        kubectl patch deployment onos-cli -n "$ns" --type=strategic -p '
+spec:
+  template:
+    spec:
+      volumes:
+      - name: onos-cli-certs
+        secret:
+          secretName: onos-cli-secret
+          defaultMode: 420
+      containers:
+      - name: onos-cli
+        volumeMounts:
+        - name: onos-cli-certs
+          mountPath: /etc/ssl/certs/client1.crt
+          subPath: client1.crt
+          readOnly: true
+        - name: onos-cli-certs
+          mountPath: /etc/ssl/certs/client1.key
+          subPath: client1.key
+          readOnly: true
+        - name: onos-cli-certs
+          mountPath: /etc/ssl/certs/onfca.crt
+          subPath: onfca.crt
+          readOnly: true
+'
+    else
+        log_info "  onos-cli already has the onos-cli-certs volume; refreshing Secret and rolling out."
+        kubectl rollout restart deployment/onos-cli -n "$ns" >/dev/null 2>&1 || true
+    fi
+
+    kubectl rollout status deployment/onos-cli -n "$ns" --timeout=120s || \
+        log_warn "onos-cli rollout did not complete in time."
+
+    log_success "onos-cli now uses our certs and trusts our CA."
+}
+
 generate_uonos_certs() {
     log_info "Phase 7.7: Generating µONOS TLS certificates with openssl..."
 
@@ -934,7 +992,9 @@ deploy_cloud_native_uonos() {
         --grace-period=0 --force 2>/dev/null || true
 
     sleep 10
-
+    
+    mount_onos_cli_certs
+    
     log_info "=== µONOS installation completed ==="
 
     # Wait for the onos-cli and onos-config pods to be scheduled and Ready
