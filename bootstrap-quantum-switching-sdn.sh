@@ -962,14 +962,27 @@ deploy_cloud_native_uonos() {
         fi
     done
 
-    log_info "Restarting crashing µONOS pods so they pick up the new secrets..."
-    kubectl delete pod -n micro-onos -l app.kubernetes.io/name=onos-config \
+    log_info "Restarting all µONOS pods so they pick up the matching CAs..."
+    # Every µONOS pod mounts one of the TLS Secrets we just rewrote. If a
+    # pod keeps running with the chart's CA in memory and the newly started
+    # pod uses our CA, TLS handshakes fail with "bad certificate". Force
+    # every one of them to remount.
+    for label in \
+        app.kubernetes.io/name=onos-config \
+        app.kubernetes.io/name=onos-cli \
+        app.kubernetes.io/name=onos-topo \
+        app.kubernetes.io/name=topo-discovery \
+        app.kubernetes.io/name=device-provisioner ; do
+        kubectl delete pod -n micro-onos -l "$label" \
+            --grace-period=0 --force 2>/dev/null || true
+    done
+
+    # Consensus pods (Atomix Raft) don't mount TLS Secrets, but restart
+    # them anyway to clear any stale gRPC sessions with onos-config.
+    kubectl delete pod -n micro-onos -l name=onos-umbrella-consensus \
         --grace-period=0 --force 2>/dev/null || true
-    kubectl delete pod -n micro-onos -l app.kubernetes.io/name=topo-discovery \
-        --grace-period=0 --force 2>/dev/null || true
-    kubectl delete pod -n micro-onos -l app.kubernetes.io/name=device-provisioner \
-        --grace-period=0 --force 2>/dev/null || true
-    sleep 8
+
+    sleep 10
     
     log_info "=== µONOS installation completed ==="
 
