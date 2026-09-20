@@ -792,7 +792,7 @@ generate_uonos_certs() {
 
     # --- Server cert ---
     cat > "$cert_dir/server.ext" <<'EOF'
-subjectAltName=DNS:onos-config,DNS:onos-config.micro-onos,DNS:onos-config.micro-onos.svc,DNS:onos-config.micro-onos.svc.cluster.local,DNS:onos-topo,DNS:onos-topo.micro-onos,DNS:localhost,IP:127.0.0.1
+subjectAltName=DNS:onos-config,DNS:onos-config.opennetworking.org,DNS:onos-config.micro-onos,DNS:onos-config.micro-onos.svc,DNS:onos-config.micro-onos.svc.cluster.local,DNS:onos-topo,DNS:onos-topo.micro-onos,DNS:localhost,IP:127.0.0.1
 extendedKeyUsage=serverAuth,clientAuth
 EOF
 
