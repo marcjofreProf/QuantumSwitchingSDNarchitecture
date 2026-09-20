@@ -247,8 +247,6 @@ fi
 
 echo "[SUCCESS] controller-quantum-switching plugin is Loaded."
 
-echo "[SUCCESS] controller-quantum-switching plugin is Loaded."
-
 # ---------------------------------------------------------------------------
 # Phase 1b: Register devices in onos-topo
 # ---------------------------------------------------------------------------
