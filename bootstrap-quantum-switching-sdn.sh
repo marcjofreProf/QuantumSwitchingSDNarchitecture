@@ -907,6 +907,61 @@ deploy_cloud_native_uonos() {
     generate_uonos_certs
     patch_all_uonos_secrets
 
+    # The chart's cert-issuer runs as a post-install hook and creates the
+    # per-component Secrets (topo-discovery, device-provisioner, ...) AFTER
+    # helm returns. Wait for them, then inject the missing tls.crt into each.
+    log_info "Waiting for chart-generated component Secrets and patching them..."
+    local cert_dir_abs
+    cert_dir_abs="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/.certs/uonos"
+    local tls_crt_b64
+    tls_crt_b64=$(base64 -w0 "${cert_dir_abs}/tls.crt")
+    local client_crt_b64
+    client_crt_b64=$(base64 -w0 "${cert_dir_abs}/client1.crt")
+
+    for i in $(seq 1 30); do
+        local got_td=false got_dp=false
+        kubectl get secret onos-umbrella-topo-discovery-secret \
+            -n micro-onos >/dev/null 2>&1 && got_td=true
+        kubectl get secret onos-umbrella-device-provisioner-secret \
+            -n micro-onos >/dev/null 2>&1 && got_dp=true
+
+        if [ "$got_td" = true ] && [ "$got_dp" = true ]; then
+            break
+        fi
+        sleep 2
+    done
+
+    for secret in onos-umbrella-topo-discovery-secret onos-umbrella-device-provisioner-secret; do
+        if ! kubectl get secret "$secret" -n micro-onos >/dev/null 2>&1; then
+            log_warn "$secret not found; skipping."
+            continue
+        fi
+
+        # Add tls.crt if the Secret has tls.key but not tls.crt
+        local has_key has_crt
+        has_key=$(kubectl get secret "$secret" -n micro-onos \
+                  -o jsonpath='{.data.tls\.key}' 2>/dev/null | wc -c)
+        has_crt=$(kubectl get secret "$secret" -n micro-onos \
+                  -o jsonpath='{.data.tls\.crt}' 2>/dev/null | wc -c)
+        if [ "$has_key" -gt 0 ] && [ "$has_crt" -eq 0 ]; then
+            log_info "  Adding tls.crt to $secret"
+            kubectl patch secret "$secret" -n micro-onos --type=merge \
+                -p "{\"data\":{\"tls.crt\":\"$tls_crt_b64\"}}" >/dev/null
+        fi
+
+        # Add client1.crt if it has client1.key but not client1.crt
+        local has_ck has_cc
+        has_ck=$(kubectl get secret "$secret" -n micro-onos \
+                 -o jsonpath='{.data.client1\.key}' 2>/dev/null | wc -c)
+        has_cc=$(kubectl get secret "$secret" -n micro-onos \
+                 -o jsonpath='{.data.client1\.crt}' 2>/dev/null | wc -c)
+        if [ "$has_ck" -gt 0 ] && [ "$has_cc" -eq 0 ]; then
+            log_info "  Adding client1.crt to $secret"
+            kubectl patch secret "$secret" -n micro-onos --type=merge \
+                -p "{\"data\":{\"client1.crt\":\"$client_crt_b64\"}}" >/dev/null
+        fi
+    done
+
     log_info "Restarting crashing µONOS pods so they pick up the new secrets..."
     kubectl delete pod -n micro-onos -l app.kubernetes.io/name=onos-config \
         --grace-period=0 --force 2>/dev/null || true
