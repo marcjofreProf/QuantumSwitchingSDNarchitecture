@@ -1063,9 +1063,7 @@ configure_uonos_controller_settings() {
     ## 1. Disable Master Election at the Deployment level
     #log_info "Setting MASTER_ELECTION=false on onos-config deployment..."
     #kubectl set env deployment/onos-config -n micro-onos MASTER_ELECTION=false || log_warn "Failed to set MASTER_ELECTION env variable."
-
-    kubectl rollout restart deployment/onos-config -n micro-onos || log_warn "Failed to restart onos-config."
-    
+        
     # 2. Wait for onos-config, onos-topo, and onos-cli deployments to become ready
     log_info "Waiting for µONOS core deployments to settle..."
     kubectl rollout status deployment/onos-config -n micro-onos --timeout=120s
@@ -1164,6 +1162,19 @@ EOF
 
 register_inventory_devices() {
     log_info "Phase 8.5: Registering current device inventory with µONOS..."
+
+    # Wait until onos-config is Ready before we ask it about plugins.
+    log_info "Ensuring onos-config is Ready before registering devices..."
+    local cfg_pod
+    cfg_pod=$(kubectl get pods -n micro-onos \
+        -l app.kubernetes.io/name=onos-config \
+        -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+
+    if [ -n "$cfg_pod" ]; then
+        kubectl wait --for=condition=Ready pod/"$cfg_pod" \
+            -n micro-onos --timeout=180s || \
+            log_warn "onos-config not fully Ready before device registration; proceeding."
+    fi
 
     if [ ! -f "./inventory/register-devices.sh" ]; then
         log_error "inventory/register-devices.sh not found."
