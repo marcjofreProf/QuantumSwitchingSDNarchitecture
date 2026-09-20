@@ -139,11 +139,24 @@ fi
 echo "[*] Importing ${PLUGIN_IMAGE} into K3s containerd..."
 docker save "${PLUGIN_IMAGE}" | sudo k3s ctr images import -
 
-# Sanity check
-if ! sudo k3s ctr images ls -q | grep -qF "docker.io/${PLUGIN_IMAGE}"; then
-    echo "[!] ERROR: ${PLUGIN_IMAGE} is not present in K3s containerd."
+# Sanity check — retry because containerd indexes the image asynchronously.
+image_found=false
+for i in $(seq 1 15); do
+    if sudo k3s ctr images ls -q | grep -qF "docker.io/${PLUGIN_IMAGE}"; then
+        image_found=true
+        break
+    fi
+    sleep 2
+done
+
+if [ "$image_found" != true ]; then
+    echo "[!] ERROR: ${PLUGIN_IMAGE} is not present in K3s containerd after 30s."
+    echo "    Current images matching 'controller-quantum-switching':"
+    sudo k3s ctr images ls | grep controller-quantum-switching || echo "    (none)"
     exit 1
 fi
+
+echo "[*] Confirmed: ${PLUGIN_IMAGE} is present in K3s containerd."
 
 echo "[SUCCESS] Model plugin built and imported."
 
