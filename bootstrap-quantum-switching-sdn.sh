@@ -799,6 +799,8 @@ configure_uonos_controller_settings() {
     #log_info "Setting MASTER_ELECTION=false on onos-config deployment..."
     #kubectl set env deployment/onos-config -n micro-onos MASTER_ELECTION=false || log_warn "Failed to set MASTER_ELECTION env variable."
 
+    kubectl rollout restart deployment/onos-config -n micro-onos || log_warn "Failed to restart onos-config."
+    
     # 2. Wait for onos-config, onos-topo, and onos-cli deployments to become ready
     log_info "Waiting for µONOS core deployments to settle..."
     kubectl rollout status deployment/onos-config -n micro-onos --timeout=120s
