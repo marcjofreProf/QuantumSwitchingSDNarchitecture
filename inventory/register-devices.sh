@@ -602,6 +602,9 @@ if [ ! -f "${PROTO_DIR}/gnmi_pb2.py" ] || [ ! -f "${PROTO_DIR}/gnmi_pb2_grpc.py"
     exit 1
 fi
 
+# Count Set failures so we can report accurately at the end
+SET_FAILURES=0
+
 # Run the extension-based registration for each device
 for cfg in "${REGISTERED_DEVICES[@]}"; do
     # Read kind and version from the YAML
@@ -645,7 +648,7 @@ for cfg in "${REGISTERED_DEVICES[@]}"; do
         --key  "${CERT_DIR}/client1.key" \
         --ca   "${CERT_DIR}/tls.cacrt" \
         --server-name "onos-config.opennetworking.org" \
-        || echo "    [WARNING] Set failed for '$cfg' (see above)."
+        || { echo "    [WARNING] Set failed for '$cfg' (see above)."; SET_FAILURES=$((SET_FAILURES + 1)); }
 done
 
 echo
@@ -656,4 +659,8 @@ kubectl exec -n "$NAMESPACE" "$CLI_POD" -- \
         --tls-key-path  /etc/ssl/certs/client1.key || true
 
 echo
-echo "[SUCCESS] Device registration with onos-config complete."
+if [ "$SET_FAILURES" -gt 0 ]; then
+    echo "[WARNING] Device registration finished with $SET_FAILURES Set failure(s)."
+else
+    echo "[SUCCESS] Device registration with onos-config complete."
+fi
