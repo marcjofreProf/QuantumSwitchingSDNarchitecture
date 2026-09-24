@@ -1,0 +1,104 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: restconf-gateway
+  namespace: micro-onos
+  labels:
+    app: restconf-gateway
+    app.kubernetes.io/name: restconf-gateway
+    app.kubernetes.io/part-of: quantum-sdn
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: restconf-gateway
+  template:
+    metadata:
+      labels:
+        app: restconf-gateway
+        app.kubernetes.io/name: restconf-gateway
+        app.kubernetes.io/part-of: quantum-sdn
+    spec:
+      containers:
+        - name: restconf-gateway
+          image: quantum-restconf-gateway:1.0.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: restconf
+              containerPort: 8181
+              protocol: TCP
+          env:
+            # gNMI northbound (existing path)
+            - name: GNMI_TARGET
+              value: "onos-config.micro-onos.svc.cluster.local:5150"
+            - name: GNMI_TARGET_DEVICE
+              value: "devicesim-1"
+            - name: TLS_CERT
+              value: "/etc/onos/certs/tls.crt"
+            - name: TLS_KEY
+              value: "/etc/onos/certs/tls.key"
+
+            # Southbound adapter (NETCONF / gNOI)
+            - name: ADAPTER_URL
+              value: "http://sdn-adapter.micro-onos.svc:8080"
+            - name: ADAPTER_TIMEOUT
+              value: "10"
+
+            # Device-side southbound ports / creds
+            - name: NETCONF_PORT
+              value: "8300"
+            - name: GNOI_PORT
+              value: "50051"
+            - name: NETCONF_USER
+              value: "admin"
+            - name: NETCONF_PASS
+              value: "admin"
+          volumeMounts:
+            - name: onos-config-certs
+              mountPath: /etc/onos/certs
+              readOnly: true
+          readinessProbe:
+            tcpSocket:
+              port: restconf
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: restconf
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+      volumes:
+        - name: onos-config-certs
+          secret:
+            secretName: onos-config-secret
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: restconf-gateway
+  namespace: micro-onos
+  labels:
+    app: restconf-gateway
+    app.kubernetes.io/name: restconf-gateway
+    app.kubernetes.io/part-of: quantum-sdn
+spec:
+  type: LoadBalancer
+  selector:
+    app: restconf-gateway
+  ports:
+    - name: restconf
+      port: 8181
+      targetPort: restconf
+      protocol: TCP
