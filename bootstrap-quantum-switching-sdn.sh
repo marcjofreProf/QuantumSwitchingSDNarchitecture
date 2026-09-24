@@ -5,6 +5,7 @@
 # ---------------------------------------------------------------------------
 
 set -e # Exit immediately if a command exits with a non-zero status
+trap 'echo "[!] bootstrap exited at line $LINENO (status $?)" >&2' ERR
 
 # --- Colors for Output ---
 RED='\033[0;31m'
@@ -970,27 +971,17 @@ deploy_cloud_native_uonos() {
     log_info "Overwriting cert bundles in chart-generated component Secrets..."
     patch_all_uonos_secrets
 
-    log_info "Restarting all µONOS pods so they pick up the matching CAs..."
-    # Every µONOS pod mounts one of the TLS Secrets we just rewrote. If a
-    # pod keeps running with the chart's CA in memory and a newly started
-    # pod uses our CA, TLS handshakes fail with "bad certificate" or
-    # "private key does not match public key". Force every one of them to
-    # remount the corrected Secrets.
-    for label in \
-        app.kubernetes.io/name=onos-config \
-        app.kubernetes.io/name=onos-cli \
-        app.kubernetes.io/name=onos-topo \
-        app.kubernetes.io/name=topo-discovery \
-        app.kubernetes.io/name=device-provisioner ; do
-        kubectl delete pod -n micro-onos -l "$label" \
-            --grace-period=0 --force 2>/dev/null || true
-    done
-
-    # Consensus pods (Atomix Raft) do not mount TLS Secrets, but restart
-    # them anyway to clear any stale gRPC sessions with onos-config.
-    kubectl delete pod -n micro-onos -l name=onos-umbrella-consensus \
+        log_info "Restarting all µONOS pods so they pick up the matching CAs..."
+    # Every pod created by the onos-umbrella Helm release carries
+    # app.kubernetes.io/instance=onos-umbrella. Deleting by that one
+    # label restarts onos-config, onos-topo, onos-cli, topo-discovery,
+    # device-provisioner, and the three consensus pods in one shot,
+    # regardless of how the chart changes per-component name labels
+    # between versions.
+    kubectl delete pod -n micro-onos \
+        -l app.kubernetes.io/instance=onos-umbrella \
         --grace-period=0 --force 2>/dev/null || true
-
+    
     sleep 10
     
     mount_onos_cli_certs
