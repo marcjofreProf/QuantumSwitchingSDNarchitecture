@@ -1046,38 +1046,28 @@ deploy_cloud_native_uonos() {
 
     log_success "RESTCONF Gateway deployed."
 
-    # Extract the µONOS client certs and CA for local gNMI tools.
-    #
-    # The client identity (client1.crt/key) lives in the onos-cli pod's
-    # /etc/ssl/certs/. The server CA (tls.cacrt) lives in the onos-config
-    # pod's /etc/onos/certs/. Both are Secret-mounted as symlinks, so use
-    # `kubectl exec -- cat` rather than `kubectl cp` (which skips symlinks).
-    log_info "Extracting µONOS client certificates for gnmic..."
-    sudo mkdir -p /etc/onos/certs
-
-    CLI_POD=$(kubectl get pods -n micro-onos -l app.kubernetes.io/name=onos-cli \
-        -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
-    CONFIG_POD=$(kubectl get pods -n micro-onos -l app.kubernetes.io/name=onos-config \
-        -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
-
-    if [ -z "${CLI_POD}" ] || [ -z "${CONFIG_POD}" ]; then
-        log_warn "Could not locate onos-cli (${CLI_POD}) or onos-config (${CONFIG_POD}) pod; skipping cert extraction."
-    else
-        kubectl exec -n micro-onos "${CLI_POD}" -- \
-            cat /etc/ssl/certs/client1.crt | sudo tee /etc/onos/certs/client1.crt >/dev/null
-        kubectl exec -n micro-onos "${CLI_POD}" -- \
-            cat /etc/ssl/certs/client1.key | sudo tee /etc/onos/certs/client1.key >/dev/null
-        kubectl exec -n micro-onos "${CONFIG_POD}" -- \
-            cat /etc/onos/certs/tls.cacrt | sudo tee /etc/onos/certs/tls.cacrt >/dev/null
-
-        # The invoking user (not root) will run gnmic, so the key must be
-        # readable by them. Change ownership and keep 0600 on the key.
-        sudo chown "${USER}:${USER}" /etc/onos/certs/client1.key
-        sudo chmod 600 /etc/onos/certs/client1.key
-        sudo chmod 644 /etc/onos/certs/client1.crt /etc/onos/certs/tls.cacrt
-
-        log_success "Certificates extracted to /etc/onos/certs/ (key owned by ${USER})."
+    # Copy the certs generate_uonos_certs just wrote to .certs/uonos/.
+    # Extracting from the onos-cli pod is unreliable: the chart ships its
+    # own secret mounted at the same path, so `kubectl exec -- cat` returns
+    # the chart's cert (CN=client1.opennetworking.org), not ours
+    # (CN=client1). Copying from .certs/uonos/ guarantees we install the
+    # same triplet that was loaded into onos-config-secret.
+    log_info "Installing µONOS certs into /etc/onos/certs/ from .certs/uonos/..."
+    local cert_dir="${SCRIPT_DIR}/.certs/uonos"
+    if [ ! -s "$cert_dir/client1.crt" ] || [ ! -s "$cert_dir/client1.key" ] || [ ! -s "$cert_dir/tls.cacrt" ]; then
+        log_error "Cert triplet missing in $cert_dir; cannot install host certs."
     fi
+
+    sudo mkdir -p /etc/onos/certs
+    sudo cp "$cert_dir/client1.crt" /etc/onos/certs/client1.crt
+    sudo cp "$cert_dir/client1.key" /etc/onos/certs/client1.key
+    sudo cp "$cert_dir/tls.cacrt"  /etc/onos/certs/tls.cacrt
+
+    sudo chown "${USER}:${USER}" /etc/onos/certs/client1.key
+    sudo chmod 600 /etc/onos/certs/client1.key
+    sudo chmod 644 /etc/onos/certs/client1.crt /etc/onos/certs/tls.cacrt
+
+    log_success "Certificates installed to /etc/onos/certs/ (key owned by ${USER})."
 
     # Write a gnmic config that mirrors what we use interactively.
     # The client identity is client1.crt/client1.key.
