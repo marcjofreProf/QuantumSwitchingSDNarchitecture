@@ -1135,12 +1135,20 @@ deploy_sdn_adapter_and_topo_aspects() {
         exit 1
     }
 
-    # 4. Verify Python libraries inside the adapter
+        # 4. Verify Python libraries inside the adapter
     log_info "Verifying SDN Adapter runtime environment..."
     kubectl exec -n micro-onos deployment/sdn-adapter -- python3 -c "import ncclient, grpc; print('SDN Adapter Ready')" || {
         log_error "SDN Adapter dependency verification failed."
         exit 1
     }
+
+    # 4b. Probe the live HTTP API
+    log_info "Probing sdn-adapter /healthz..."
+    if ! kubectl exec -n micro-onos deployment/sdn-adapter -- \
+            curl -sf http://localhost:8080/healthz >/dev/null; then
+        log_error "SDN Adapter /healthz probe failed."
+        exit 1
+    fi
 
     # 5. Verify topology registration
     log_info "Verifying onos-topo configuration..."
