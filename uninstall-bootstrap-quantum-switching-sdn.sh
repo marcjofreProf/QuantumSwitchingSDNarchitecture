@@ -18,10 +18,20 @@ log_warn() { echo -e "${YELLOW}[WARNING] $1${NC}"; }
 
 log_info "Starting Quantum-SDN Architecture environment cleanup..."
 
-# Dismantle SDN Adapter Workloads ---
-log_info "Dismantling SDN Adapter..."
+# Dismantle SDN Adapter + RESTCONF Gateway workloads from their manifests
+log_info "Dismantling SDN Adapter and RESTCONF Gateway..."
+kubectl delete -f sdn-controller/southbound-plugins/sdn-adapter/deploy.yaml \
+    --ignore-not-found=true 2>/dev/null || true
+kubectl delete -f sdn-controller/northbound-interfaces/restconf-gateway/deploy.yaml \
+    --ignore-not-found=true 2>/dev/null || true
+
+# Belt-and-braces: catch anything created before the manifests existed
+kubectl delete service    sdn-adapter -n micro-onos --ignore-not-found=true 2>/dev/null || true
 kubectl delete deployment sdn-adapter -n micro-onos --ignore-not-found=true 2>/dev/null || true
-kubectl delete pod sdn-adapter -n micro-onos --force --grace-period=0 2>/dev/null || true
+kubectl delete pod        sdn-adapter -n micro-onos --force --grace-period=0 2>/dev/null || true
+
+kubectl delete service    restconf-gateway -n micro-onos --ignore-not-found=true 2>/dev/null || true
+kubectl delete deployment restconf-gateway -n micro-onos --ignore-not-found=true 2>/dev/null || true
 
 # 2. Uninstall Helm Deployments
 log_info "Uninstalling Helm releases..."
@@ -142,6 +152,7 @@ fi
 # Remove sdn-adapter from K3s containerd ---
 if command -v k3s >/dev/null 2>&1; then
     sudo k3s ctr images rm docker.io/library/sdn-adapter:1.0.0 2>/dev/null || true
+    sudo k3s ctr images rm docker.io/library/quantum-restconf-gateway:1.0.0 2>/dev/null || true
 fi
 
 # 7. Remove Virtual Environment
