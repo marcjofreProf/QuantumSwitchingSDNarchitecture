@@ -1,27 +1,15 @@
-# sdn-controller/southbound-plugins/sdn-adapter/deploy.yaml
-#
-# Southbound protocol adapter for NETCONF and gNOI.
-#
-# The pod runs an HTTP/JSON API on :8080. The RESTCONF gateway (or any
-# other caller) posts to it with a target host/port and a payload; the
-# adapter then dials NETCONF (8300) or gNOI (50051) on the device.
-#
-# Apply with:
-#   kubectl apply -n micro-onos -f sdn-controller/southbound-plugins/sdn-adapter/deploy.yaml
-
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: sdn-adapter
+  namespace: micro-onos
   labels:
     app: sdn-adapter
     app.kubernetes.io/name: sdn-adapter
-    app.kubernetes.io/component: southbound-adapter
     app.kubernetes.io/part-of: quantum-sdn
 spec:
   replicas: 1
-  strategy:
-    type: Recreate          # single replica, no need for surge
   selector:
     matchLabels:
       app: sdn-adapter
@@ -30,44 +18,69 @@ spec:
       labels:
         app: sdn-adapter
         app.kubernetes.io/name: sdn-adapter
-        app.kubernetes.io/component: southbound-adapter
+        app.kubernetes.io/part-of: quantum-sdn
     spec:
-      terminationGracePeriodSeconds: 5
       containers:
-      - name: sdn-adapter
-        image: sdn-adapter:1.0.0
-        imagePullPolicy: IfNotPresent
-        ports:
-        - name: http
-          containerPort: 8080
-          protocol: TCP
-        env:
-        - name: ADAPTER_BIND
-          value: "0.0.0.0"
-        - name: ADAPTER_PORT
-          value: "8080"
-        - name: NETCONF_TIMEOUT
-          value: "10"
-        - name: GNOI_TIMEOUT
-          value: "15"
-        readinessProbe:
-          httpGet:
-            path: /healthz
-            port: http
-          initialDelaySeconds: 3
-          periodSeconds: 5
-          timeoutSeconds: 2
-          failureThreshold: 3
-        livenessProbe:
-          httpGet:
-            path: /healthz
-            port: http
-          initialDelaySeconds: 10
-          periodSeconds: 15
-          timeoutSeconds: 3
-          failureThreshold: 3
-        resources:
-          requests:
-            cpu: "100m"
-            memory: "128Mi"
-          limits:
+        - name: sdn-adapter
+          image: sdn-adapter:1.0.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: ADAPTER_PORT
+              value: "8080"
+            - name: ADAPTER_BIND
+              value: "0.0.0.0"
+            - name: NETCONF_TIMEOUT
+              value: "10"
+            - name: GNOI_TIMEOUT
+              value: "15"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: false
+            runAsUser: 0
+      restartPolicy: Always
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sdn-adapter
+  namespace: micro-onos
+  labels:
+    app: sdn-adapter
+    app.kubernetes.io/name: sdn-adapter
+    app.kubernetes.io/part-of: quantum-sdn
+spec:
+  type: ClusterIP
+  selector:
+    app: sdn-adapter
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
