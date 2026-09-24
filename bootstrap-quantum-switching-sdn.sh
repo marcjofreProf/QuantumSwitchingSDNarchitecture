@@ -1029,60 +1029,31 @@ deploy_cloud_native_uonos() {
         log_success "onos-cli and onos-config pods are Ready (waited ${waited}s)."
     fi
 
-    log_info "Building and deploying RESTCONF Gateway Container..."
+    log_info "Building RESTCONF Gateway image..."
     if command -v docker >/dev/null 2>&1; then
-        (cd "$SCRIPT_DIR/sdn-controller/northbound-interfaces/restconf-gateway" && docker build -t quantum-restconf-gateway:1.0.0 .) || log_warn "Skipped building Gateway image."
+        docker build -t quantum-restconf-gateway:1.0.0 \
+            "$SCRIPT_DIR/sdn-controller/northbound-interfaces/restconf-gateway" \
+            || log_error "Failed to build RESTCONF Gateway image."
 
         if command -v k3s >/dev/null 2>&1; then
-            docker save quantum-restconf-gateway:1.0.0 2>/dev/null | sudo k3s ctr images import - || true
+            docker save quantum-restconf-gateway:1.0.0 \
+                | sudo k3s ctr images import - \
+                || log_warn "K3s image import for gateway failed (non-fatal)."
         fi
-
-        kubectl apply -n micro-onos -f - <<EOF
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: restconf-gateway
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: restconf-gateway
-  template:
-    metadata:
-      labels:
-        app: restconf-gateway
-    spec:
-      containers:
-      - name: restconf-gateway
-        image: quantum-restconf-gateway:1.0.0
-        imagePullPolicy: IfNotPresent
-        ports:
-        - containerPort: 8181
-        volumeMounts:
-        - name: onos-config-certs
-          mountPath: /etc/onos/certs
-          readOnly: true
-      volumes:
-      - name: onos-config-certs
-        secret:
-          secretName: onos-config-secret
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: restconf-gateway
-spec:
-  type: LoadBalancer
-  selector:
-    app: restconf-gateway
-  ports:
-  - name: restconf
-    port: 8181
-    targetPort: 8181
-EOF
-
-        log_success "RESTCONF Gateway deployed on NodePort 30181."
+    else
+        log_error "docker not available; cannot build RESTCONF Gateway image."
     fi
+
+    log_info "Applying RESTCONF Gateway manifest..."
+    kubectl apply -f \
+        "$SCRIPT_DIR/sdn-controller/northbound-interfaces/restconf-gateway/deploy.yaml"
+
+    log_info "Waiting for RESTCONF Gateway rollout..."
+    kubectl rollout status deployment/restconf-gateway \
+        -n micro-onos --timeout=120s \
+        || log_error "RESTCONF Gateway failed to become Ready."
+
+    log_success "RESTCONF Gateway deployed."
 
     # Extract the µONOS client certs and CA for local gNMI tools.
     #
@@ -1153,38 +1124,9 @@ deploy_sdn_adapter_and_topo_aspects() {
         log_warn "Dockerfile for sdn-adapter not found at ${adapter_dir}/Dockerfile. Using fallback image."
     fi
 
-    # 2. Deploy SDN Adapter using a declarative K8s Deployment manifest
-    log_info "Applying declarative Kubernetes manifest for sdn-adapter..."
-    kubectl apply -n micro-onos -f - <<EOF
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: sdn-adapter
-  labels:
-    app: sdn-adapter
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: sdn-adapter
-  template:
-    metadata:
-      labels:
-        app: sdn-adapter
-    spec:
-      containers:
-      - name: sdn-adapter
-        image: sdn-adapter:1.0.0
-        imagePullPolicy: IfNotPresent
-        command: ["sleep", "infinity"]
-        resources:
-          requests:
-            cpu: "100m"
-            memory: "128Mi"
-          limits:
-            cpu: "500m"
-            memory: "512Mi"
-EOF
+    # 2. Deploy SDN Adapter from the tracked manifest
+    log_info "Applying sdn-adapter manifest..."
+    kubectl apply -f "${adapter_dir}/deploy.yaml"
 
     # 3. Wait for the sdn-adapter deployment to become ready
     log_info "Waiting for sdn-adapter pod to be ready..."
