@@ -12,11 +12,9 @@ DEFAULT_TARGET_DEVICE = os.getenv("GNMI_TARGET_DEVICE", "devicesim-1")
 TLS_CERT           = os.getenv("TLS_CERT", "/etc/onos/certs/tls.crt")
 TLS_KEY            = os.getenv("TLS_KEY",  "/etc/onos/certs/tls.key")
 
-# Southbound adapter (NETCONF / gNOI)
 ADAPTER_URL        = os.getenv("ADAPTER_URL", "http://sdn-adapter.micro-onos.svc:8080")
 ADAPTER_TIMEOUT    = float(os.getenv("ADAPTER_TIMEOUT", "10"))
 
-# Ports/credentials for the non-gNMI southbound legs
 NETCONF_PORT       = int(os.getenv("NETCONF_PORT", "8300"))
 GNOI_PORT          = int(os.getenv("GNOI_PORT",    "50051"))
 NETCONF_USER       = os.getenv("NETCONF_USER", "admin")
@@ -26,7 +24,15 @@ CROSS_CONNECT_STORE = {}
 
 
 # ---------------------------------------------------------------------------
-# gNMI helper (unchanged)
+# Health probe — this is the endpoint the K8s HTTP probes hit
+# ---------------------------------------------------------------------------
+@app.route("/healthz", methods=["GET"])
+def healthz():
+    return jsonify({"status": "ok"}), 200
+
+
+# ---------------------------------------------------------------------------
+# gNMI helper
 # ---------------------------------------------------------------------------
 def get_gnmic_base_cmd():
     cmd = ["gnmic", "-a", GNMI_TARGET, "--skip-verify"]
