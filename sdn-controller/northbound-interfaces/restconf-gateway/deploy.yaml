@@ -22,7 +22,7 @@ spec:
     spec:
       containers:
         - name: restconf-gateway
-          image: quantum-restconf-gateway:1.0.0
+          image: quantum-restconf-gateway:1.1.0
           imagePullPolicy: IfNotPresent
           ports:
             - name: restconf
@@ -51,9 +51,9 @@ spec:
             - name: GNOI_PORT
               value: "50051"
             - name: NETCONF_USER
-              value: "admin"
+              value: "sdn"
             - name: NETCONF_PASS
-              value: "admin"
+              value: "quantum"
           volumeMounts:
             - name: onos-config-certs
               mountPath: /etc/onos/certs
