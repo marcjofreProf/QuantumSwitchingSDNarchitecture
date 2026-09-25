@@ -22,6 +22,30 @@ NETCONF_PASS       = os.getenv("NETCONF_PASS", "admin")
 
 CROSS_CONNECT_STORE = {}
 
+# onos-config addresses devices by their topo id, not by IP. Payloads
+# arriving from the benchmark or a RESTCONF caller may carry either form.
+# This table lets the gateway normalise both to the id onos-config knows.
+KNOWN_DEVICES = {
+    "quantum-node-1":    "quantum-node-1",
+    "10.0.0.254":        "quantum-node-1",
+    "10.0.0.254:50051":  "quantum-node-1",
+}
+
+
+def _resolve_target(data):
+    """Return the device id onos-config expects, given a payload that
+    may carry `target-node` (id), `target-node-ip` (IP), or both."""
+    tid = (data.get("target-node")    or "").strip()
+    tip = (data.get("target-node-ip") or "").strip()
+
+    for candidate in (tid, tip):
+        if candidate in KNOWN_DEVICES:
+            return KNOWN_DEVICES[candidate]
+
+    # Unknown device — pass it through and let onos-config report the
+    # miss with a specific error, instead of silently defaulting.
+    return tid or tip or DEFAULT_TARGET_DEVICE
+
 
 # ---------------------------------------------------------------------------
 # Health probe — this is the endpoint the K8s HTTP probes hit
@@ -103,13 +127,12 @@ def _dispatch_gnoi(action, data):
 # gNMI dispatcher (unchanged)
 # ---------------------------------------------------------------------------
 def _dispatch_gnmi(action, data):
-    target_device = data.get("target-node") or data.get("target-node-ip") or DEFAULT_TARGET_DEVICE
+    target_device = _resolve_target(data)
 
     # The controller-quantum-switching model plugin exposes exactly one
     # leaf: /switching/state with values "enabled" / "disabled". Sending
     # any other path causes onos-config to store the update without a
-    # southbound push, which is why the RESTCONF+gNMI path looked ~6×
-    # faster than the daemon's gNMI path.
+    # southbound push.
     if action == "DELETE":
         cmd = get_gnmic_base_cmd() + [
             "--target", target_device, "set",
