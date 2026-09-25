@@ -20,6 +20,7 @@ import os
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
+from ncclient.xml_ import to_ele
 
 import grpc
 from ncclient import manager as nc_manager
@@ -51,16 +52,22 @@ log = logging.getLogger("sdn-adapter")
 # NETCONF — node's custom <set-netconf-switch> RPC
 # ---------------------------------------------------------------------------
 
-def netconf_set_switch(host: str, port: int, user: str, password: str,
-                       state: bool) -> str:
+def netconf_set_switch(host: str, port: int, user: str, password: str, state: bool) -> str:
     state_str = "true" if state else "false"
-    rpc_body = (
+
+    # ncclient's dispatch() expects a complete <rpc> element, not a bare
+    # RPC body. The <rpc> root must carry the base NETCONF 1.0 namespace.
+    rpc_xml = (
+        '<rpc message-id="1" xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">'
         f'<set-netconf-switch xmlns="{NETCONF_SWITCH_NS}">'
         f'<state>{state_str}</state>'
         f'</set-netconf-switch>'
+        '</rpc>'
     )
+
     log.info("NETCONF set-netconf-switch host=%s port=%d state=%s",
              host, port, state_str)
+
     with nc_manager.connect(
         host=host,
         port=port,
@@ -72,7 +79,9 @@ def netconf_set_switch(host: str, port: int, user: str, password: str,
         device_params={"name": "default"},
         timeout=NETCONF_TMO,
     ) as m:
-        reply = m.dispatch(rpc_body)
+        # Pass the parsed element, not the raw string; ncclient accepts both
+        # but the element form avoids any tag-name quoting issues.
+        reply = m.dispatch(to_ele(rpc_xml))
         return str(reply)
 
 
