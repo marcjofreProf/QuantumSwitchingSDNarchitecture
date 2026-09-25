@@ -22,7 +22,7 @@ spec:
     spec:
       containers:
         - name: sdn-adapter
-          image: sdn-adapter:1.0.0
+          image: sdn-adapter:2.0.0
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -37,6 +37,10 @@ spec:
               value: "10"
             - name: GNOI_TIMEOUT
               value: "15"
+            - name: NETCONF_USER
+              value: "sdn"
+            - name: NETCONF_PASS
+              value: "quantum"
           readinessProbe:
             httpGet:
               path: /healthz
