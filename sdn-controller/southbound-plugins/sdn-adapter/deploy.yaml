@@ -37,6 +37,17 @@ spec:
               value: "10"
             - name: GNOI_TIMEOUT
               value: "15"
+            # Connection pooling + keepalives for routed networks.
+            # Set POOL_ENABLED=false to fall back to per-request
+            # connections (useful for isolating network issues).
+            - name: POOL_ENABLED
+              value: "true"
+            - name: KEEPALIVE_INTERVAL
+              value: "30"
+            - name: CONN_IDLE_TTL
+              value: "60"
+            - name: CONN_MAX_POOL
+              value: "16"
             - name: NETCONF_USER
               value: "sdn"
             - name: NETCONF_PASS
