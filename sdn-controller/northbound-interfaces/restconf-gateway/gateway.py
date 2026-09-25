@@ -73,20 +73,15 @@ def _dispatch_netconf(action, data):
     if not host:
         return False, "payload missing target-node-ip / target-node"
 
-    state = "enabled" if action == "SET" else "disabled"
-    config_xml = (
-        '<config xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">'
-        '<switching xmlns="urn:custom:params:xml:ns:yang:controller-quantum-switching">'
-        f'<state>{state}</state>'
-        '</switching></config>'
-    )
-    return _adapter_post("/netconf/edit", {
+    # SET (POST/PUT) → enable the switch; DELETE → disable it.
+    state = (action == "SET")
+
+    return _adapter_post("/netconf/switch", {
         "host":     host,
         "port":     NETCONF_PORT,
         "user":     NETCONF_USER,
         "password": NETCONF_PASS,
-        "config":   config_xml,
-        "target":   "running",
+        "state":    state,
     })
 
 
@@ -95,17 +90,12 @@ def _dispatch_gnoi(action, data):
     if not host:
         return False, "payload missing target-node-ip / target-node"
 
-    # gNOI is an operational API — it has no generic "set config" method.
-    # System.Time is a safe, read-only RPC that still exercises the gNOI
-    # service over the wire. Replace the service/method below with the
-    # vendor RPC that actually toggles switching state if your device has
-    # one.
-    return _adapter_post("/gnoi/invoke", {
-        "host":    host,
-        "port":    GNOI_PORT,
-        "service": "gnoi.system.System",
-        "method":  "Time",
-        "payload": {},
+    state = (action == "SET")
+
+    return _adapter_post("/gnoi/crossconnect", {
+        "host":  host,
+        "port":  GNOI_PORT,
+        "state": state,
     })
 
 
