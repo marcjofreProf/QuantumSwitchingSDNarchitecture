@@ -104,26 +104,21 @@ def _dispatch_gnoi(action, data):
 # ---------------------------------------------------------------------------
 def _dispatch_gnmi(action, data):
     target_device = data.get("target-node") or data.get("target-node-ip") or DEFAULT_TARGET_DEVICE
-    service_id    = data.get("service-id", "qservice")
-    ingress_port  = data.get("ingress-port", 1)
-    if_name       = f"eth{ingress_port}"
 
+    # The controller-quantum-switching model plugin exposes exactly one
+    # leaf: /switching/state with values "enabled" / "disabled". Sending
+    # any other path causes onos-config to store the update without a
+    # southbound push, which is why the RESTCONF+gNMI path looked ~6×
+    # faster than the daemon's gNMI path.
     if action == "DELETE":
         cmd = get_gnmic_base_cmd() + [
-            "--target", target_device,
-            "set",
-            "--delete", f"/interfaces/interface[name={if_name}]/config/description",
+            "--target", target_device, "set",
+            "--delete", "/switching/state",
         ]
     else:
-        payload_json = json.dumps({
-            "name": if_name,
-            "config": {"name": if_name, "description": service_id, "enabled": True},
-        })
         cmd = get_gnmic_base_cmd() + [
-            "--target", target_device,
-            "set",
-            "--update",
-            f"/interfaces/interface[name={if_name}]:::json_ietf:::{payload_json}",
+            "--target", target_device, "set",
+            "--update", "/switching/state:::string:::enabled",
         ]
 
     try:
