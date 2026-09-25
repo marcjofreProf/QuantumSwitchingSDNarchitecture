@@ -3,4 +3,3 @@ paramiko==3.4.0
 grpcio==1.60.0
 grpcio-tools==1.60.0
 protobuf==4.25.4
-requests==2.31.0
