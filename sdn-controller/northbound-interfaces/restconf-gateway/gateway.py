@@ -34,11 +34,22 @@ CROSS_CONNECT_STORE = {}
 # onos-config addresses devices by their topo id, not by IP. Payloads
 # arriving from the benchmark or a RESTCONF caller may carry either form.
 # This table lets the gateway normalise both to the id onos-config knows.
+#
+# The node id and IP are configurable via environment variables so a
+# single image can be deployed against different physical nodes. The
+# defaults below match the MANO / 6G-OpenLab convention used by
+# bootstrap-node.sh and bootstrap-quantum-switching-sdn.sh.
+_QUANTUM_NODE_ID = os.getenv("QUANTUM_NODE_ID", "quantum-node-1")
+_QUANTUM_NODE_IP = os.getenv("QUANTUM_NODE_IP", "172.21.128.254")
+
 KNOWN_DEVICES = {
-    "quantum-node-1":    "quantum-node-1",
-    "10.0.0.254":        "quantum-node-1",
-    "10.0.0.254:50051":  "quantum-node-1",
+    _QUANTUM_NODE_ID:                _QUANTUM_NODE_ID,
+    _QUANTUM_NODE_IP:                _QUANTUM_NODE_ID,
+    f"{_QUANTUM_NODE_IP}:50051":     _QUANTUM_NODE_ID,
 }
+
+app.logger.info("KNOWN_DEVICES: %s (node=%s ip=%s)",
+                list(KNOWN_DEVICES.keys()), _QUANTUM_NODE_ID, _QUANTUM_NODE_IP)
 
 
 def _resolve_target(data):
