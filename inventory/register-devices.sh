@@ -6,6 +6,24 @@ set -eo pipefail
 DEVICES_DIR="$(dirname "$0")/devices"
 NAMESPACE="${NAMESPACE:-micro-onos}"
 
+# Load the deployment config written by bootstrap-quantum-switching-sdn.sh.
+# Values here override the addresses declared in inventory/devices/*.yaml,
+# so the same repository checkout can target different physical nodes
+# without editing tracked files.
+QUANTUM_SDN_CONF="${HOME}/.quantum-sdn/config.env"
+if [ -f "$QUANTUM_SDN_CONF" ]; then
+    while IFS='=' read -r k v; do
+        case "$k" in ''|\#*) continue ;; esac
+        if [ -z "${!k:-}" ]; then
+            printf -v "$k" '%s' "$v"
+            export "$k"
+        fi
+    done < "$QUANTUM_SDN_CONF"
+    echo "[*] Loaded deployment config from $QUANTUM_SDN_CONF"
+fi
+
+export CONTROLLER_HOST QUANTUM_NODE_ID QUANTUM_NODE_IP
+
 if [ ! -d "$DEVICES_DIR" ]; then
     echo "[ERROR] Directory $DEVICES_DIR not found."
     exit 1
@@ -336,6 +354,22 @@ for filepath in yaml_files:
     if not dev_id or not address:
         print(f"[EXCLUDED] Skipping {filepath}: Missing 'id' or 'address'.")
         continue
+
+    # Runtime override: if QUANTUM_NODE_IP is set in the environment and
+    # this device matches QUANTUM_NODE_ID, rewrite the address before it
+    # is pushed to onos-topo. The YAML keeps its declared default; the
+    # environment provides the deployment-specific value.
+    env_node_id = os.environ.get("QUANTUM_NODE_ID")
+    env_node_ip = os.environ.get("QUANTUM_NODE_IP")
+    if env_node_id and env_node_ip and dev_id == env_node_id:
+        override_addr = f"{env_node_ip}:50051"
+        print(f"[*] Overriding address for '{dev_id}' from environment: "
+              f"{address} -> {override_addr}")
+        address = override_addr
+        if isinstance(yaml_aspects, dict) and "onos.topo.Configurable" in yaml_aspects:
+            cfg = yaml_aspects["onos.topo.Configurable"]
+            if isinstance(cfg, dict):
+                cfg["address"] = override_addr
 
     active_dev_ids.add(dev_id)
     device_configs.append({
