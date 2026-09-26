@@ -42,10 +42,22 @@ CROSS_CONNECT_STORE = {}
 _QUANTUM_NODE_ID = os.getenv("QUANTUM_NODE_ID", "quantum-node-1")
 _QUANTUM_NODE_IP = os.getenv("QUANTUM_NODE_IP", "172.21.128.254")
 
+# onos-config addresses devices by their topo id. This table maps anything
+# a caller might send (id or IP) to the id onos-config expects.
 KNOWN_DEVICES = {
     _QUANTUM_NODE_ID:                _QUANTUM_NODE_ID,
     _QUANTUM_NODE_IP:                _QUANTUM_NODE_ID,
     f"{_QUANTUM_NODE_IP}:50051":     _QUANTUM_NODE_ID,
+}
+
+# The southbound adapter, on the other hand, needs an IP to dial. This
+# table maps anything a caller might send (id or IP) to the IP the
+# adapter should connect to. Without this, a payload that carries the
+# topo entity name in `target-node-ip` results in the adapter trying to
+# DNS-resolve "quantum-node-1", which fails inside the cluster.
+ADAPTER_TARGETS = {
+    _QUANTUM_NODE_ID: _QUANTUM_NODE_IP,
+    _QUANTUM_NODE_IP: _QUANTUM_NODE_IP,
 }
 
 app.logger.info("KNOWN_DEVICES: %s (node=%s ip=%s)",
@@ -204,35 +216,28 @@ def _adapter_post(path, body):
         return True, r.text
 
 
+def _resolve_adapter_host(data):
+    """Return the IP the adapter should dial, given either the topo id
+    or the IP in the payload."""
+    raw = (data.get("target-node-ip") or data.get("target-node") or "").strip()
+    return ADAPTER_TARGETS.get(raw, raw)
+
+
 def _dispatch_netconf(action, data):
-    host = data.get("target-node-ip") or data.get("target-node")
+    host = _resolve_adapter_host(data)
     if not host:
         return False, "payload missing target-node-ip / target-node"
 
     # SET (POST/PUT) → enable the switch; DELETE → disable it.
     state = (action == "SET")
 
-    return _adapter_post("/netconf/switch", {
-        "host":     host,
-        "port":     NETCONF_PORT,
-        "user":     NETCONF_USER,
-        "password": NETCONF_PASS,
-        "state":    state,
-    })
-
 
 def _dispatch_gnoi(action, data):
-    host = data.get("target-node-ip") or data.get("target-node")
+    host = _resolve_adapter_host(data)
     if not host:
         return False, "payload missing target-node-ip / target-node"
 
     state = (action == "SET")
-
-    return _adapter_post("/gnoi/crossconnect", {
-        "host":  host,
-        "port":  GNOI_PORT,
-        "state": state,
-    })
 
 
 # ---------------------------------------------------------------------------
