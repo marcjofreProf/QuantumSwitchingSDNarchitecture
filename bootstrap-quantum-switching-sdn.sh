@@ -1187,6 +1187,34 @@ deploy_cloud_native_uonos() {
         QUANTUM_NODE_IP="$QUANTUM_NODE_IP" \
         >/dev/null
 
+    # Verify the env actually landed in the deployment spec.
+    #
+    # `kubectl set env` is a no-op if the deployment does not exist yet or
+    # if the ReplicaSet is mid-rollout, and it does not return a non-zero
+    # exit code in those cases. When that happens, the gateway pod falls
+    # back to the default values baked into the deploy.yaml manifest
+    # (QUANTUM_NODE_IP=172.21.128.254), not the values the user just
+    # supplied. The result is that every southbound call from the gateway
+    # attempts to reach the MANO default instead of the real node — a
+    # failure that surfaces as 502 responses and 10-second timeouts, far
+    # from the place where the mismatch was introduced.
+    #
+    # Reading back the applied value catches this immediately and aborts
+    # the bootstrap before any other phase depends on the gateway.
+    sleep 3
+    APPLIED_NODE_ID=$(kubectl -n micro-onos get deploy restconf-gateway \
+        -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="QUANTUM_NODE_ID")].value}' 2>/dev/null || echo "")
+    APPLIED_NODE_IP=$(kubectl -n micro-onos get deploy restconf-gateway \
+        -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="QUANTUM_NODE_IP")].value}' 2>/dev/null || echo "")
+
+    if [ "$APPLIED_NODE_ID" != "$QUANTUM_NODE_ID" ] || [ "$APPLIED_NODE_IP" != "$QUANTUM_NODE_IP" ]; then
+        log_error "Gateway env did not apply cleanly."
+        log_error "  expected: QUANTUM_NODE_ID=$QUANTUM_NODE_ID  QUANTUM_NODE_IP=$QUANTUM_NODE_IP"
+        log_error "  got:      QUANTUM_NODE_ID=$APPLIED_NODE_ID  QUANTUM_NODE_IP=$APPLIED_NODE_IP"
+    fi
+
+    log_info "  Confirmed gateway env: $APPLIED_NODE_ID / $APPLIED_NODE_IP"
+
     log_info "Waiting for RESTCONF Gateway rollout..."
     kubectl rollout status deployment/restconf-gateway \
         -n micro-onos --timeout=120s \
