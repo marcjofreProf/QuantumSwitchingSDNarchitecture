@@ -51,6 +51,14 @@ spec:
             - name: ADAPTER_TIMEOUT
               value: "10"
 
+            # Physical node identity. Overridden at apply time by the
+            # bootstrap via `kubectl set env`, based on the values the
+            # user supplied during configuration.
+            - name: QUANTUM_NODE_ID
+              value: "quantum-node-1"
+            - name: QUANTUM_NODE_IP
+              value: "172.21.128.254"
+
             # Device-side southbound ports / creds
             - name: NETCONF_PORT
               value: "8300"
