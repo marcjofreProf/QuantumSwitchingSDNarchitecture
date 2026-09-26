@@ -169,45 +169,66 @@ EOF
 
 ensure_sufficient_memory() {
     log_info "Phase 0.5: Checking system RAM and configuring Swap..."
-    
-    local total_ram_mb
-    total_ram_mb=$(free -m | awk '/^Mem:/{print $2}')
-    local min_ram_mb=32768 # 32 GB threshold (32 * 1024 MB)
-    local target_swap_mb=8192 # 8 GB target swap (8 * 1024 MB)
-    
-    log_info "Detected physical RAM: ${total_ram_mb} MB"
-    
-    if [ "$total_ram_mb" -lt "$min_ram_mb" ]; then
-        log_warn "System RAM (${total_ram_mb} MB) is below recommended 32 GB (${min_ram_mb} MB)."
-        
-        local total_swap_mb
-        total_swap_mb=$(free -m | awk '/^Swap:/{print $2}')
-        
-        if [ "$total_swap_mb" -ge "$target_swap_mb" ]; then
-            log_success "Sufficient Swap space (${total_swap_mb} MB) is already configured."
-        else
-            log_info "Configuring an 8 GB swap file to prevent OOM errors..."
-            
-            sudo swapoff -a 2>/dev/null || true
-            
-            if ! sudo fallocate -l 8G /swapfile 2>/dev/null; then
-                log_info "fallocate failed, using dd to allocate swap..."
-                sudo dd if=/dev/zero of=/swapfile bs=1M count=8192 status=progress
-            fi
-            
-            sudo chmod 600 /swapfile
-            sudo mkswap /swapfile
-            sudo swapon /swapfile
-            
-            if ! grep -q '/swapfile' /etc/fstab; then
-                echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab >/dev/null
-            fi
-            
-            log_success "8 GB swap file successfully enabled and configured."
-        fi
-    else
-        log_success "Sufficient physical RAM detected (32 GB+)."
+
+    # LC_ALL=C so `free` prints English field names regardless of the
+    # system locale (the awk patterns below match "Mem:" and "Swap:").
+    local total_ram_mb total_swap_mb total_mb
+    total_ram_mb=$(LC_ALL=C free -m | awk '/^Mem:/{print $2}')
+    total_swap_mb=$(LC_ALL=C free -m | awk '/^Swap:/{print $2}')
+    total_mb=$((total_ram_mb + total_swap_mb))
+
+    # 32 GB of *addressable* memory (RAM + swap) is the recommended
+    # target for the full stack: K3s, µONOS (7 pods + 3 consensus
+    # replicas), OSM (~15 Juju charms), Open5GS, and the two custom
+    # services. The check is advisory — the script continues either way.
+    # Override with MEMORY_RECOMMENDED_MB=<value> for smaller deployments.
+    local recommended_mb="${MEMORY_RECOMMENDED_MB:-32768}"
+    local target_swap_mb=8192   # 8 GB target swap
+
+    log_info "Detected physical RAM:   ${total_ram_mb} MB"
+    log_info "Detected existing swap:  ${total_swap_mb} MB"
+    log_info "Total addressable:       ${total_mb} MB"
+
+    # Fast path: already have enough RAM + swap.
+    if [ "$total_mb" -ge "$recommended_mb" ]; then
+        log_success "Total memory (RAM + swap) is ${total_mb} MB, meets the recommended ${recommended_mb} MB."
+        return 0
     fi
+
+    # Below recommended. If swap is already present at the target size,
+    # there is nothing more to add — the user must have configured it
+    # deliberately. Warn and continue.
+    if [ "$total_swap_mb" -ge "$target_swap_mb" ]; then
+        log_warn "Total memory (RAM + swap) is ${total_mb} MB, below the recommended ${recommended_mb} MB."
+        log_warn "Existing swap (${total_swap_mb} MB) is already at or above the ${target_swap_mb} MB target."
+        log_warn "Proceeding without changes; the stack will run but may be slow under load."
+        return 0
+    fi
+
+    # Below recommended and swap is missing or too small. Add the swapfile.
+    log_warn "Total memory (RAM + swap) is ${total_mb} MB, below the recommended ${recommended_mb} MB."
+    log_info "Configuring an 8 GB swap file to reduce OOM risk..."
+
+    sudo swapoff -a 2>/dev/null || true
+
+    if ! sudo fallocate -l 8G /swapfile 2>/dev/null; then
+        log_info "fallocate failed, using dd to allocate swap..."
+        sudo dd if=/dev/zero of=/swapfile bs=1M count=8192 status=progress
+    fi
+
+    sudo chmod 600 /swapfile
+    sudo mkswap /swapfile
+    sudo swapon /swapfile
+
+    if ! grep -q '/swapfile' /etc/fstab; then
+        echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab >/dev/null
+    fi
+
+    log_success "8 GB swap file successfully enabled and configured."
+
+    # Report the new total after swap is active.
+    total_swap_mb=$(LC_ALL=C free -m | awk '/^Swap:/{print $2}')
+    log_info "New total addressable memory: $((total_ram_mb + total_swap_mb)) MB"
 }
 
 create_repo_structure() {
