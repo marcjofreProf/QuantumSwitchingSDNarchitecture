@@ -30,6 +30,42 @@ log_error() { echo -e "${RED}[ERROR] $1${NC}"; exit 1; }
 # BeagleBone. The canonical gnmic config now lives at /etc/gnmic/gnmic.yaml.
 rm -f ./.gnmic.yaml 2>/dev/null || true
 
+ask_user() {
+    local prompt="$1"
+    local default="$2"
+    local response
+
+    if [ "$default" = "Y" ]; then
+        read -p "$(echo -e "${YELLOW}${prompt} [Y/n]: ${NC}")" response
+        response=${response:-Y}
+    else
+        read -p "$(echo -e "${YELLOW}${prompt} [y/N]: ${NC}")" response
+        response=${response:-N}
+    fi
+
+    if [[ "$response" =~ ^[Yy]$ ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Print a prompt, read a line, and echo the value (either the user's
+# input or the default if the input was empty). Mirrors the helper of
+# the same name in bootstrap-node.sh so both scripts behave identically.
+prompt_with_default() {
+    local prompt_text="$1"
+    local default_value="$2"
+    local input_value=""
+    echo -e -n "${CYAN}${prompt_text}${NC} [${default_value}]: " >&2
+    read -r input_value || true
+    if [ -z "$input_value" ]; then
+        echo "$default_value"
+    else
+        echo "$input_value"
+    fi
+}
+
 # ---------------------------------------------------------------------------
 # Phase -1: Resolve user-configurable deployment values
 #
@@ -105,44 +141,6 @@ log_info "  QUANTUM_NODE_ID = $QUANTUM_NODE_ID"
 log_info "  QUANTUM_NODE_IP = $QUANTUM_NODE_IP"
 log_info "  Config file     = $QUANTUM_SDN_CONF"
 echo
-
-
-
-ask_user() {
-    local prompt="$1"
-    local default="$2"
-    local response
-
-    if [ "$default" = "Y" ]; then
-        read -p "$(echo -e "${YELLOW}${prompt} [Y/n]: ${NC}")" response
-        response=${response:-Y}
-    else
-        read -p "$(echo -e "${YELLOW}${prompt} [y/N]: ${NC}")" response
-        response=${response:-N}
-    fi
-
-    if [[ "$response" =~ ^[Yy]$ ]]; then
-        return 0
-    else
-        return 1
-    fi
-}
-
-# Print a prompt, read a line, and echo the value (either the user's
-# input or the default if the input was empty). Mirrors the helper of
-# the same name in bootstrap-node.sh so both scripts behave identically.
-prompt_with_default() {
-    local prompt_text="$1"
-    local default_value="$2"
-    local input_value=""
-    echo -e -n "${CYAN}${prompt_text}${NC} [${default_value}]: " >&2
-    read -r input_value || true
-    if [ -z "$input_value" ]; then
-        echo "$default_value"
-    else
-        echo "$input_value"
-    fi
-}
 
 wait_for_apt_lock() {
     log_info "Checking for dpkg/apt locks..."
