@@ -114,34 +114,49 @@ If the centralized server lacks the RAM/CPU to run a full Kubernetes cluster and
 To recover the different elements after and abrupt stop and re-start:
 
 ```bash
-# 1. Scale down to 0 to kill duplicate rolling pods
-kubectl scale deployment -n micro-onos onos-config onos-topo onos-umbrella-device-provisioner --replicas=0
+set -euo pipefail
 
-# 2. Patch finalizers and force delete stuck PVCs and pods
-for pvc in $(kubectl get pvc -n micro-onos --no-headers -o custom-columns=":metadata.name" | grep consensus); do
-  kubectl patch pvc $pvc -n micro-onos -p '{"metadata":{"finalizers":null}}' --type=merge 2>/dev/null || true
+NS=micro-onos
+SS=onos-umbrella-consensus
+PVCS=(
+  atomix-data-onos-umbrella-consensus-0
+  atomix-data-onos-umbrella-consensus-1
+  atomix-data-onos-umbrella-consensus-2
+)
+
+echo "=== 1. Stop consensus ==="
+kubectl -n "$NS" scale statefulset "$SS" --replicas=0
+for i in 0 1 2; do
+    kubectl -n "$NS" wait --for=delete "pod/${SS}-${i}" --timeout=120s || true
+done
+kubectl -n "$NS" get pods -l name="$SS" || echo "  (no consensus pods — good)"
+
+echo "=== 2. Patch PVC finalizers ==="
+for pvc in "${PVCS[@]}"; do
+    echo "  patching $pvc"
+    kubectl -n "$NS" patch pvc "$pvc" \
+        -p '{"metadata":{"finalizers":null}}' --type=merge
 done
 
-for pod in $(kubectl get pods -n micro-onos --no-headers -o custom-columns=":metadata.name" | grep -E "consensus|onos-config|onos-topo|device-provisioner"); do
-  kubectl patch pod $pod -n micro-onos -p '{"metadata":{"finalizers":null}}' --type=merge 2>/dev/null || true
-  kubectl delete pod $pod -n micro-onos --force --grace-period=0 2>/dev/null || true
+echo "=== 3. Delete PVCs (wipes corrupted Raft state) ==="
+for pvc in "${PVCS[@]}"; do
+    echo "  deleting $pvc"
+    kubectl -n "$NS" delete pvc "$pvc" --wait=true
+done
+echo "  remaining consensus PVCs:"
+kubectl -n "$NS" get pvc | grep consensus || echo "  (none — good)"
+
+echo "=== 4. Bring consensus back ==="
+kubectl -n "$NS" scale statefulset "$SS" --replicas=3
+
+echo "=== 5. Wait for each replica in order ==="
+for i in 0 1 2; do
+    echo "  waiting for ${SS}-${i} to become Ready..."
+    kubectl -n "$NS" wait --for=condition=Ready "pod/${SS}-${i}" --timeout=300s
 done
 
-# 3. Restart K3s engine and wait for API server recovery
-sudo systemctl restart k3s
-echo "Waiting for K3s API server to come back online..."
-until kubectl get nodes >/dev/null 2>&1; do sleep 3; done
-
-# 4. Scale back to 1 replica and apply environment settings
-kubectl scale deployment -n micro-onos onos-config onos-topo onos-umbrella-device-provisioner --replicas=1
-kubectl set env deployment/onos-config -n micro-onos MASTER_ELECTION=false 2>/dev/null || true
-
-# 5. Clear lingering transaction locks
-sleep 5
-for tx in $(kubectl exec -n micro-onos deployment/onos-cli -- onos config get transactions 2>/dev/null | awk 'NR>1 {print $1}'); do
-  kubectl exec -n micro-onos deployment/onos-cli -- onos config delete transaction "$tx" 2>/dev/null || true
-done
-kubectl get pods -n micro-onos -w
+echo "=== 6. Consensus is up. Full namespace status: ==="
+kubectl -n "$NS" get pods -w
 ```
 Then, re-register the devices in the micro-onos:
 ```bash
