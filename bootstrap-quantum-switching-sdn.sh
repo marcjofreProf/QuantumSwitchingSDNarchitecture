@@ -1096,8 +1096,8 @@ deploy_cloud_native_uonos() {
         kubectl delete pod -n micro-onos "onos-umbrella-consensus-${i}" \
             --grace-period=0 --force 2>/dev/null || true
         kubectl wait --for=condition=Ready "pod/onos-umbrella-consensus-${i}" \
-            -n micro-onos --timeout=180s 2>/dev/null || \
-            log_warn "  consensus-${i} did not become Ready in 180s"
+            -n micro-onos --timeout=600s 2>/dev/null || \
+            log_warn "  consensus-${i} did not become Ready in 600s"
         sleep 10
     done
     
@@ -1152,12 +1152,22 @@ deploy_cloud_native_uonos() {
 
     log_info "Building RESTCONF Gateway image..."
     if command -v docker >/dev/null 2>&1; then
-        docker build -t quantum-restconf-gateway:1.0.0 \
+        # Read the image tag from the manifest so the bootstrap never
+        # drifts from what the deployment actually declares. Bumping the
+        # tag in deploy.yaml is then the single source of truth.
+        GW_MANIFEST="$SCRIPT_DIR/sdn-controller/northbound-interfaces/restconf-gateway/deploy.yaml"
+        GW_IMAGE=$(grep -m1 '^ *image:' "$GW_MANIFEST" | awk '{print $2}')
+        if [ -z "$GW_IMAGE" ]; then
+            log_error "Could not extract image from $GW_MANIFEST"
+        fi
+        log_info "  Gateway image tag from manifest: $GW_IMAGE"
+
+        docker build -t "$GW_IMAGE" \
             "$SCRIPT_DIR/sdn-controller/northbound-interfaces/restconf-gateway" \
             || log_error "Failed to build RESTCONF Gateway image."
 
         if command -v k3s >/dev/null 2>&1; then
-            docker save quantum-restconf-gateway:1.0.0 \
+            docker save "$GW_IMAGE" \
                 | sudo k3s ctr images import - \
                 || log_warn "K3s image import for gateway failed (non-fatal)."
         fi
@@ -1232,12 +1242,19 @@ deploy_sdn_adapter_and_topo_aspects() {
 
     # 1. Build and import the SDN Adapter container image
     if [ -f "${adapter_dir}/Dockerfile" ]; then
-        log_info "Building sdn-adapter Docker image..."
-        docker build -t sdn-adapter:1.0.0 "${adapter_dir}" || log_error "Failed to build sdn-adapter image."
+        # Read the image tag from the manifest so the bootstrap never
+        # drifts from what the deployment actually declares.
+        AD_MANIFEST="${adapter_dir}/deploy.yaml"
+        AD_IMAGE=$(grep -m1 '^ *image:' "$AD_MANIFEST" | awk '{print $2}')
+        if [ -z "$AD_IMAGE" ]; then
+            log_error "Could not extract image from $AD_MANIFEST"
+        fi
+        log_info "Building sdn-adapter Docker image ($AD_IMAGE)..."
+        docker build -t "$AD_IMAGE" "${adapter_dir}" || log_error "Failed to build sdn-adapter image."
 
         if command -v k3s >/dev/null 2>&1; then
             log_info "Importing sdn-adapter image into K3s..."
-            docker save sdn-adapter:1.0.0 2>/dev/null | sudo k3s ctr images import - || true
+            docker save "$AD_IMAGE" 2>/dev/null | sudo k3s ctr images import - || true
         fi
     else
         log_warn "Dockerfile for sdn-adapter not found at ${adapter_dir}/Dockerfile. Using fallback image."
