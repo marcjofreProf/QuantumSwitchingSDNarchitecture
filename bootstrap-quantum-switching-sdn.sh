@@ -978,9 +978,26 @@ deploy_cloud_native_uonos() {
     # device-provisioner, and the three consensus pods in one shot,
     # regardless of how the chart changes per-component name labels
     # between versions.
-    kubectl delete pod -n micro-onos \
-        -l app.kubernetes.io/instance=onos-umbrella \
-        --grace-period=0 --force 2>/dev/null || true
+    log_info "Restarting consensus pods one at a time to allow leader election..."
+    for i in 0 1 2; do
+        kubectl delete pod -n micro-onos "onos-umbrella-consensus-${i}" \
+            --grace-period=0 --force 2>/dev/null || true
+        kubectl wait --for=condition=Ready "pod/onos-umbrella-consensus-${i}" \
+            -n micro-onos --timeout=180s 2>/dev/null || \
+            log_warn "  consensus-${i} did not become Ready in 180s"
+        sleep 10
+    done
+    
+    log_info "Restarting remaining µONOS pods..."
+    for label in \
+        app.kubernetes.io/name=onos-config \
+        app.kubernetes.io/name=onos-cli \
+        app.kubernetes.io/name=onos-topo \
+        app.kubernetes.io/name=topo-discovery \
+        app.kubernetes.io/name=device-provisioner ; do
+        kubectl delete pod -n micro-onos -l "$label" \
+            --grace-period=0 --force 2>/dev/null || true
+    done
     
     sleep 10
     
