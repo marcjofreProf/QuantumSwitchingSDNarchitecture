@@ -53,9 +53,11 @@ fi
 log_info "Purging cluster-scoped Webhook Configurations, ClusterRoles, and CRDs..."
 
 # Remove Mutating & Validating Webhooks (Atomix, ONOS, Juju, OSM)
-kubectl delete mutatingwebhookconfigurations -l app.kubernetes.io/part-of=atomix 2>/dev/null || true
-kubectl delete mutatingwebhookconfigurations -l controller.juju.is/name=osm-vca 2>/dev/null || true
-kubectl delete validatingwebhookconfigurations -l controller.juju.is/name=osm-vca 2>/dev/null || true
+# Redirect both stdout and stderr: `kubectl delete -l <selector>` prints
+# "No resources found" to stdout when the selector matches nothing.
+kubectl delete mutatingwebhookconfigurations -l app.kubernetes.io/part-of=atomix >/dev/null 2>&1 || true
+kubectl delete mutatingwebhookconfigurations -l controller.juju.is/name=osm-vca >/dev/null 2>&1 || true
+kubectl delete validatingwebhookconfigurations -l controller.juju.is/name=osm-vca >/dev/null 2>&1 || true
 
 for mwc in $(kubectl get mutatingwebhookconfigurations -o name 2>/dev/null | grep -E 'atomix|onos|juju|osm'); do
     echo -e "${CYAN}Deleting mutating webhook: ${mwc}${NC}"
@@ -67,12 +69,12 @@ for vwc in $(kubectl get validatingwebhookconfigurations -o name 2>/dev/null | g
 done
 
 # Remove ClusterRoles and ClusterRoleBindings
-kubectl delete clusterrolebindings -l controller.juju.is/name=osm-vca 2>/dev/null || true
-kubectl delete clusterroles -l controller.juju.is/name=osm-vca 2>/dev/null || true
-kubectl delete clusterrolebindings -l app.kubernetes.io/part-of=atomix 2>/dev/null || true
-kubectl delete clusterroles -l app.kubernetes.io/part-of=atomix 2>/dev/null || true
-kubectl delete clusterrolebindings -l app.kubernetes.io/name=onos-operator 2>/dev/null || true
-kubectl delete clusterroles -l app.kubernetes.io/name=onos-operator 2>/dev/null || true
+kubectl delete clusterrolebindings -l controller.juju.is/name=osm-vca >/dev/null 2>&1 || true
+kubectl delete clusterroles       -l controller.juju.is/name=osm-vca >/dev/null 2>&1 || true
+kubectl delete clusterrolebindings -l app.kubernetes.io/part-of=atomix >/dev/null 2>&1 || true
+kubectl delete clusterroles       -l app.kubernetes.io/part-of=atomix >/dev/null 2>&1 || true
+kubectl delete clusterrolebindings -l app.kubernetes.io/name=onos-operator >/dev/null 2>&1 || true
+kubectl delete clusterroles       -l app.kubernetes.io/name=onos-operator >/dev/null 2>&1 || true
 
 # Remove leftover Custom Resource Definitions (CRDs)
 for crd in $(kubectl get crd -o name 2>/dev/null | grep -E 'atomix.io|onosproject.org|juju'); do
