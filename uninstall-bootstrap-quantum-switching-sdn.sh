@@ -243,4 +243,82 @@ rm -f get-docker.sh get_helm.sh install_osm.sh grpcurl_*.tar.gz helm-*-linux-amd
 log_info "Reverting custom sysctl configurations..."
 sudo rm -f /etc/sysctl.d/99-sdn-uonos.conf /etc/sysctl.d/99-inotify-limits.conf /etc/sysctl.d/99-juju.conf /etc/modules-load.d/sdn-uonos.conf 2>/dev/null || true
 
+# 10. Clean up orphaned veth interfaces
+#
+# Force-deleted pods and namespaces (steps 2 and 5) can leave veth pairs
+# behind because the CNI teardown does not always run. K3s normally
+# collects these within a few minutes, but on a VM that is shut down
+# immediately after uninstall they accumulate. An orphan looks like
+#     veth5fb35a68@if2
+# where "@if2" refers to an interface index in a container namespace
+# that no longer exists.
+#
+# This phase removes every host-side veth whose peer interface is not
+# present in any running container's network namespace. Live veths
+# belonging to K3s system pods (coredns, local-path-provisioner,
+# metrics-server) are preserved because their peers are alive.
+log_info "Cleaning up orphaned veth interfaces..."
+
+# Give K3s a moment to finish any pending CNI teardown after the
+# forced pod deletions above.
+sleep 10
+
+if ! command -v crictl >/dev/null 2>&1; then
+    log_warn "crictl not available; skipping veth cleanup."
+elif ! command -v jq >/dev/null 2>&1; then
+    log_warn "jq not available; skipping veth cleanup."
+else
+    # Collect the netns path of every running container.
+    netns_list=""
+    for cid in $(sudo crictl ps --state Running -q 2>/dev/null); do
+        ns=$(sudo crictl inspect "$cid" 2>/dev/null \
+             | jq -r '.info.runtimeSpec.linux.namespaces[]? | select(.type=="network") | .path' 2>/dev/null)
+        [ -n "$ns" ] && netns_list="$netns_list $ns"
+    done
+
+    removed=0
+    kept=0
+    for v in $(ip -o link show 2>/dev/null \
+            | awk -F': ' '$2 ~ /^veth/ {print $2}' | cut -d@ -f1); do
+        # Peer index from the veth name: vethX@ifN -> N. If there is no
+        # @ifN suffix, the peer is already gone and the veth is an orphan.
+        peer_idx=$(ip -o link show "$v" 2>/dev/null \
+            | sed -n 's/.*@if\([0-9]*\).*/\1/p')
+
+        if [ -z "$peer_idx" ]; then
+            if sudo ip link delete "$v" 2>/dev/null; then
+                log_info "  Removed orphan veth: $v"
+                removed=$((removed + 1))
+            fi
+            continue
+        fi
+
+        # Check whether any running container netns still holds an
+        # interface at index $peer_idx.
+        referenced=no
+        for ns in $netns_list; do
+            if sudo nsenter --net="$ns" ip -o link show 2>/dev/null \
+                    | awk -F': ' '{print $1}' | grep -qx "$peer_idx"; then
+                referenced=yes
+                break
+            fi
+        done
+
+        if [ "$referenced" = "yes" ]; then
+            kept=$((kept + 1))
+        else
+            if sudo ip link delete "$v" 2>/dev/null; then
+                log_info "  Removed orphan veth: $v"
+                removed=$((removed + 1))
+            fi
+        fi
+    done
+
+    if [ "$removed" -gt 0 ] || [ "$kept" -gt 0 ]; then
+        log_success "veth cleanup: removed $removed orphan(s), kept $kept in use."
+    else
+        log_info "No veth interfaces present."
+    fi
+fi
+
 log_success "Environment successfully cleaned up and reset!"
