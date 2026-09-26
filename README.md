@@ -118,18 +118,31 @@ set -euo pipefail
 
 NS=micro-onos
 SS=onos-umbrella-consensus
+DEPLOY_CFG=onos-config
+DEPLOY_TOPO=onos-topo
 PVCS=(
   atomix-data-onos-umbrella-consensus-0
   atomix-data-onos-umbrella-consensus-1
   atomix-data-onos-umbrella-consensus-2
 )
 
+echo "=== Pre-flight: clean any leftover consensus pods ==="
+# Force-delete pods from a previous failed recovery so scale-to-0 cannot hang.
+LEFTOVER=$(kubectl -n "$NS" get pods -l name="$SS" -o name 2>/dev/null || true)
+if [ -n "$LEFTOVER" ]; then
+    echo "$LEFTOVER" | xargs -r kubectl -n "$NS" delete --force --grace-period=0
+fi
+
 echo "=== 1. Stop consensus ==="
 kubectl -n "$NS" scale statefulset "$SS" --replicas=0
 for i in 0 1 2; do
-    kubectl -n "$NS" wait --for=delete "pod/${SS}-${i}" --timeout=120s || true
+    if ! kubectl -n "$NS" wait --for=delete "pod/${SS}-${i}" --timeout=120s; then
+        echo "  WARN: pod/${SS}-${i} did not disappear in 120s; forcing"
+        kubectl -n "$NS" delete pod/"${SS}-${i}" --force --grace-period=0 || true
+    fi
 done
-kubectl -n "$NS" get pods -l name="$SS" || echo "  (no consensus pods — good)"
+echo "  remaining consensus pods:"
+kubectl -n "$NS" get pods -l name="$SS" || echo "  (none — good)"
 
 echo "=== 2. Patch PVC finalizers ==="
 for pvc in "${PVCS[@]}"; do
@@ -141,10 +154,20 @@ done
 echo "=== 3. Delete PVCs (wipes corrupted Raft state) ==="
 for pvc in "${PVCS[@]}"; do
     echo "  deleting $pvc"
-    kubectl -n "$NS" delete pvc "$pvc" --wait=true
+    if ! kubectl -n "$NS" delete pvc "$pvc" --wait=true --timeout=60s; then
+        echo "  WARN: PVC delete timed out; retrying with JSON finalizer clear"
+        kubectl -n "$NS" patch pvc "$pvc" \
+            --type=json -p '[{"op":"replace","path":"/metadata/finalizers","value":[]}]' || true
+        kubectl -n "$NS" delete pvc "$pvc" --wait=true --timeout=60s || true
+    fi
 done
 echo "  remaining consensus PVCs:"
-kubectl -n "$NS" get pvc | grep consensus || echo "  (none — good)"
+if kubectl -n "$NS" get pvc 2>/dev/null | grep -q consensus; then
+    echo "  ERROR: consensus PVCs still present, aborting"
+    kubectl -n "$NS" get pvc | grep consensus
+    exit 1
+fi
+echo "  (none — good)"
 
 echo "=== 4. Bring consensus back ==="
 kubectl -n "$NS" scale statefulset "$SS" --replicas=3
@@ -152,11 +175,37 @@ kubectl -n "$NS" scale statefulset "$SS" --replicas=3
 echo "=== 5. Wait for each replica in order ==="
 for i in 0 1 2; do
     echo "  waiting for ${SS}-${i} to become Ready..."
-    kubectl -n "$NS" wait --for=condition=Ready "pod/${SS}-${i}" --timeout=300s
+    if ! kubectl -n "$NS" wait --for=condition=Ready "pod/${SS}-${i}" --timeout=600s; then
+        echo "  ERROR: ${SS}-${i} did not become Ready in 600s"
+        echo "  Recent log tail:"
+        kubectl -n "$NS" logs "${SS}-${i}" --tail=30 || true
+        exit 1
+    fi
 done
 
-echo "=== 6. Consensus is up. Full namespace status: ==="
-kubectl -n "$NS" get pods -w
+echo "=== 6. Waiting for onos-config and onos-topo to recover ==="
+# Consensus being up does not mean the dependents have caught up. They may
+# restart several times while re-establishing their sessions.
+kubectl -n "$NS" rollout status "deploy/${DEPLOY_CFG}"  --timeout=600s
+kubectl -n "$NS" rollout status "deploy/${DEPLOY_TOPO}" --timeout=300s
+
+echo "=== 7. Sweep stale ReplicaSets (defensive) ==="
+# If a prior rollout restart was interrupted, an old RS can hold a zombie
+# pod alongside the new one. Scale any RS with 0 Ready to 0 replicas.
+for rs in $(kubectl -n "$NS" get rs -o name 2>/dev/null); do
+    ready=$(kubectl -n "$NS" get "$rs" -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo 0)
+    desired=$(kubectl -n "$NS" get "$rs" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo 0)
+    if [ "${ready:-0}" = "0" ] && [ "${desired:-0}" != "0" ]; then
+        name=$(basename "$rs")
+        # Skip RSes that simply haven't scaled up yet — only sweep if older than 1 min.
+        age=$(kubectl -n "$NS" get "$rs" -o jsonpath='{.metadata.creationTimestamp}' 2>/dev/null || echo "")
+        echo "  inactive RS: $name (desired=$desired ready=0 age=$age)"
+    fi
+done
+
+echo
+echo "=== Recovery complete ==="
+kubectl -n "$NS" get pods
 ```
 Then, re-register the devices in the micro-onos:
 ```bash
