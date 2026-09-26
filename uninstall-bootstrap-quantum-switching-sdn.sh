@@ -141,18 +141,40 @@ kubectl delete namespace osm --force --grace-period=0 2>/dev/null || true
 kubectl delete namespace controller-osm-vca --force --grace-period=0 2>/dev/null || true
 
 # 6. Cleanup Local Docker Images
+#
+# Every tag is swept, not just 1.0.0. During development you accumulate
+# many tags (1.0.0, 2.0.0, 2.0.1, 2.1.0, ...), and hardcoding one tag
+# leaves the rest behind. Three image families are handled:
+#   - sdn-adapter:*                                 (southbound adapter)
+#   - quantum-restconf-gateway:*                    (northbound gateway)
+#   - onosproject/controller-quantum-switching:*    (model plugin)
 if command -v docker >/dev/null 2>&1; then
     log_info "Removing built Docker images..."
-    docker rmi sdn-adapter:1.0.0 2>/dev/null || true
-    docker rmi quantum-restconf-gateway:1.0.0 2>/dev/null || true
-    docker rmi onosproject/controller-quantum-switching:1.0.0-controller-quantum-switching-1.0.0 2>/dev/null || true
+    for img in $(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null \
+            | grep -E '^(sdn-adapter|quantum-restconf-gateway|onosproject/controller-quantum-switching):'); do
+        log_info "  Removing image $img"
+        docker rmi "$img" 2>/dev/null || true
+    done
     log_success "Docker images cleaned up."
 fi
 
-# Remove sdn-adapter from K3s containerd ---
+# Remove built images from K3s containerd.
+#
+# Same reasoning as the Docker cleanup above: sweep every tag, not just
+# 1.0.0. The model plugin is imported into containerd too by the bootstrap
+# (via `sudo k3s ctr images import -`), so it belongs in this sweep.
+# k3s ctr uses the fully-qualified reference, e.g.
+#   docker.io/library/sdn-adapter:2.1.0
+#   docker.io/onosproject/controller-quantum-switching:1.0.0-controller-quantum-switching-1.0.0
+# so the grep matches on the suffix (image name) rather than the prefix.
 if command -v k3s >/dev/null 2>&1; then
-    sudo k3s ctr images rm docker.io/library/sdn-adapter:1.0.0 2>/dev/null || true
-    sudo k3s ctr images rm docker.io/library/quantum-restconf-gateway:1.0.0 2>/dev/null || true
+    log_info "Removing K3s containerd images..."
+    for img in $(sudo k3s ctr images ls -q 2>/dev/null \
+            | grep -E 'sdn-adapter:|quantum-restconf-gateway:|controller-quantum-switching:'); do
+        log_info "  Removing containerd image $img"
+        sudo k3s ctr images rm "$img" 2>/dev/null || true
+    done
+    log_success "K3s containerd images cleaned up."
 fi
 
 # 7. Remove Virtual Environment
