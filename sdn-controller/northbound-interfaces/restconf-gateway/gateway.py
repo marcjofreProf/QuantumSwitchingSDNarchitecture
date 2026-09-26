@@ -231,6 +231,14 @@ def _dispatch_netconf(action, data):
     # SET (POST/PUT) → enable the switch; DELETE → disable it.
     state = (action == "SET")
 
+    return _adapter_post("/netconf/switch", {
+        "host":     host,
+        "port":     NETCONF_PORT,
+        "user":     NETCONF_USER,
+        "password": NETCONF_PASS,
+        "state":    state,
+    })
+
 
 def _dispatch_gnoi(action, data):
     host = _resolve_adapter_host(data)
@@ -238,6 +246,12 @@ def _dispatch_gnoi(action, data):
         return False, "payload missing target-node-ip / target-node"
 
     state = (action == "SET")
+
+    return _adapter_post("/gnoi/crossconnect", {
+        "host":  host,
+        "port":  GNOI_PORT,
+        "state": state,
+    })
 
 
 # ---------------------------------------------------------------------------
