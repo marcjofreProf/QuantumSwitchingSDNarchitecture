@@ -1096,8 +1096,8 @@ deploy_cloud_native_uonos() {
         kubectl delete pod -n micro-onos "onos-umbrella-consensus-${i}" \
             --grace-period=0 --force 2>/dev/null || true
         kubectl wait --for=condition=Ready "pod/onos-umbrella-consensus-${i}" \
-            -n micro-onos --timeout=600s 2>/dev/null || \
-            log_warn "  consensus-${i} did not become Ready in 600s"
+            -n micro-onos --timeout=1800s 2>/dev/null || \
+            log_warn "  consensus-${i} did not become Ready in 1800s"
         sleep 10
     done
     
