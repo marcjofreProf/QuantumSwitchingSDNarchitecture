@@ -184,14 +184,18 @@ log_info "Removing Python Virtual Environments..."
 sudo rm -rf /opt/sdn-venv 2>/dev/null || true
 rm -rf "$base_dir"/.venv "$base_dir"/venv "$base_dir"/env 2>/dev/null || true
 
-# 7b. Remove extracted µONOS certs and gnmic configuration
-log_info "Removing extracted µONOS certs and gnmic configuration..."
+# 7b. Remove extracted µONOS certs, gnmic configuration, and deployment config
+log_info "Removing extracted µONOS certs, gnmic configuration, and deployment config..."
 sudo rm -rf /etc/onos/certs 2>/dev/null || true
 sudo rm -f  /etc/gnmic/gnmic.yaml 2>/dev/null || true
 sudo rmdir  /etc/gnmic 2>/dev/null || true
 rm -f ./.gnmic.yaml 2>/dev/null || true
 rm -f "${HOME}/.gnmic.yaml" 2>/dev/null || true
-log_success "Certificate and gnmic configuration removed."
+
+# Remove the deployment config so the next bootstrap re-prompts.
+# Comment this line out if you want the values to survive a teardown.
+rm -rf "${HOME}/.quantum-sdn" 2>/dev/null || true
+log_success "Certificate, gnmic and deployment configuration removed."
 
 # 8. Delete Dynamically Generated Repository Files
 log_info "Cleaning generated build artifacts, stubs, and model plugins..."
