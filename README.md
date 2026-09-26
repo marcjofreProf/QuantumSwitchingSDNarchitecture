@@ -118,94 +118,114 @@ set -euo pipefail
 
 NS=micro-onos
 SS=onos-umbrella-consensus
-DEPLOY_CFG=onos-config
-DEPLOY_TOPO=onos-topo
 PVCS=(
   atomix-data-onos-umbrella-consensus-0
   atomix-data-onos-umbrella-consensus-1
   atomix-data-onos-umbrella-consensus-2
 )
+SETTLE=15   # seconds to let Raft settle between restarts
 
-echo "=== Pre-flight: clean any leftover consensus pods ==="
-# Force-delete pods from a previous failed recovery so scale-to-0 cannot hang.
-LEFTOVER=$(kubectl -n "$NS" get pods -l name="$SS" -o name 2>/dev/null || true)
-if [ -n "$LEFTOVER" ]; then
-    echo "$LEFTOVER" | xargs -r kubectl -n "$NS" delete --force --grace-period=0
+# --------------------------------------------------------------------------
+# Step 0: Diagnose
+# --------------------------------------------------------------------------
+echo "=== 0. Diagnosis ==="
+
+PANIC=$(kubectl -n "$NS" logs "$SS-0" --tail=200 2>/dev/null | grep -c "panic:" || true)
+LEADERLESS=$(kubectl -n "$NS" logs "$SS-0" --tail=200 2>/dev/null | grep -c "not the leader" || true)
+
+echo "  panic lines:      $PANIC"
+echo "  not-the-leader:   $LEADERLESS"
+
+if [ "${PANIC:-0}" -gt 0 ]; then
+    MODE=corruption
+    echo "  → Corruption detected. Will need PVC wipe."
+elif [ "${LEADERLESS:-0}" -gt 5 ]; then
+    MODE=splitbrain
+    echo "  → Split-brain detected. Trying non-destructive recovery first."
+else
+    MODE=unknown
+    echo "  → Ambiguous. Trying non-destructive recovery first."
+fi
+echo
+
+# --------------------------------------------------------------------------
+# Step 1: Non-destructive staggered restart
+#
+# Force each consensus pod to reload its Raft state one at a time. Between
+# restarts, wait for the pod to become Ready and let Raft settle. This
+# forces a fresh leader election against a stable peer set and resolves
+# split-brain without touching any data.
+# --------------------------------------------------------------------------
+echo "=== 1. Staggered restart (non-destructive) ==="
+for i in 0 1 2; do
+    echo "  Restarting ${SS}-${i}..."
+    kubectl -n "$NS" delete pod "${SS}-${i}" --wait=false
+    kubectl -n "$NS" wait --for=condition=Ready "pod/${SS}-${i}" --timeout=180s || {
+        echo "  ERROR: ${SS}-${i} did not become Ready"
+        exit 1
+    }
+    echo "  ${SS}-${i} Ready. Waiting ${SETTLE}s for Raft to settle..."
+    sleep "$SETTLE"
+done
+
+echo "  Verifying leader election..."
+sleep 10
+if kubectl -n "$NS" logs "$SS-0" --tail=60 2>/dev/null \
+        | grep -qE 'became leader|leader_updated.*leader:[0-9]+'; then
+    echo
+    echo "=== Recovery complete (non-destructive) ==="
+    kubectl -n "$NS" get pods -l name="$SS"
+    exit 0
 fi
 
-echo "=== 1. Stop consensus ==="
+if [ "$MODE" != "corruption" ]; then
+    echo "  No leader yet. Waiting another 30s before escalating..."
+    sleep 30
+    if kubectl -n "$NS" logs "$SS-0" --tail=60 2>/dev/null \
+            | grep -qE 'became leader|leader_updated.*leader:[0-9]+'; then
+        echo "=== Recovery complete (non-destructive, delayed) ==="
+        kubectl -n "$NS" get pods -l name="$SS"
+        exit 0
+    fi
+fi
+
+echo "  Non-destructive recovery did not produce a leader."
+echo "  Escalating to destructive recovery (PVC wipe)."
+echo
+
+# --------------------------------------------------------------------------
+# Step 2: Destructive recovery — only reached when Step 1 fails
+#
+# Wipes the Raft state and recreates the cluster. All µONOS configuration
+# is lost; re-register devices afterwards.
+# --------------------------------------------------------------------------
+echo "=== 2. Destructive recovery (PVC wipe) ==="
+
 kubectl -n "$NS" scale statefulset "$SS" --replicas=0
 for i in 0 1 2; do
-    if ! kubectl -n "$NS" wait --for=delete "pod/${SS}-${i}" --timeout=120s; then
-        echo "  WARN: pod/${SS}-${i} did not disappear in 120s; forcing"
-        kubectl -n "$NS" delete pod/"${SS}-${i}" --force --grace-period=0 || true
-    fi
+    kubectl -n "$NS" wait --for=delete "pod/${SS}-${i}" --timeout=120s || \
+        kubectl -n "$NS" delete pod "${SS}-${i}" --force --grace-period=0 || true
 done
-echo "  remaining consensus pods:"
-kubectl -n "$NS" get pods -l name="$SS" || echo "  (none — good)"
 
-echo "=== 2. Patch PVC finalizers ==="
 for pvc in "${PVCS[@]}"; do
-    echo "  patching $pvc"
     kubectl -n "$NS" patch pvc "$pvc" \
-        -p '{"metadata":{"finalizers":null}}' --type=merge
+        -p '{"metadata":{"finalizers":null}}' --type=merge || true
+    kubectl -n "$NS" delete pvc "$pvc" --wait=true --timeout=60s || true
 done
 
-echo "=== 3. Delete PVCs (wipes corrupted Raft state) ==="
-for pvc in "${PVCS[@]}"; do
-    echo "  deleting $pvc"
-    if ! kubectl -n "$NS" delete pvc "$pvc" --wait=true --timeout=60s; then
-        echo "  WARN: PVC delete timed out; retrying with JSON finalizer clear"
-        kubectl -n "$NS" patch pvc "$pvc" \
-            --type=json -p '[{"op":"replace","path":"/metadata/finalizers","value":[]}]' || true
-        kubectl -n "$NS" delete pvc "$pvc" --wait=true --timeout=60s || true
-    fi
-done
-echo "  remaining consensus PVCs:"
-if kubectl -n "$NS" get pvc 2>/dev/null | grep -q consensus; then
-    echo "  ERROR: consensus PVCs still present, aborting"
-    kubectl -n "$NS" get pvc | grep consensus
-    exit 1
-fi
-echo "  (none — good)"
-
-echo "=== 4. Bring consensus back ==="
-kubectl -n "$NS" scale statefulset "$SS" --replicas=3
-
-echo "=== 5. Wait for each replica in order ==="
-for i in 0 1 2; do
-    echo "  waiting for ${SS}-${i} to become Ready..."
-    if ! kubectl -n "$NS" wait --for=condition=Ready "pod/${SS}-${i}" --timeout=600s; then
-        echo "  ERROR: ${SS}-${i} did not become Ready in 600s"
-        echo "  Recent log tail:"
-        kubectl -n "$NS" logs "${SS}-${i}" --tail=30 || true
-        exit 1
-    fi
-done
-
-echo "=== 6. Waiting for onos-config and onos-topo to recover ==="
-# Consensus being up does not mean the dependents have caught up. They may
-# restart several times while re-establishing their sessions.
-kubectl -n "$NS" rollout status "deploy/${DEPLOY_CFG}"  --timeout=600s
-kubectl -n "$NS" rollout status "deploy/${DEPLOY_TOPO}" --timeout=300s
-
-echo "=== 7. Sweep stale ReplicaSets (defensive) ==="
-# If a prior rollout restart was interrupted, an old RS can hold a zombie
-# pod alongside the new one. Scale any RS with 0 Ready to 0 replicas.
-for rs in $(kubectl -n "$NS" get rs -o name 2>/dev/null); do
-    ready=$(kubectl -n "$NS" get "$rs" -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo 0)
-    desired=$(kubectl -n "$NS" get "$rs" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo 0)
-    if [ "${ready:-0}" = "0" ] && [ "${desired:-0}" != "0" ]; then
-        name=$(basename "$rs")
-        # Skip RSes that simply haven't scaled up yet — only sweep if older than 1 min.
-        age=$(kubectl -n "$NS" get "$rs" -o jsonpath='{.metadata.creationTimestamp}' 2>/dev/null || echo "")
-        echo "  inactive RS: $name (desired=$desired ready=0 age=$age)"
-    fi
+# Bring replicas up ONE AT A TIME so Raft bootstraps cleanly.
+for n in 1 2 3; do
+    echo "  Scaling consensus to $n replica(s)..."
+    kubectl -n "$NS" scale statefulset "$SS" --replicas=$n
+    # Wait for the newly added pod to become Ready before adding the next.
+    newest=$((n - 1))
+    kubectl -n "$NS" wait --for=condition=Ready "pod/${SS}-${newest}" --timeout=300s
+    sleep "$SETTLE"
 done
 
 echo
-echo "=== Recovery complete ==="
-kubectl -n "$NS" get pods
+echo "=== Recovery complete (destructive) ==="
+kubectl -n "$NS" get pods -l name="$SS"
 ```
 Then, re-register the devices in the micro-onos:
 ```bash
