@@ -227,6 +227,26 @@ def netconf_set_switch(host: str, port: int, user: str, password: str, state: bo
         _netconf_drop(key)
         return _do()
 
+def netconf_get_switch(host: str, port: int, user: str, password: str) -> str | None:
+    """Read <switch-state> from the device via a NETCONF subtree <get>."""
+    from lxml import etree
+    key = _netconf_key(host, port, user, password)
+
+    def _do():
+        mgr, lock = _netconf_acquire(key)
+        with lock:
+            reply = mgr.get(filter=("subtree",
+                f'<netconf-switch xmlns="{NETCONF_SWITCH_NS}"/>'))
+        root = etree.fromstring(reply.xml.encode())
+        node = root.find(f".//{{{NETCONF_SWITCH_NS}}}switch-state")
+        return node.text.strip().lower() if node is not None and node.text else None
+
+    try:
+        return _do()
+    except Exception as e:
+        log.warning("NETCONF get failed on pooled session (%s); reconnecting once", e)
+        _netconf_drop(key)
+        return _do()
 
 # ---------------------------------------------------------------------------
 # gNOI — pooled gRPC channels with HTTP/2 keepalives
@@ -390,6 +410,7 @@ class Handler(BaseHTTPRequestHandler):
                 "protocols": ["netconf", "gnoi"],
                 "routes": [
                     "/netconf/switch",
+                    "/netconf/status"
                     "/gnoi/crossconnect",
                     "/gnoi/status",
                 ],
@@ -415,6 +436,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if self.path == "/netconf/switch":
                 return self._handle_netconf_switch(body)
+            if self.path == "/netconf/status":
+                return self._handle_netconf_status(body)
             if self.path == "/gnoi/crossconnect":
                 return self._handle_gnoi_crossconnect(body)
             if self.path == "/gnoi/status":
@@ -441,6 +464,17 @@ class Handler(BaseHTTPRequestHandler):
         )
         return self._json(200, {"ok": True, "reply": out})
 
+      def _handle_netconf_status(self, body):
+        if "host" not in body:
+            return self._json(400, {"error": "missing field: host"})
+        out = netconf_get_switch(
+            host=body["host"],
+            port=int(body.get("port", 8300)),
+            user=body.get("user", "sdn"),
+            password=body.get("password", "quantum"),
+        )
+        return self._json(200, {"ok": True, "state": out})
+      
     def _handle_gnoi_crossconnect(self, body):
         for f in ("host", "state"):
             if f not in body:
