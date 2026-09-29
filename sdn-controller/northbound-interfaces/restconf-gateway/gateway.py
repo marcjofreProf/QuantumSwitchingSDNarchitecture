@@ -86,6 +86,22 @@ def _resolve_target(data):
 def healthz():
     return jsonify({"status": "ok"}), 200
 
+@app.route("/adapter/<path:subpath>", methods=["POST"])
+def adapter_proxy(subpath):
+    """Transparent proxy to sdn-adapter. The gNMI benchmark daemon uses
+    this to reach NETCONF / gNOI through the same LoadBalancer the
+    RESTCONF northbound already uses."""
+    body = request.get_json(silent=True) or {}
+    url  = f"{ADAPTER_URL}/{subpath}"
+    try:
+        r = requests.post(url, json=body, timeout=ADAPTER_TIMEOUT)
+    except requests.RequestException as e:
+        return jsonify({"error": f"adapter unreachable: {e}"}), 502
+    try:
+        payload = r.json()
+    except ValueError:
+        payload = {"raw": r.text}
+    return jsonify(payload), r.status_code
 
 # ---------------------------------------------------------------------------
 # gNMI — persistent channel with HTTP/2 keepalives
