@@ -22,7 +22,7 @@ spec:
     spec:
       containers:
         - name: sdn-adapter
-          image: sdn-adapter:2.0.0
+          image: sdn-adapter:2.0.1
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
