@@ -1,0 +1,37 @@
+# DISABLED — kept for reference only.
+#
+# The onos-config chart ships a "devicesim-1" *model plugin* sidecar on
+# localhost:5152. That is a YANG schema validator, not a gNMI endpoint.
+# There is no separate simulator process and no device-simulator Service
+# in the cluster, so a gNMI southbound connector cannot reach it.
+#
+# To re-enable this target, first deploy a real gNMI simulator (e.g.
+# onosproject/gnmi-simulator) as a Service, then set `address:` to that
+# Service's name:port and `protocols.name: gnmi` to its listening port.
+# The kind_id must remain "controller-quantum-switching" so the custom
+# model plugin validates /switching/state.
+#
+# id: "devicesim-1"
+# kind_id: "controller-quantum-switching"
+# ...
+id: "devicesim-1"
+kind_id: "controller-quantum-switching"
+display_name: "In-Cluster Quantum Simulator"
+address: "localhost:11161"
+kind: "controller-quantum-switching"
+version: "1.0.0"
+role: "simulator"
+
+protocols:
+  - name: "gnmi"
+    port: 11161
+
+aspects:
+  onos.topo.Configurable:
+    address: "localhost:11161"
+    type: "controller-quantum-switching"
+    version: "1.0.0"
+
+  onos.topo.TLSOptions:
+    plain: true
+    insecure: true
