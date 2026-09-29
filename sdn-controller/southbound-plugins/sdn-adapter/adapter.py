@@ -356,22 +356,6 @@ def gnoi_get_crossconnect_status(host: str, port: int) -> dict[str, Any]:
         resp = _once()
     return {"is_connected": resp.is_connected, "switch_type": resp.switch_type}
 
-
-def gnoi_get_crossconnect_status(host: str, port: int) -> dict[str, Any]:
-    target = f"{host}:{port}"
-    log.info("gNOI GetCrossConnectStatus target=%s", target)
-    with grpc.insecure_channel(target) as channel:
-        grpc.channel_ready_future(channel).result(timeout=GNOI_TMO)
-        stub = gnoi_grpc.QuantumGnoiSwitchingServiceStub(channel)
-        resp = stub.GetCrossConnectStatus(
-            gnoi_pb2.StatusRequest(), timeout=GNOI_TMO
-        )
-        return {
-            "is_connected": resp.is_connected,
-            "switch_type":  resp.switch_type,
-        }
-
-
 # ---------------------------------------------------------------------------
 # HTTP server
 # ---------------------------------------------------------------------------
