@@ -1,20 +1,20 @@
 id: "devicesim-1"
-kind_id: "devicesim"
+kind_id: "controller-quantum-switching"
 display_name: "In-Cluster Quantum Simulator"
-address: "localhost:10161"
-kind: "devicesim"
-version: "1.0.x"
+address: "device-simulator:11161"
+kind: "controller-quantum-switching"
+version: "1.0.0"
 role: "simulator"
 
 protocols:
   - name: "gnmi"
-    port: 10161
+    port: 11161
 
 aspects:
   onos.topo.Configurable:
-    address: "localhost:10161"
-    type: "devicesim"
-    version: "1.0.x"
+    address: "device-simulator:11161"
+    type: "controller-quantum-switching"
+    version: "1.0.0"
 
   onos.topo.TLSOptions:
     plain: true
