@@ -262,7 +262,7 @@ def _dispatch_gnmi(action, data):
     try:
         if action == "DELETE":
             _gnmi_set_with_retry(target_id, ["switching", "state"],
-                                 delete=True)
+                                 string_val="disabled")
         else:
             _gnmi_set_with_retry(target_id, ["switching", "state"],
                                  string_val="enabled")
