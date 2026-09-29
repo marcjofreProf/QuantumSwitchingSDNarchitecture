@@ -660,16 +660,12 @@ for cfg in "${REGISTERED_DEVICES[@]}"; do
     echo "    type='$dev_type' version='$dev_version'"
 
     # Per-device path/value
-    case "$cfg" in
-        quantum-node-1)
-            set_path="/switching/state"
-            set_value="enabled"
-            ;;
-        *)
-            set_path="/system/config/motd-banner"
-            set_value="Registered via extensions"
-            ;;
-    esac
+    # Every device registered with kind_id=controller-quantum-switching uses
+    # the same custom model plugin. Its only writable leaf is /switching/state.
+    # The old /system/config/motd-banner path belonged to the devicesim
+    # model, which is no longer the kind used for devicesim-1.
+    set_path="/switching/state"
+    set_value="enabled"
 
     "$VENV_PY" "$(dirname "$0")/gnmi_set_with_ext.py" \
         --address localhost:5150 \
