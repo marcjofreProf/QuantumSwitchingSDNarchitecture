@@ -464,7 +464,7 @@ class Handler(BaseHTTPRequestHandler):
         )
         return self._json(200, {"ok": True, "reply": out})
 
-      def _handle_netconf_status(self, body):
+    def _handle_netconf_status(self, body):
         if "host" not in body:
             return self._json(400, {"error": "missing field: host"})
         out = netconf_get_switch(
