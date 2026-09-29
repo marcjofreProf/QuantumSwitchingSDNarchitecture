@@ -410,7 +410,7 @@ class Handler(BaseHTTPRequestHandler):
                 "protocols": ["netconf", "gnoi"],
                 "routes": [
                     "/netconf/switch",
-                    "/netconf/status"
+                    "/netconf/status",
                     "/gnoi/crossconnect",
                     "/gnoi/status",
                 ],
@@ -474,7 +474,7 @@ class Handler(BaseHTTPRequestHandler):
             password=body.get("password", "quantum"),
         )
         return self._json(200, {"ok": True, "state": out})
-      
+
     def _handle_gnoi_crossconnect(self, body):
         for f in ("host", "state"):
             if f not in body:
@@ -494,7 +494,6 @@ class Handler(BaseHTTPRequestHandler):
             port=int(body.get("port", 50051)),
         )
         return self._json(200, {"ok": True, "reply": out})
-
 
 def main() -> None:
     server = ThreadingHTTPServer((BIND, PORT), Handler)
