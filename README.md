@@ -135,12 +135,25 @@ done
 
 # 3. K3s restart skipped
 
-# 4. Scale back to 1
+# 4. Scale consensus back to 3 replicas, one at a time, so Raft can elect a leader.
+#    A single replica will not self-elect under the µONOS chart, which is why
+#    onos-config (5/6) and onos-topo (1/2) stay stuck.
+kubectl -n micro-onos scale statefulset onos-umbrella-consensus --replicas=1
+kubectl -n micro-onos wait --for=condition=Ready pod/onos-umbrella-consensus-0 --timeout=600s
+sleep 60
+
+kubectl -n micro-onos scale statefulset onos-umbrella-consensus --replicas=2
+kubectl -n micro-onos wait --for=condition=Ready pod/onos-umbrella-consensus-1 --timeout=600s
+sleep 60
+
+kubectl -n micro-onos scale statefulset onos-umbrella-consensus --replicas=3
+kubectl -n micro-onos wait --for=condition=Ready pod/onos-umbrella-consensus-2 --timeout=600s
+sleep 60
+
+# 5. Scale dependents back up now that a leader exists
 kubectl scale deployment -n micro-onos onos-topo --replicas=1
 kubectl scale deployment -n micro-onos onos-config --replicas=1
 kubectl scale deployment -n micro-onos onos-umbrella-device-provisioner --replicas=1
-
-# 5. Transaction cleanup skipped
 
 # 6. Watch
 kubectl get pods -n micro-onos -w
