@@ -201,9 +201,14 @@ echo
 # --------------------------------------------------------------------------
 echo "=== 2. Destructive recovery (PVC wipe) ==="
 
-echo "  Flushing CoreDNS so stale -hs records cannot poison the new cluster..."
-kubectl -n kube-system rollout restart deployment/coredns
-kubectl -n kube-system rollout status deployment/coredns --timeout=120s
+# Do NOT rollout-restart CoreDNS here. On a memory-tight single-node K3s
+# the restart causes cluster-wide DNS loss and can trigger the OOM killer.
+# Deleting the -hs service below is sufficient to force DNS re-resolution.
+
+# Stop the crash-looping dependents so they stop allocating while we
+# rebuild consensus. They are restarted at the end of this script.
+kubectl -n "$NS" scale deployment onos-config --replicas=0 || true
+kubectl -n "$NS" scale deployment onos-topo   --replicas=0 || true
 
 kubectl -n "$NS" scale statefulset "$SS" --replicas=0
 for i in 0 1 2; do
@@ -245,10 +250,10 @@ for n in 1 2 3; do
     echo "  Raft leader confirmed at $n replica(s)."
 done
 
-echo "  Restarting dependent deployments so they re-attach to the new leader..."
-kubectl -n "$NS" rollout restart deployment/onos-config
-kubectl -n "$NS" rollout restart deployment/onos-topo
+echo "  Bringing dependent deployments back up so they attach to the new leader..."
+kubectl -n "$NS" scale deployment/onos-topo   --replicas=1
 kubectl -n "$NS" rollout status deployment/onos-topo   --timeout=600s || true
+kubectl -n "$NS" scale deployment/onos-config --replicas=1
 kubectl -n "$NS" rollout status deployment/onos-config --timeout=600s || true
 
 echo
