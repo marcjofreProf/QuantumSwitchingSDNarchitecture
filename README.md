@@ -207,10 +207,21 @@ echo "=== 2. Destructive recovery (PVC wipe) ==="
 # Deleting the -hs service below is sufficient to force DNS re-resolution.
 
 # Stop the crash-looping dependents so they stop allocating while we
-# rebuild consensus. They are restarted at the end of this script.
+# rebuild consensus. Use scale-to-zero but wait between each one so the
+# kubelet has time to release each cgroup's memory before the next
+# teardown begins. On WSL2 a simultaneous release of many large cgroups
+# can spike vmmem on the Windows side and trigger a guest termination.
+echo "  Scaling onos-config to zero..."
 kubectl -n "$NS" scale deployment onos-config --replicas=0 || true
-kubectl -n "$NS" scale deployment onos-topo   --replicas=0 || true
+kubectl -n "$NS" wait --for=delete pod -l app.kubernetes.io/name=onos-config --timeout=180s || true
+sleep 20
 
+echo "  Scaling onos-topo to zero..."
+kubectl -n "$NS" scale deployment onos-topo --replicas=0 || true
+kubectl -n "$NS" wait --for=delete pod -l app.kubernetes.io/name=onos-topo --timeout=180s || true
+sleep 20
+
+echo "  Scaling consensus to zero..."
 kubectl -n "$NS" scale statefulset "$SS" --replicas=0
 for i in 0 1 2; do
     kubectl -n "$NS" wait --for=delete "pod/${SS}-${i}" --timeout=120s || \
