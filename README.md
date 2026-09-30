@@ -115,7 +115,6 @@ To recover the different elements after and abrupt stop and re-start:
 
 ```bash
 set -euo pipefail
-sudo systemctl stop systemd-oomd systemd-oomd.socket
 
 NS=micro-onos
 SS=onos-umbrella-consensus
@@ -222,7 +221,7 @@ kubectl -n "$NS" wait --for=delete pod -l app.kubernetes.io/name=onos-topo --tim
 sleep 20
 
 echo "  Scaling consensus to zero..."
-kubectl -n "$NS" scale statefulset "$SS" --replicas=0
+kubectl -n "$NS" scale statefulset "$SS" --replicas=0 || true
 for i in 0 1 2; do
     kubectl -n "$NS" wait --for=delete "pod/${SS}-${i}" --timeout=120s || \
         kubectl -n "$NS" delete pod "${SS}-${i}" --force --grace-period=0 || true
@@ -267,8 +266,6 @@ kubectl -n "$NS" scale deployment/onos-topo   --replicas=1
 kubectl -n "$NS" rollout status deployment/onos-topo   --timeout=600s || true
 kubectl -n "$NS" scale deployment/onos-config --replicas=1
 kubectl -n "$NS" rollout status deployment/onos-config --timeout=600s || true
-
-sudo systemctl start systemd-oomd.socket systemd-oomd
 
 echo
 echo "=== Recovery complete (destructive) ==="
