@@ -99,7 +99,11 @@ def main():
     )
 
     try:
-        response = stub.Set(request, timeout=15)
+        # 180s gives onos-config time to persist the config into Raft,
+        # register the target with the model plugin, and complete the
+        # synchronous southbound sync to the device on a cold target.
+        # 15s was too short and produced DEADLINE_EXCEEDED on first Set.
+        response = stub.Set(request, timeout=180)
         print("[OK] Set succeeded.")
         print(response)
         return 0
