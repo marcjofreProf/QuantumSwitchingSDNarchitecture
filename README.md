@@ -123,7 +123,7 @@ PVCS=(
   atomix-data-onos-umbrella-consensus-1
   atomix-data-onos-umbrella-consensus-2
 )
-SETTLE=15   # seconds to let Raft settle between restarts
+SETTLE=60   # seconds to let Raft settle between restarts
 
 # --------------------------------------------------------------------------
 # Step 0: Diagnose
@@ -201,6 +201,10 @@ echo
 # --------------------------------------------------------------------------
 echo "=== 2. Destructive recovery (PVC wipe) ==="
 
+echo "  Flushing CoreDNS so stale -hs records cannot poison the new cluster..."
+kubectl -n kube-system rollout restart deployment/coredns
+kubectl -n kube-system rollout status deployment/coredns --timeout=120s
+
 kubectl -n "$NS" scale statefulset "$SS" --replicas=0
 for i in 0 1 2; do
     kubectl -n "$NS" wait --for=delete "pod/${SS}-${i}" --timeout=120s || \
@@ -213,19 +217,44 @@ for pvc in "${PVCS[@]}"; do
     kubectl -n "$NS" delete pvc "$pvc" --wait=true --timeout=60s || true
 done
 
+# Also drop the headless service so CoreDNS discards the old
+# onos-umbrella-consensus-{0,1,2}.-hs... A records. The Helm chart
+# recreates it when the StatefulSet scales back up.
+kubectl -n "$NS" delete service "${SS}-hs" --ignore-not-found || true
+
 # Bring replicas up ONE AT A TIME so Raft bootstraps cleanly.
 for n in 1 2 3; do
     echo "  Scaling consensus to $n replica(s)..."
     kubectl -n "$NS" scale statefulset "$SS" --replicas=$n
     # Wait for the newly added pod to become Ready before adding the next.
     newest=$((n - 1))
-    kubectl -n "$NS" wait --for=condition=Ready "pod/${SS}-${newest}" --timeout=300s
+    kubectl -n "$NS" wait --for=condition=Ready "pod/${SS}-${newest}" --timeout=600s
     sleep "$SETTLE"
+
+    # Confirm a leader exists before adding the next peer. Scaling to 3
+    # replicas while Raft is still leaderless is what produces stale
+    # low-term members (n00003) that lock the cluster into "term not
+    # matched" rejections.
+    if ! kubectl -n "$NS" logs "${SS}-0" --tail=200 2>/dev/null \
+            | grep -qE 'became leader|leader_updated.*leader:[0-9]+'; then
+        echo "  ERROR: no Raft leader after scaling to $n replica(s)."
+        echo "  Consensus-0 log (last 40 lines):"
+        kubectl -n "$NS" logs "${SS}-0" --tail=40 || true
+        exit 1
+    fi
+    echo "  Raft leader confirmed at $n replica(s)."
 done
+
+echo "  Restarting dependent deployments so they re-attach to the new leader..."
+kubectl -n "$NS" rollout restart deployment/onos-config
+kubectl -n "$NS" rollout restart deployment/onos-topo
+kubectl -n "$NS" rollout status deployment/onos-topo   --timeout=600s || true
+kubectl -n "$NS" rollout status deployment/onos-config --timeout=600s || true
 
 echo
 echo "=== Recovery complete (destructive) ==="
 kubectl -n "$NS" get pods -l name="$SS"
+kubectl -n "$NS" get pods -l app.kubernetes.io/name=onos-config
 ```
 Then, re-register the devices in the micro-onos:
 ```bash
