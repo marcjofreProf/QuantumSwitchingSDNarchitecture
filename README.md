@@ -114,163 +114,36 @@ If the centralized server lacks the RAM/CPU to run a full Kubernetes cluster and
 To recover the different elements after and abrupt stop and re-start:
 
 ```bash
-set -euo pipefail
+# 1. Scale down to 0
+kubectl scale deployment -n micro-onos onos-config onos-topo onos-umbrella-device-provisioner --replicas=0
+sleep 30
 
-NS=micro-onos
-SS=onos-umbrella-consensus
-PVCS=(
-  atomix-data-onos-umbrella-consensus-0
-  atomix-data-onos-umbrella-consensus-1
-  atomix-data-onos-umbrella-consensus-2
-)
-SETTLE=60   # seconds to let Raft settle between restarts
-
-# --------------------------------------------------------------------------
-# Step 0: Diagnose
-# --------------------------------------------------------------------------
-echo "=== 0. Diagnosis ==="
-
-PANIC=$(kubectl -n "$NS" logs "$SS-0" --tail=200 2>/dev/null | grep -c "panic:" || true)
-LEADERLESS=$(kubectl -n "$NS" logs "$SS-0" --tail=200 2>/dev/null | grep -c "not the leader" || true)
-
-echo "  panic lines:      $PANIC"
-echo "  not-the-leader:   $LEADERLESS"
-
-if [ "${PANIC:-0}" -gt 0 ]; then
-    MODE=corruption
-    echo "  → Corruption detected. Will need PVC wipe."
-elif [ "${LEADERLESS:-0}" -gt 5 ]; then
-    MODE=splitbrain
-    echo "  → Split-brain detected. Trying non-destructive recovery first."
-else
-    MODE=unknown
-    echo "  → Ambiguous. Trying non-destructive recovery first."
-fi
-echo
-
-# --------------------------------------------------------------------------
-# Step 1: Non-destructive staggered restart
-#
-# Force each consensus pod to reload its Raft state one at a time. Between
-# restarts, wait for the pod to become Ready and let Raft settle. This
-# forces a fresh leader election against a stable peer set and resolves
-# split-brain without touching any data.
-# --------------------------------------------------------------------------
-echo "=== 1. Staggered restart (non-destructive) ==="
-for i in 0 1 2; do
-    echo "  Restarting ${SS}-${i}..."
-    kubectl -n "$NS" delete pod "${SS}-${i}" --wait=false
-    kubectl -n "$NS" wait --for=condition=Ready "pod/${SS}-${i}" --timeout=180s || {
-        echo "  ERROR: ${SS}-${i} did not become Ready"
-        exit 1
-    }
-    echo "  ${SS}-${i} Ready. Waiting ${SETTLE}s for Raft to settle..."
-    sleep "$SETTLE"
+# 2. Patch PVC finalizers and delete PVCs gracefully
+for pvc in $(kubectl get pvc -n micro-onos --no-headers -o custom-columns=":metadata.name" | grep consensus); do
+  kubectl patch pvc $pvc -n micro-onos -p '{"metadata":{"finalizers":null}}' --type=merge 2>/dev/null || true
+  kubectl delete pvc $pvc -n micro-onos --timeout=120s 2>/dev/null || true
+  sleep 5
 done
 
-echo "  Verifying leader election..."
-sleep 10
-if kubectl -n "$NS" logs "$SS-0" --tail=60 2>/dev/null \
-        | grep -qE 'became leader|leader_updated.*leader:[0-9]+'; then
-    echo
-    echo "=== Recovery complete (non-destructive) ==="
-    kubectl -n "$NS" get pods -l name="$SS"
-    exit 0
-fi
-
-if [ "$MODE" != "corruption" ]; then
-    echo "  No leader yet. Waiting another 30s before escalating..."
-    sleep 30
-    if kubectl -n "$NS" logs "$SS-0" --tail=60 2>/dev/null \
-            | grep -qE 'became leader|leader_updated.*leader:[0-9]+'; then
-        echo "=== Recovery complete (non-destructive, delayed) ==="
-        kubectl -n "$NS" get pods -l name="$SS"
-        exit 0
-    fi
-fi
-
-echo "  Non-destructive recovery did not produce a leader."
-echo "  Escalating to destructive recovery (PVC wipe)."
-echo
-
-# --------------------------------------------------------------------------
-# Step 2: Destructive recovery — only reached when Step 1 fails
-#
-# Wipes the Raft state and recreates the cluster. All µONOS configuration
-# is lost; re-register devices afterwards.
-# --------------------------------------------------------------------------
-echo "=== 2. Destructive recovery (PVC wipe) ==="
-
-# Do NOT rollout-restart CoreDNS here. On a memory-tight single-node K3s
-# the restart causes cluster-wide DNS loss and can trigger the OOM killer.
-# Deleting the -hs service below is sufficient to force DNS re-resolution.
-
-# Stop the crash-looping dependents so they stop allocating while we
-# rebuild consensus. Use scale-to-zero but wait between each one so the
-# kubelet has time to release each cgroup's memory before the next
-# teardown begins. On WSL2 a simultaneous release of many large cgroups
-# can spike vmmem on the Windows side and trigger a guest termination.
-echo "  Scaling onos-config to zero..."
-kubectl -n "$NS" scale deployment onos-config --replicas=0 || true
-kubectl -n "$NS" wait --for=delete pod -l app.kubernetes.io/name=onos-config --timeout=180s || true
-sleep 20
-
-echo "  Scaling onos-topo to zero..."
-kubectl -n "$NS" scale deployment onos-topo --replicas=0 || true
-kubectl -n "$NS" wait --for=delete pod -l app.kubernetes.io/name=onos-topo --timeout=180s || true
-sleep 20
-
-echo "  Scaling consensus to zero..."
-kubectl -n "$NS" scale statefulset "$SS" --replicas=0 || true
-for i in 0 1 2; do
-    kubectl -n "$NS" wait --for=delete "pod/${SS}-${i}" --timeout=120s || \
-        kubectl -n "$NS" delete pod "${SS}-${i}" --force --grace-period=0 || true
+# Delete any remaining stuck pods gracefully (no force, serialised)
+for pod in $(kubectl get pods -n micro-onos --no-headers -o custom-columns=":metadata.name" | grep -E "consensus|onos-config|onos-topo|device-provisioner"); do
+  kubectl patch pod $pod -n micro-onos -p '{"metadata":{"finalizers":null}}' --type=merge 2>/dev/null || true
+  echo "Deleting $pod..."
+  kubectl delete pod $pod -n micro-onos --timeout=120s 2>/dev/null || true
+  sleep 10
 done
 
-for pvc in "${PVCS[@]}"; do
-    kubectl -n "$NS" patch pvc "$pvc" \
-        -p '{"metadata":{"finalizers":null}}' --type=merge || true
-    kubectl -n "$NS" delete pvc "$pvc" --wait=true --timeout=60s || true
-done
+# 3. K3s restart skipped
 
-# Also drop the headless service so CoreDNS discards the old
-# onos-umbrella-consensus-{0,1,2}.-hs... A records. The Helm chart
-# recreates it when the StatefulSet scales back up.
-kubectl -n "$NS" delete service "${SS}-hs" --ignore-not-found || true
+# 4. Scale back to 1
+kubectl scale deployment -n micro-onos onos-topo --replicas=1
+kubectl scale deployment -n micro-onos onos-config --replicas=1
+kubectl scale deployment -n micro-onos onos-umbrella-device-provisioner --replicas=1
 
-# Bring replicas up ONE AT A TIME so Raft bootstraps cleanly.
-for n in 1 2 3; do
-    echo "  Scaling consensus to $n replica(s)..."
-    kubectl -n "$NS" scale statefulset "$SS" --replicas=$n
-    # Wait for the newly added pod to become Ready before adding the next.
-    newest=$((n - 1))
-    kubectl -n "$NS" wait --for=condition=Ready "pod/${SS}-${newest}" --timeout=600s
-    sleep "$SETTLE"
+# 5. Transaction cleanup skipped
 
-    # Confirm a leader exists before adding the next peer. Scaling to 3
-    # replicas while Raft is still leaderless is what produces stale
-    # low-term members (n00003) that lock the cluster into "term not
-    # matched" rejections.
-    if ! kubectl -n "$NS" logs "${SS}-0" --tail=200 2>/dev/null \
-            | grep -qE 'became leader|leader_updated.*leader:[0-9]+'; then
-        echo "  ERROR: no Raft leader after scaling to $n replica(s)."
-        echo "  Consensus-0 log (last 40 lines):"
-        kubectl -n "$NS" logs "${SS}-0" --tail=40 || true
-        exit 1
-    fi
-    echo "  Raft leader confirmed at $n replica(s)."
-done
-
-echo "  Bringing dependent deployments back up so they attach to the new leader..."
-kubectl -n "$NS" scale deployment/onos-topo   --replicas=1
-kubectl -n "$NS" rollout status deployment/onos-topo   --timeout=600s || true
-kubectl -n "$NS" scale deployment/onos-config --replicas=1
-kubectl -n "$NS" rollout status deployment/onos-config --timeout=600s || true
-
-echo
-echo "=== Recovery complete (destructive) ==="
-kubectl -n "$NS" get pods -l name="$SS"
-kubectl -n "$NS" get pods -l app.kubernetes.io/name=onos-config
+# 6. Watch
+kubectl get pods -n micro-onos -w
 ```
 Then, re-register the devices in the micro-onos:
 ```bash
