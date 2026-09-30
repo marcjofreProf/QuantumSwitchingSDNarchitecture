@@ -60,7 +60,7 @@ To onboard a new physical switch or virtual target into the control plane:
 id: "quantum-node-1"
 kind_id: "controller-quantum-switching"
 display_name: "Physical BeagleBone Quantum Switch 1"
-address: "10.0.0.254:50051"
+address: "172.21.128.254:50051"
 kind: "controller-quantum-switching"
 version: "1.0.0"
 role: "quantum-switch"
@@ -75,7 +75,7 @@ protocols:
 
 aspects:
   onos.topo.Configurable:
-    address: "10.0.0.254:50051"
+    address: "172.21.128.254:50051"
     type: "controller-quantum-switching"
     version: "1.0.0"
 
