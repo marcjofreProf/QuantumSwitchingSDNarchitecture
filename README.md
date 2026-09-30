@@ -125,6 +125,16 @@ for pvc in $(kubectl get pvc -n micro-onos --no-headers -o custom-columns=":meta
   sleep 5
 done
 
+# 2b. FIX: delete the PVs and the local-path directories that backed them.
+#     Without this, a new PVC binds to the same hostPath and inherits the
+#     old Raft term (that is why consensus-0 came back at term 191).
+for pv in $(kubectl get pv --no-headers -o custom-columns=":metadata.name" | grep -i consensus); do
+  kubectl patch pv $pv -p '{"spec":{"claimRef":null}}' --type=merge 2>/dev/null || true
+  kubectl delete pv $pv --timeout=120s 2>/dev/null || true
+  sleep 5
+done
+sudo find /var/lib/rancher/k3s/storage/ -maxdepth 1 -type d -name '*consensus*' -exec sudo rm -rf {} + 2>/dev/null || true
+
 # Delete any remaining stuck pods gracefully (no force, serialised)
 for pod in $(kubectl get pods -n micro-onos --no-headers -o custom-columns=":metadata.name" | grep -E "consensus|onos-config|onos-topo|device-provisioner"); do
   kubectl patch pod $pod -n micro-onos -p '{"metadata":{"finalizers":null}}' --type=merge 2>/dev/null || true
