@@ -45,44 +45,46 @@ Designed for deployment on the **6G-OpenLab** infrastructure.
 ---
 
 ## Device Inventory & Topology Registration
-The architecture decouples device management from the controller deployment pipeline. Network nodes (both virtual simulators and physical switches) are declared declaratively as YAML manifests in the inventory/devices/ directory.
 
-Concept & Architecture
-Declarative Definitions: Every node (devicesim-1, quantum-node-1, etc.) is defined in inventory/devices/<node-id>.yaml.
+The architecture decouples device management from the controller deployment pipeline. Network nodes — both virtual simulators and physical switches — are declared as YAML manifests under `inventory/devices/`, and a single registration script pushes them into the µONOS topology service.
 
-Automated Provisioning: The ./inventory/register-devices.sh script parses the YAML manifests and injects target endpoints directly into the µONOS topology service (onos-topo) via gnmic.
+**Concept**
 
-Adding a New Quantum Device
-To onboard a new physical switch or virtual target into the control plane:
+- **Template + rendered file.** The tracked source for each device is `inventory/devices/<node-id>.yaml.template`. On every bootstrap run, `bootstrap-quantum-switching-sdn.sh` renders it to `inventory/devices/<node-id>.yaml`, substituting `{{QUANTUM_NODE_IP}}` with the value written to `~/.quantum-sdn/config.env`. The rendered `.yaml` is listed in `.gitignore` and must never be edited by hand — it is overwritten on the next bootstrap.
+- **Automated provisioning.** `./inventory/register-devices.sh` reads the rendered YAML, sets the `onos.topo.Configurable` and `onos.topo.TLSOptions` aspects on the corresponding entity, and pushes the address into `onos-topo`. `onos-config` then opens a southbound gNMI channel to that address using its built-in client — no plugin change is required.
+- **Single source of truth for the address.** The physical node address lives in `~/.quantum-sdn/config.env` (written once by the bootstrap) and in the rendered YAML. Editing the tracked template's address has no effect on a deployment; edit the config file or delete it and re-run the bootstrap to be re-prompted.
 
-1. Create a YAML definition file inside inventory/devices/ (e.g., inventory/devices/quantum-node-2.yaml):
-```text
-id: "quantum-node-1"
-kind_id: "controller-quantum-switching"
-display_name: "Physical BeagleBone Quantum Switch 1"
-address: "172.21.128.254:50051"
-kind: "controller-quantum-switching"
-version: "1.0.0"
-role: "quantum-switch"
+**Adding a new quantum device**
 
-protocols:
-  - name: "gnmi"
-    port: 50051
-  - name: "gnoi"
-    port: 50051
-  - name: "netconf"
-    port: 8300
+1. Create the template inside `inventory/devices/` (e.g. `inventory/devices/quantum-node-2.yaml.template`):
 
-aspects:
-  onos.topo.Configurable:
-    address: "172.21.128.254:50051"
-    type: "controller-quantum-switching"
-    version: "1.0.0"
+   ```yaml
+   id: "quantum-node-2"
+   kind_id: "controller-quantum-switching"
+   display_name: "Physical BeagleBone Quantum Switch 2"
+   address: "{{QUANTUM_NODE_IP}}:50051"
+   kind: "controller-quantum-switching"
+   version: "1.0.0"
+   role: "quantum-switch"
 
-  onos.topo.TLSOptions:
-    plain: true
-    insecure: true
-```
+   protocols:
+     - name: "gnmi"
+       port: 50051
+     - name: "gnoi"
+       port: 50051
+     - name: "netconf"
+       port: 8300
+
+   aspects:
+     onos.topo.Configurable:
+       address: "{{QUANTUM_NODE_IP}}:50051"
+       type: "controller-quantum-switching"
+       version: "1.0.0"
+
+     onos.topo.TLSOptions:
+       plain: true
+       insecure: true
+   ```
 
 2. Execute the registration runner:
 ```bash
@@ -90,10 +92,15 @@ aspects:
 ```
 
 3. Verify Registration:
-Query onos-topo directly using gnmic to ensure the device is active in the controller topology:
-```bash
-gnmic -a localhost:30150 --skip-verify get --path /interfaces/interface
-```
+   Query `onos-topo` directly to confirm the device is present with the correct address:
+
+   ```bash
+   kubectl -n micro-onos exec deployment/onos-cli -- \
+     onos topo get entity quantum-node-1 -v \
+       --service-address onos-topo:5150 \
+       --tls-cert-path /etc/ssl/certs/client1.crt \
+       --tls-key-path  /etc/ssl/certs/client1.key
+   ```
 
 ## Quickstart: Environment Bootstrap
 
