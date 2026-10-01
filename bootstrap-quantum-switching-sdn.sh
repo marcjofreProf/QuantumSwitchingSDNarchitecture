@@ -1119,8 +1119,11 @@ deploy_cloud_native_uonos() {
     # between versions.
     log_info "Restarting consensus pods one at a time to allow leader election..."
     for i in 0 1 2; do
+        # Graceful delete. Do NOT use --force --grace-period=0: on WSL2 that
+        # releases the pod's cgroup in one instant, which spikes vmmem on the
+        # Windows side and can terminate the guest.
         kubectl delete pod -n micro-onos "onos-umbrella-consensus-${i}" \
-            --grace-period=0 --force 2>/dev/null || true
+            --timeout=180s 2>/dev/null || true
         kubectl wait --for=condition=Ready "pod/onos-umbrella-consensus-${i}" \
             -n micro-onos --timeout=1800s 2>/dev/null || \
             log_warn "  consensus-${i} did not become Ready in 1800s"
@@ -1135,7 +1138,8 @@ deploy_cloud_native_uonos() {
         app.kubernetes.io/name=topo-discovery \
         app.kubernetes.io/name=device-provisioner ; do
         kubectl delete pod -n micro-onos -l "$label" \
-            --grace-period=0 --force 2>/dev/null || true
+            --timeout=180s 2>/dev/null || true
+        sleep 10
     done
     
     sleep 10
