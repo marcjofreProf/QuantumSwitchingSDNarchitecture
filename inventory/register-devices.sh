@@ -11,18 +11,39 @@ NAMESPACE="${NAMESPACE:-micro-onos}"
 # so the same repository checkout can target different physical nodes
 # without editing tracked files.
 QUANTUM_SDN_CONF="${HOME}/.quantum-sdn/config.env"
-if [ -f "$QUANTUM_SDN_CONF" ]; then
-    while IFS='=' read -r k v; do
-        case "$k" in ''|\#*) continue ;; esac
-        if [ -z "${!k:-}" ]; then
-            printf -v "$k" '%s' "$v"
-            export "$k"
-        fi
-    done < "$QUANTUM_SDN_CONF"
-    echo "[*] Loaded deployment config from $QUANTUM_SDN_CONF"
+
+if [ ! -f "$QUANTUM_SDN_CONF" ]; then
+    echo "[!] ERROR: $QUANTUM_SDN_CONF not found."
+    echo "    Run the bootstrap once to generate it:"
+    echo "      ./bootstrap-quantum-switching-sdn.sh"
+    exit 1
 fi
 
-export CONTROLLER_HOST QUANTUM_NODE_ID QUANTUM_NODE_IP
+# The bootstrap writes this file once and it is the deployment's single
+# source of truth. Values in the file always win over whatever happens to
+# be in the shell, so that re-running this script after a reboot, after a
+# redeploy, or in a fresh terminal always uses the same address the
+# bootstrap was told to configure.
+while IFS='=' read -r k v; do
+    case "$k" in ''|\#*) continue ;; esac
+    printf -v "$k" '%s' "$v"
+    export "$k"
+done < "$QUANTUM_SDN_CONF"
+
+echo "[*] Loaded deployment config from $QUANTUM_SDN_CONF"
+
+# Required values. If any is missing the script cannot do its job.
+for var in CONTROLLER_HOST QUANTUM_NODE_ID QUANTUM_NODE_IP; do
+    if [ -z "${!var:-}" ]; then
+        echo "[!] ERROR: $var is missing from $QUANTUM_SDN_CONF."
+        exit 1
+    fi
+done
+
+echo "[*] Deployment values:"
+echo "      CONTROLLER_HOST = $CONTROLLER_HOST"
+echo "      QUANTUM_NODE_ID = $QUANTUM_NODE_ID"
+echo "      QUANTUM_NODE_IP = $QUANTUM_NODE_IP"
 
 if [ ! -d "$DEVICES_DIR" ]; then
     echo "[ERROR] Directory $DEVICES_DIR not found."
@@ -363,13 +384,31 @@ for filepath in yaml_files:
     env_node_ip = os.environ.get("QUANTUM_NODE_IP")
     if env_node_id and env_node_ip and dev_id == env_node_id:
         override_addr = f"{env_node_ip}:50051"
-        print(f"[*] Overriding address for '{dev_id}' from environment: "
+        print(f"[*] Using address for '{dev_id}' from config.env: "
               f"{address} -> {override_addr}")
         address = override_addr
-        if isinstance(yaml_aspects, dict) and "onos.topo.Configurable" in yaml_aspects:
-            cfg = yaml_aspects["onos.topo.Configurable"]
-            if isinstance(cfg, dict):
-                cfg["address"] = override_addr
+
+        # Always rebuild the Configurable aspect so the config file's
+        # value wins whether or not the tracked YAML declared one. Without
+        # this, if the YAML lacks the aspect, the entity gets registered
+        # without an address and onos-config cannot open a southbound
+        # channel to the device.
+        if not isinstance(yaml_aspects, dict):
+            yaml_aspects = {}
+        cfg = yaml_aspects.get("onos.topo.Configurable")
+        if not isinstance(cfg, dict):
+            cfg = {}
+        cfg["address"] = override_addr
+        cfg.setdefault("type", kind)
+        cfg.setdefault("version", version)
+        yaml_aspects["onos.topo.Configurable"] = cfg
+
+        # The BeagleBone's gNMI server is plaintext; make sure onos-config
+        # knows it should not attempt TLS to the device.
+        yaml_aspects.setdefault(
+            "onos.topo.TLSOptions",
+            {"plain": True, "insecure": True},
+        )
 
     active_dev_ids.add(dev_id)
     device_configs.append({
@@ -495,7 +534,7 @@ for cfg in device_configs:
     verify = subprocess.run(
         [
             "kubectl", "exec", "-n", namespace, cli_pod, "--",
-            "onos", "topo", "get", "entity", dev_id,
+            "onos", "topo", "get", "entity", dev_id, "-v",
             "--service-address", "onos-topo:5150",
             "--tls-cert-path", "/etc/ssl/certs/client1.crt",
             "--tls-key-path",  "/etc/ssl/certs/client1.key"
@@ -507,6 +546,20 @@ for cfg in device_configs:
     if verify.returncode == 0:
         print(f"    [SUCCESS] Verified topology entity '{dev_id}'.")
         print(verify.stdout.strip())
+
+        # Confirm the Configurable aspect actually carries the address we
+        # wrote. If onos-topo accepted the entity but dropped the aspect,
+        # onos-config's southbound client will silently never connect.
+        if f"{address}" not in verify.stdout:
+            print(
+                f"    [ERROR] Entity '{dev_id}' does not carry the expected "
+                f"address '{address}'."
+            )
+            print(
+                "            onos-topo may have rejected the Configurable "
+                "aspect. Aborting."
+            )
+            sys.exit(1)
     else:
         print(
             f"    [WARNING] Entity '{dev_id}' was created, "
