@@ -135,6 +135,32 @@ QUANTUM_NODE_IP=$QUANTUM_NODE_IP
 EOF
 chmod 600 "$QUANTUM_SDN_CONF"
 
+# ---------------------------------------------------------------------------
+# Render inventory/devices/<QUANTUM_NODE_ID>.yaml from its template.
+#
+# The tracked source is <node>.yaml.template, which carries the placeholder
+# {{QUANTUM_NODE_IP}}. This step substitutes the resolved address so the
+# rendered file matches what register-devices.sh expects. The rendered file
+# is listed in .gitignore, so rendering it on every bootstrap does not
+# dirty the working tree.
+#
+# If the template is missing, warn and continue: register-devices.sh will
+# fall back to its environment override, and the entity will still be
+# registered with the correct address.
+# ---------------------------------------------------------------------------
+INVENTORY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/inventory/devices"
+TEMPLATE_FILE="${INVENTORY_DIR}/${QUANTUM_NODE_ID}.yaml.template"
+RENDERED_FILE="${INVENTORY_DIR}/${QUANTUM_NODE_ID}.yaml"
+
+if [ -f "$TEMPLATE_FILE" ]; then
+    sed "s|{{QUANTUM_NODE_IP}}|${QUANTUM_NODE_IP}|g" \
+        "$TEMPLATE_FILE" > "$RENDERED_FILE"
+    log_success "Rendered $RENDERED_FILE from template"
+else
+    log_warn "Template $TEMPLATE_FILE not found; skipping inventory render."
+    log_warn "register-devices.sh will use the environment override instead."
+fi
+
 log_info "Deployment configuration:"
 log_info "  CONTROLLER_HOST = $CONTROLLER_HOST"
 log_info "  QUANTUM_NODE_ID = $QUANTUM_NODE_ID"
