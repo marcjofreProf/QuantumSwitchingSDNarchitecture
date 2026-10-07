@@ -16,6 +16,16 @@ log_info() { echo -e "${CYAN}[INFO] $1${NC}"; }
 log_success() { echo -e "${GREEN}[SUCCESS] $1${NC}"; }
 log_warn() { echo -e "${YELLOW}[WARNING] $1${NC}"; }
 
+# Resolve repo root once, up-front. All relative paths are anchored here
+# so the script is safe to run from any CWD.
+base_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$base_dir"
+
+if ! command -v jq >/dev/null 2>&1; then
+    log_warn "jq not found; namespace finalizer-strip fallback will be unavailable."
+    log_warn "Install with: sudo apt-get install -y jq"
+fi
+
 log_info "Starting Quantum-SDN Architecture environment cleanup..."
 
 # Dismantle SDN Adapter + RESTCONF Gateway workloads from their manifests
@@ -92,7 +102,7 @@ fi
 
 if kubectl get namespace micro-onos >/dev/null 2>&1; then
     log_info "Deleting micro-onos namespace..."
-    kubectl delete namespace micro-onos --wait=true 2>/dev/null || true
+    kubectl delete namespace micro-onos --ignore-not-found --timeout=180s 2>/dev/null || true
 fi
 
 if helm status atomix -n kube-system >/dev/null 2>&1; then
@@ -137,10 +147,40 @@ kubectl get clusterrolebinding -o name 2>/dev/null \
 log_info "µONOS Kubernetes cleanup completed."
 
 log_info "Purging remaining SDN and orchestration namespaces..."
-kubectl delete namespace open5gs --force --grace-period=0 2>/dev/null || true
-kubectl delete namespace micro-onos --force --grace-period=0 2>/dev/null || true
-kubectl delete namespace osm --force --grace-period=0 2>/dev/null || true
-kubectl delete namespace controller-osm-vca --force --grace-period=0 2>/dev/null || true
+
+# Delete without force so the namespace controller can finalize cleanly.
+for ns in open5gs micro-onos osm controller-osm-vca; do
+    kubectl get namespace "$ns" >/dev/null 2>&1 || continue
+    log_info "  Deleting namespace $ns..."
+    kubectl delete namespace "$ns" --ignore-not-found --timeout=180s 2>/dev/null || true
+done
+
+# Bounded wait + finalizer strip for any that get stuck.
+for ns in open5gs micro-onos osm controller-osm-vca; do
+    for i in $(seq 1 90); do
+        kubectl get namespace "$ns" >/dev/null 2>&1 || break
+        sleep 2
+    done
+    if kubectl get namespace "$ns" >/dev/null 2>&1; then
+        log_warn "  Namespace $ns still Terminating; stripping finalizer..."
+        if command -v jq >/dev/null 2>&1; then
+            kubectl get ns "$ns" -o json 2>/dev/null \
+              | jq '.spec.finalizers = []' \
+              | kubectl replace --raw "/api/v1/namespaces/$ns/finalize" -f - \
+              >/dev/null 2>&1 || true
+        else
+            log_warn "  jq missing; cannot auto-strip finalizer on $ns."
+        fi
+        for i in $(seq 1 30); do
+            kubectl get namespace "$ns" >/dev/null 2>&1 || break
+            sleep 2
+        done
+        if kubectl get namespace "$ns" >/dev/null 2>&1; then
+            log_warn "  Namespace $ns is STILL Terminating. Manual fix required:"
+            log_warn "    kubectl get ns $ns -o json | jq '.spec.finalizers=[]' | kubectl replace --raw /api/v1/namespaces/$ns/finalize -f -"
+        fi
+    fi
+done
 
 # 6. Cleanup Local Docker Images
 #
@@ -203,7 +243,6 @@ log_success "Certificate, gnmic and deployment configuration removed."
 
 # 8. Delete Dynamically Generated Repository Files
 log_info "Cleaning generated build artifacts, stubs, and model plugins..."
-base_dir="."
 
 # Remove generated Python stubs (both flat and nested layouts)
 find "$base_dir/proto" -type f \
@@ -246,6 +285,10 @@ rm -f get-docker.sh get_helm.sh install_osm.sh grpcurl_*.tar.gz helm-*-linux-amd
 # 9. Remove Custom Kernel & Network Configurations
 log_info "Reverting custom sysctl configurations..."
 sudo rm -f /etc/sysctl.d/99-sdn-uonos.conf /etc/sysctl.d/99-inotify-limits.conf /etc/sysctl.d/99-juju.conf /etc/modules-load.d/sdn-uonos.conf 2>/dev/null || true
+# Reload defaults; unknown keys are ignored, so this is safe on any kernel.
+sudo sysctl --system >/dev/null 2>&1 || true
+# Re-enable unattended-upgrades if the bootstrap disabled it.
+sudo systemctl enable --now unattended-upgrades 2>/dev/null || true
 
 # 10. Clean up orphaned veth interfaces
 #
