@@ -518,16 +518,24 @@ install_osm_installer() {
     log_info "Purging stale Juju client cache, orphaned controllers, and leftover namespaces..."
     juju destroy-model osm -y --destroy-storage --force 2>/dev/null || true
     rm -rf ~/.local/share/juju ~/.cache/juju 2>/dev/null || true
-    kubectl delete namespace controller-osm-vca --force --grace-period=0 2>/dev/null || true
-    kubectl delete namespace osm --force --grace-period=0 2>/dev/null || true
+    kubectl delete namespace controller-osm-vca --ignore-not-found --timeout=180s 2>/dev/null || true
+    kubectl delete namespace osm --ignore-not-found --timeout=180s 2>/dev/null || true
 
-    while kubectl get namespace osm >/dev/null 2>&1; do
-        log_info "Waiting for leftover 'osm' namespace to terminate..."
-        sleep 2
-    done
-    while kubectl get namespace controller-osm-vca >/dev/null 2>&1; do
-        log_info "Waiting for leftover 'controller-osm-vca' namespace to terminate..."
-        sleep 2
+    for ns in osm controller-osm-vca; do
+        for i in $(seq 1 90); do
+            kubectl get namespace "$ns" >/dev/null 2>&1 || break
+            sleep 2
+        done
+        if kubectl get namespace "$ns" >/dev/null 2>&1; then
+            log_warn "$ns namespace still Terminating; stripping finalizer..."
+            kubectl get ns "$ns" -o json \
+              | jq '.spec.finalizers = []' \
+              | kubectl replace --raw "/api/v1/namespaces/$ns/finalize" -f - || true
+            for i in $(seq 1 30); do
+                kubectl get namespace "$ns" >/dev/null 2>&1 || break
+                sleep 2
+            done
+        fi
     done
 
     # Ensure CoreDNS deployment exists before patching
@@ -1025,11 +1033,24 @@ deploy_cloud_native_uonos() {
     log_info "Using local ONOS Helm repository: $ONOS_HELM_DIR"
     log_info "Purging any existing onos-umbrella release and micro-onos namespace..."
     helm uninstall onos-umbrella -n micro-onos 2>/dev/null || true
-    kubectl delete namespace micro-onos --force --grace-period=0 2>/dev/null || true
-    while kubectl get namespace micro-onos >/dev/null 2>&1; do
-        log_info "Waiting for micro-onos namespace to terminate..."
+    kubectl delete namespace micro-onos --ignore-not-found --timeout=180s 2>/dev/null || true
+    # Bounded wait for namespace termination
+    for i in $(seq 1 90); do
+        kubectl get namespace micro-onos >/dev/null 2>&1 || break
         sleep 2
     done
+    # If still Terminating, strip finalizers to force completion
+    if kubectl get namespace micro-onos >/dev/null 2>&1; then
+        log_warn "micro-onos namespace still Terminating; stripping finalizer..."
+        kubectl get ns micro-onos -o json \
+          | jq '.spec.finalizers = []' \
+          | kubectl replace --raw /api/v1/namespaces/micro-onos/finalize -f - || true
+        # Give the API server a moment to finalize
+        for i in $(seq 1 30); do
+            kubectl get namespace micro-onos >/dev/null 2>&1 || break
+            sleep 2
+        done
+    fi
 
     (
         cd "$ONOS_HELM_DIR" || exit 1
