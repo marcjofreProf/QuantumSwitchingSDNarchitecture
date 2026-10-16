@@ -124,7 +124,13 @@ To recover the different elements after and abrupt stop and re-start:
 # 1. Scale down to 0
 kubectl scale deployment -n micro-onos onos-config onos-topo onos-umbrella-device-provisioner --replicas=0
 kubectl -n micro-onos scale statefulset onos-umbrella-consensus --replicas=0
-sleep 30
+
+# Wait until every µONOS pod is really gone before touching PVCs.
+for i in $(seq 1 90); do
+    remaining=$(kubectl get pods -n micro-onos --no-headers 2>/dev/null | wc -l)
+    [ "$remaining" -eq 0 ] && break
+    sleep 2
+done
 
 # 2. Patch PVC finalizers and delete PVCs gracefully
 for pvc in $(kubectl get pvc -n micro-onos --no-headers -o custom-columns=":metadata.name" | grep consensus); do
