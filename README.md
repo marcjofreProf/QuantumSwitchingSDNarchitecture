@@ -174,6 +174,14 @@ kubectl -n micro-onos scale statefulset onos-umbrella-consensus --replicas=3
 kubectl -n micro-onos wait --for=condition=Ready pod/onos-umbrella-consensus-2 --timeout=600s
 sleep 60
 
+# 4b. Serialised restart
+kubectl delete pod -n micro-onos onos-umbrella-consensus-0
+kubectl wait --for=condition=Ready pod/onos-umbrella-consensus-0 -n micro-onos --timeout=300s
+kubectl delete pod -n micro-onos onos-umbrella-consensus-1
+kubectl wait --for=condition=Ready pod/onos-umbrella-consensus-1 -n micro-onos --timeout=300s
+kubectl delete pod -n micro-onos onos-umbrella-consensus-2
+kubectl wait --for=condition=Ready pod/onos-umbrella-consensus-2 -n micro-onos --timeout=300s
+
 # 5. Scale dependents back up now that a leader exists
 kubectl scale deployment -n micro-onos onos-topo --replicas=1
 kubectl scale deployment -n micro-onos onos-config --replicas=1
