@@ -187,6 +187,14 @@ kubectl scale deployment -n micro-onos onos-topo --replicas=1
 kubectl scale deployment -n micro-onos onos-config --replicas=1
 kubectl scale deployment -n micro-onos onos-umbrella-device-provisioner --replicas=1
 
+# 5b. Restart the two clients that can get stuck on a stale leader
+sleep 30
+kubectl rollout restart deployment/onos-topo -n micro-onos
+kubectl rollout restart deployment/onos-umbrella-device-provisioner -n micro-onos
+
+kubectl rollout status deployment/onos-topo -n micro-onos --timeout=180s || true
+kubectl rollout status deployment/onos-umbrella-device-provisioner -n micro-onos --timeout=180s || true
+
 # 6. Watch
 kubectl get pods -n micro-onos -w
 ```
