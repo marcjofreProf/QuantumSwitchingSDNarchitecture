@@ -123,6 +123,7 @@ To recover the different elements after and abrupt stop and re-start:
 ```bash
 # 1. Scale down to 0
 kubectl scale deployment -n micro-onos onos-config onos-topo onos-umbrella-device-provisioner --replicas=0
+kubectl -n micro-onos scale statefulset onos-umbrella-consensus --replicas=0
 sleep 30
 
 # 2. Patch PVC finalizers and delete PVCs gracefully
