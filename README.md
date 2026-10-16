@@ -183,17 +183,15 @@ kubectl delete pod -n micro-onos onos-umbrella-consensus-2
 kubectl wait --for=condition=Ready pod/onos-umbrella-consensus-2 -n micro-onos --timeout=300s
 
 # 5. Scale dependents back up now that a leader exists
+sleep 30
 kubectl scale deployment -n micro-onos onos-topo --replicas=1
 kubectl scale deployment -n micro-onos onos-config --replicas=1
 kubectl scale deployment -n micro-onos onos-umbrella-device-provisioner --replicas=1
 
-# 5b. Restart the two clients that can get stuck on a stale leader
-sleep 30
-kubectl rollout restart deployment/onos-topo -n micro-onos
-kubectl rollout restart deployment/onos-umbrella-device-provisioner -n micro-onos
-
-kubectl rollout status deployment/onos-topo -n micro-onos --timeout=180s || true
-kubectl rollout status deployment/onos-umbrella-device-provisioner -n micro-onos --timeout=180s || true
+for dep in onos-topo onos-config onos-umbrella-device-provisioner; do
+    kubectl rollout status deployment/$dep -n micro-onos --timeout=480s || \
+        echo "WARN: $dep did not become Ready in 480s"
+done
 
 # 6. Watch
 kubectl get pods -n micro-onos -w
