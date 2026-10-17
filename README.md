@@ -121,6 +121,14 @@ If the centralized server lacks the RAM/CPU to run a full Kubernetes cluster and
 To recover the different elements after and abrupt stop and re-start:
 
 ```bash
+#!/bin/bash
+
+# Prompt for sudo password immediately
+sudo -v
+
+# Keep the sudo timestamp alive in the background until the script exits
+while true; do sudo -n true; sleep 60; kill -0 "$$" || exit; done 2>/dev/null &
+
 # 1. Scale down to 0
 kubectl scale deployment -n micro-onos onos-config onos-topo onos-umbrella-device-provisioner --replicas=0
 kubectl -n micro-onos scale statefulset onos-umbrella-consensus --replicas=0
