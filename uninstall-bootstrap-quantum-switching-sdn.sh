@@ -26,6 +26,10 @@ if ! command -v jq >/dev/null 2>&1; then
     log_warn "Install with: sudo apt-get install -y jq"
 fi
 
+# Cache and keep alive sudo credentials for the whole teardown.
+sudo -v
+( while kill -0 $$ 2>/dev/null; do sudo -n true; sleep 60; done ) 2>/dev/null &
+
 log_info "Starting Quantum-SDN Architecture environment cleanup..."
 
 # Release the CONTROLLER_HOST externalIPs that the bootstrap pins onto
