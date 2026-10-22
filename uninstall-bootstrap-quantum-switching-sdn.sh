@@ -28,6 +28,24 @@ fi
 
 log_info "Starting Quantum-SDN Architecture environment cleanup..."
 
+# Release the CONTROLLER_HOST externalIPs that the bootstrap pins onto
+# the onos-config and restconf-gateway Services. Doing this BEFORE any
+# delete means kube-proxy cleanly tears down the iptables DNAT rules for
+# ${CONTROLLER_HOST}:5150 and :8181 even if a namespace later hangs on a
+# finalizer and its Services outlive the rest of the teardown. In the
+# normal case the namespace deletion below releases the IP anyway, so
+# this step is defensive rather than required.
+if kubectl get namespace micro-onos >/dev/null 2>&1; then
+    for svc in onos-config restconf-gateway; do
+        if kubectl -n micro-onos get svc "$svc" >/dev/null 2>&1; then
+            log_info "Releasing externalIPs on svc/$svc..."
+            kubectl -n micro-onos patch svc "$svc" --type=merge \
+                -p '{"spec":{"externalIPs":[]}}' \
+                >/dev/null 2>&1 || true
+        fi
+    done
+fi
+
 # Dismantle SDN Adapter + RESTCONF Gateway workloads from their manifests
 log_info "Dismantling SDN Adapter and RESTCONF Gateway..."
 kubectl delete -f sdn-controller/southbound-plugins/sdn-adapter/deploy.yaml \
