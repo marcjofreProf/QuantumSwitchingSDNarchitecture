@@ -1312,6 +1312,68 @@ EOF
     log_success "gnmic mTLS configuration generated successfully."
 }
 
+ensure_controller_endpoints_reachable() {
+    log_info "Phase 8.7: Ensuring controller Services are reachable at ${CONTROLLER_HOST}..."
+
+    # The onos-config and restconf-gateway Services are type=LoadBalancer,
+    # and K3s ServiceLB advertises whichever node address it happens to
+    # pick from status.addresses. After a reboot that address can change
+    # (e.g. a docker/libvirt bridge address surfaces first), and the
+    # benchmark's pre-flight probe to ${CONTROLLER_HOST}:5150 then fails
+    # even though the pods are healthy.
+    #
+    # Pinning CONTROLLER_HOST via spec.externalIPs makes kube-proxy DNAT
+    # that address to the ClusterIP, independent of what ServiceLB chose.
+    # externalIPs is stored in the Service spec (in K3s's embedded
+    # datastore), so the pin survives reboots.
+    #
+    # Idempotent: on a healthy system this prints "already pinned" and
+    # returns.
+    for svc in onos-config restconf-gateway; do
+        if ! kubectl -n micro-onos get svc "$svc" >/dev/null 2>&1; then
+            log_warn "  svc/$svc not present yet; skipping pin."
+            continue
+        fi
+
+        local current
+        current=$(kubectl -n micro-onos get svc "$svc" \
+            -o jsonpath='{.spec.externalIPs[0]}' 2>/dev/null || echo "")
+
+        if [ "$current" != "$CONTROLLER_HOST" ]; then
+            log_info "  svc/$svc externalIPs='${current:-<none>}' -> '${CONTROLLER_HOST}'; patching"
+            kubectl -n micro-onos patch svc "$svc" --type=merge \
+                -p "{\"spec\":{\"externalIPs\":[\"${CONTROLLER_HOST}\"]}}" \
+                >/dev/null || log_error "  Failed to patch svc/$svc."
+        else
+            log_info "  svc/$svc already pinned to ${CONTROLLER_HOST}"
+        fi
+    done
+
+    # kube-proxy needs a moment to install the DNAT rules after the patch,
+    # so probe with a bounded retry rather than a single shot.
+    local deadline=$(( $(date +%s) + 30 ))
+    for svc_port in "onos-config:5150" "restconf-gateway:8181"; do
+        local name="${svc_port%%:*}"
+        local port="${svc_port##*:}"
+        local ok=false
+        while [ "$(date +%s)" -lt "$deadline" ]; do
+            if nc -z "$CONTROLLER_HOST" "$port" 2>/dev/null; then
+                ok=true
+                break
+            fi
+            sleep 1
+        done
+        if [ "$ok" = true ]; then
+            log_success "  ${name} reachable at ${CONTROLLER_HOST}:${port}"
+        else
+            log_error "  ${name} NOT reachable at ${CONTROLLER_HOST}:${port} after 30s."
+            log_error "  Check svc/${name} and the pod behind it:"
+            log_error "    kubectl -n micro-onos get svc ${name}"
+            log_error "    kubectl -n micro-onos get pods -n micro-onos"
+        fi
+    done
+}
+
 deploy_sdn_adapter_and_topo_aspects() {
     log_info "Phase 8.6: Deploying SDN Adapter & Setting Topology Endpoints..."
 
@@ -1507,6 +1569,7 @@ install_osm_installer
 setup_sdn_python_client
 build_quantum_switching_plugin
 deploy_cloud_native_uonos
+ensure_controller_endpoints_reachable
 deploy_sdn_adapter_and_topo_aspects
 register_inventory_devices
 verify_uonos_gnmi_end_to_end
