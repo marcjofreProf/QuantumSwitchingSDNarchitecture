@@ -18,6 +18,7 @@ export KUBECONFIG=${KUBECONFIG:-$HOME/.kube/config}
 
 # Cache sudo credentials up front so the script doesn't prompt repeatedly
 sudo -v
+( while kill -0 $$ 2>/dev/null; do sudo -n true; sleep 60; done ) 2>/dev/null &
 
 log_info() { echo -e "${CYAN}[INFO] $1${NC}"; }
 log_success() { echo -e "${GREEN}[SUCCESS] $1${NC}"; }
