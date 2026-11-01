@@ -22,7 +22,7 @@ spec:
     spec:
       containers:
         - name: restconf-gateway
-          image: quantum-restconf-gateway:1.3.3
+          image: quantum-restconf-gateway:1.3.4
           imagePullPolicy: IfNotPresent
           ports:
             - name: restconf
