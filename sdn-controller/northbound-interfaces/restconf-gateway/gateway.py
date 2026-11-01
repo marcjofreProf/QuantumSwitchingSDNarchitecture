@@ -326,25 +326,32 @@ def _dispatch_gnmi_get(data):
 def _dispatch_adapter_get(sb, data):
     """Read device state via the sdn-adapter.
 
-    Requires GET /netconf/status or GET /gnoi/status on sdn-adapter —
-    not yet implemented. Returns (False, msg) until those exist, so the
-    gateway logs a clear reason and falls back to cache.
+    The adapter exposes both reads as POST endpoints that mirror the SET
+    path: /netconf/status and /gnoi/status. Both take a JSON body and
+    return JSON. Response shapes differ:
+      NETCONF → {"ok": true, "state": "true"|"false"}             (string)
+      gNOI    → {"ok": true, "reply": {"is_connected": bool, ...}} (boolean)
     """
     host = _resolve_adapter_host(data)
     if not host:
         return False, "payload missing target-node-ip / target-node"
 
-    port = NETCONF_PORT if sb == "NETCONF" else GNOI_PORT
-    path = "/netconf/status" if sb == "NETCONF" else "/gnoi/status"
-    url  = f"{ADAPTER_URL}{path}"
+    if sb == "NETCONF":
+        path = "/netconf/status"
+        body = {"host": host, "port": NETCONF_PORT,
+                "user": NETCONF_USER, "password": NETCONF_PASS}
+    else:  # GNOI
+        path = "/gnoi/status"
+        body = {"host": host, "port": GNOI_PORT}
+
+    url = f"{ADAPTER_URL}{path}"
     try:
-        r = requests.get(url, params={"host": host, "port": port},
-                         timeout=ADAPTER_TIMEOUT)
+        r = requests.post(url, json=body, timeout=ADAPTER_TIMEOUT)
     except requests.RequestException as e:
         return False, f"adapter unreachable: {e}"
 
     if r.status_code == 404:
-        return False, f"adapter {path} not implemented (HTTP 404)"
+        return False, f"adapter {path} not found (HTTP 404)"
     if not r.ok:
         return False, f"adapter {path} HTTP {r.status_code}"
 
@@ -353,12 +360,23 @@ def _dispatch_adapter_get(sb, data):
     except ValueError:
         return False, f"adapter {path} non-JSON response"
 
-    state = payload.get("state")
-    if isinstance(state, bool):
-        return True, ("enabled" if state else "disabled")
-    if isinstance(state, str):
-        return True, state
-    return False, f"adapter {path} missing 'state' field"
+    # Shape depends on protocol.
+    if sb == "NETCONF":
+        raw = payload.get("state")
+    else:  # GNOI
+        raw = (payload.get("reply") or {}).get("is_connected")
+
+    # Normalise to "enabled"/"disabled".
+    if isinstance(raw, bool):
+        return True, ("enabled" if raw else "disabled")
+    if isinstance(raw, str):
+        s = raw.strip().lower()
+        if s in ("true", "enabled", "connected", "on", "1"):
+            return True, "enabled"
+        if s in ("false", "disabled", "disconnected", "off", "0"):
+            return True, "disabled"
+        return True, raw
+    return False, f"adapter {path} missing state field"
 
 
 def _dispatch_southbound_get(sb, data):
