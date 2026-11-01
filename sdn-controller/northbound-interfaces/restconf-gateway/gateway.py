@@ -205,6 +205,31 @@ def _gnmi_set_with_retry(target_id, path_elems, string_val=None, delete=False):
         return _gnmi_set(target_id, path_elems,
                          string_val=string_val, delete=delete)
 
+def _gnmi_get(target_id, path_elems):
+    """Read gNMI state from onos-config.
+
+    type=STATE is essential: with type=CONFIG onos-config returns its own
+    stored intent (a cache), not the device's real state. Verified against
+    the device by the STATE/CONFIG divergence test on 2026-xx-xx.
+    """
+    path   = gnmi_pb2.Path(elem=[gnmi_pb2.PathElem(name=n) for n in path_elems])
+    prefix = gnmi_pb2.Path(target=target_id)
+    req = gnmi_pb2.GetRequest(
+        prefix=prefix, path=[path], type=gnmi_pb2.GetRequest.STATE)
+    return _get_gnmi_stub().Get(req, timeout=GNMI_TIMEOUT)
+
+
+def _gnmi_extract_state(resp):
+    """Pull the state string out of a gNMI GetResponse, or return None."""
+    for notif in resp.notification:
+        for u in notif.update:
+            which = u.val.WhichOneof("value")
+            if which == "string_val":
+                return u.val.string_val
+            if which == "bool_val":
+                return "enabled" if u.val.bool_val else "disabled"
+    return None
+
 # ---------------------------------------------------------------------------
 # Payload extraction (unchanged)
 # ---------------------------------------------------------------------------
@@ -288,6 +313,62 @@ def _dispatch_gnmi(action, data):
     except Exception as e:
         return False, f"gNMI Set failed: {e}"
 
+def _dispatch_gnmi_get(data):
+    """Read gNMI device state via onos-config (micro-onos)."""
+    target_id = _resolve_target(data)
+    try:
+        resp = _gnmi_get(target_id, ["switching", "state"])
+        return True, _gnmi_extract_state(resp)
+    except grpc.RpcError as e:
+        return False, f"gNMI Get failed ({e.code().name}): {e.details()}"
+
+
+def _dispatch_adapter_get(sb, data):
+    """Read device state via the sdn-adapter.
+
+    Requires GET /netconf/status or GET /gnoi/status on sdn-adapter —
+    not yet implemented. Returns (False, msg) until those exist, so the
+    gateway logs a clear reason and falls back to cache.
+    """
+    host = _resolve_adapter_host(data)
+    if not host:
+        return False, "payload missing target-node-ip / target-node"
+
+    port = NETCONF_PORT if sb == "NETCONF" else GNOI_PORT
+    path = "/netconf/status" if sb == "NETCONF" else "/gnoi/status"
+    url  = f"{ADAPTER_URL}{path}"
+    try:
+        r = requests.get(url, params={"host": host, "port": port},
+                         timeout=ADAPTER_TIMEOUT)
+    except requests.RequestException as e:
+        return False, f"adapter unreachable: {e}"
+
+    if r.status_code == 404:
+        return False, f"adapter {path} not implemented (HTTP 404)"
+    if not r.ok:
+        return False, f"adapter {path} HTTP {r.status_code}"
+
+    try:
+        payload = r.json()
+    except ValueError:
+        return False, f"adapter {path} non-JSON response"
+
+    state = payload.get("state")
+    if isinstance(state, bool):
+        return True, ("enabled" if state else "disabled")
+    if isinstance(state, str):
+        return True, state
+    return False, f"adapter {path} missing 'state' field"
+
+
+def _dispatch_southbound_get(sb, data):
+    """Route a read to the same southbound the SET path uses."""
+    if sb == "GNMI":
+        return _dispatch_gnmi_get(data)
+    if sb in ("NETCONF", "GNOI"):
+        return _dispatch_adapter_get(sb, data)
+    return False, f"unknown sb '{sb}'"
+
 # ---------------------------------------------------------------------------
 # Router — this is the whole point of the patch
 # ---------------------------------------------------------------------------
@@ -329,15 +410,38 @@ def create_cross_connect():
     methods=["GET"],
 )
 def get_cross_connect():
-    if "active" not in CROSS_CONNECT_STORE or CROSS_CONNECT_STORE["active"] is None:
+    sb = (request.headers.get("X-Southbound-Target")
+          or request.args.get("sb", "gNMI")).upper()
+    refresh = request.args.get("refresh", "false").lower() == "true"
+
+    cache_status = "hit"
+    active = CROSS_CONNECT_STORE.get("active")
+
+    if refresh and active is not None:
+        ok, result = _dispatch_southbound_get(sb, active)
+        if ok:
+            cache_status = "bypass"
+            if result is not None:
+                new_admin = ("ENABLED" if str(result).lower() in
+                             ("enabled", "true", "on", "1") else "DISABLED")
+                active["admin-state"] = new_admin
+                CROSS_CONNECT_STORE["active"] = active
+        else:
+            cache_status = "stale"
+            app.logger.info("live GET (%s) failed, serving cache: %s",
+                            sb, result)
+
+    if active is None:
         return jsonify({
             "example-quantum-switching-terminal-service:cross-connect-service": []
         }), 200
-    return jsonify({
-        "example-quantum-switching-terminal-service:cross-connect-service": [
-            CROSS_CONNECT_STORE["active"]
-        ]
-    }), 200
+
+    resp = jsonify({
+        "example-quantum-switching-terminal-service:cross-connect-service":
+            [active]
+    })
+    resp.headers["X-Cache-Status"] = cache_status
+    return resp, 200
 
 
 @app.route(
