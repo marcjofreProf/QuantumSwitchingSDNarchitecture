@@ -637,26 +637,27 @@ if [ ! -s "${CERT_DIR}/client1.crt" ] || [ ! -s "${CERT_DIR}/client1.key" ]; the
     exit 1
 fi
 
-# Start a port-forward to onos-config in the background
-kubectl port-forward -n "$NAMESPACE" svc/onos-config 5150:5150 \
-    >/dev/null 2>&1 &
-PF_PID=$!
-trap 'kill $PF_PID 2>/dev/null; rm -rf "$CERT_DIR"' EXIT
+# Kill any stale port-forward from a previous interrupted run so it can
+# never confuse the health check below.
+pkill -f 'kubectl.*port-forward.*onos-config' 2>/dev/null || true
 
-# Wait for the port-forward to come up
-for i in $(seq 1 20); do
-    if nc -z localhost 5150 2>/dev/null; then
-        break
-    fi
-    sleep 0.5
-done
+# We don't use port-forward at all. The bootstrap pins onos-config's
+# externalIP to ${CONTROLLER_HOST}, and `gnmic capabilities` against
+# ${CONTROLLER_HOST}:5150 works from this host. Direct is both faster and
+# immune to the "port bound, tunnel dead" failure mode.
+ONOS_CONFIG_ADDR="${CONTROLLER_HOST}:5150"
+echo "[*] onos-config endpoint: ${ONOS_CONFIG_ADDR}"
 
-if ! nc -z localhost 5150 2>/dev/null; then
-    echo "[!] ERROR: Could not establish port-forward to onos-config."
+# Hard pre-flight so a broken onos-config fails in seconds, not minutes.
+if ! timeout 5 nc -z -w 3 "${CONTROLLER_HOST}" 5150 2>/dev/null; then
+    echo "[!] ERROR: onos-config not reachable at ${ONOS_CONFIG_ADDR}."
+    echo "    kubectl -n ${NAMESPACE} get svc onos-config -o yaml | grep -A3 externalIPs"
+    echo "    nc -zv ${CONTROLLER_HOST} 5150"
     exit 1
 fi
+echo "[*] onos-config TCP :5150 reachable."
 
-echo "[*] port-forward onos-config → localhost:5150 established."
+trap 'rm -rf "$CERT_DIR"' EXIT
 
 # Resolve the project venv Python (has grpc/grpc_tools installed)
 VENV_PY="$(cd "$(dirname "$0")/.." && pwd)/.venv/bin/python"
@@ -720,8 +721,8 @@ for cfg in "${REGISTERED_DEVICES[@]}"; do
     set_path="/switching/state"
     set_value="enabled"
 
-    "$VENV_PY" "$(dirname "$0")/gnmi_set_with_ext.py" \
-        --address localhost:5150 \
+    timeout -k 5 30 "$VENV_PY" "$(dirname "$0")/gnmi_set_with_ext.py" \
+        --address "${ONOS_CONFIG_ADDR}" \
         --target "$cfg" \
         --type "$dev_type" \
         --version "$dev_version" \
