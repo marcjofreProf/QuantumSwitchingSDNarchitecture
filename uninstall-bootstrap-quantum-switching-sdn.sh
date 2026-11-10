@@ -108,10 +108,43 @@ kubectl delete clusterroles       -l app.kubernetes.io/part-of=atomix >/dev/null
 kubectl delete clusterrolebindings -l app.kubernetes.io/name=onos-operator >/dev/null 2>&1 || true
 kubectl delete clusterroles       -l app.kubernetes.io/name=onos-operator >/dev/null 2>&1 || true
 
-# Remove leftover Custom Resource Definitions (CRDs)
+# Remove leftover Custom Resource Definitions (CRDs) with a safe fallback
+log_info "Removing leftover CRDs (with finalizer handling)..."
+
 for crd in $(kubectl get crd -o name 2>/dev/null | grep -E 'atomix.io|onosproject.org|juju'); do
-    echo -e "${CYAN}Deleting CRD: ${crd}${NC}"
-    kubectl delete "$crd" 2>/dev/null || true
+    log_info "  Processing CRD: ${crd}"
+
+    # 1. Attempt a normal, time-limited deletion. The --wait=false flag
+    #    asks the API server to start the process without the CLI blocking,
+    #    which we will verify manually.
+    if ! timeout 60s kubectl delete "$crd" --wait=false 2>/dev/null; then
+        log_warn "  CRD ${crd} did not delete within 60s. Forcing finalizer removal."
+    fi
+
+    # 2. Wait for the CRD to disappear. If it doesn't, force-remove its finalizers.
+    for i in $(seq 1 30); do
+        if ! kubectl get "$crd" >/dev/null 2>&1; then
+            break # The CRD is gone
+        fi
+        sleep 2
+    done
+
+    if kubectl get "$crd" >/dev/null 2>&1; then
+        log_warn "  CRD ${crd} is stuck. Patching to remove finalizers..."
+        # This is the key remediation: patching the CRD to have no finalizers.
+        kubectl patch "$crd" -p '{"metadata":{"finalizers":null}}' --type=merge 2>/dev/null || \
+            log_warn "    Failed to patch CRD finalizer for ${crd}."
+        
+        # Final check to confirm removal
+        sleep 3
+        if kubectl get "$crd" >/dev/null 2>&1; then
+            log_error "  CRD ${crd} STILL STUCK after finalizer removal. Manual intervention required."
+        else
+            log_success "  CRD ${crd} force-removed."
+        fi
+    else
+        log_success "  CRD ${crd} deleted normally."
+    fi
 done
 
 # 5. Purge µONOS Kubernetes resources
