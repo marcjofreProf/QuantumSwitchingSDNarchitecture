@@ -165,21 +165,99 @@ if helm status atomix -n kube-system >/dev/null 2>&1; then
     helm uninstall atomix -n kube-system 2>/dev/null || true
 fi
 
-log_info "Removing Atomix custom resources..."
-kubectl delete storageprofiles.atomix.io --all --all-namespaces --ignore-not-found=true 2>/dev/null || true
-kubectl delete raftclusters.raft.atomix.io --all --all-namespaces --ignore-not-found=true 2>/dev/null || true
-kubectl delete raftstores.raft.atomix.io --all --all-namespaces --ignore-not-found=true 2>/dev/null || true
+# ---------------------------------------------------------------------------
+# Helper: delete every CR of one CRD type, stripping finalizers from
+# anything that gets stuck. Idempotent, safe when the CRD does not exist.
+# ---------------------------------------------------------------------------
+delete_all_crs() {
+    local crtype="$1"
+    kubectl get crd "$crtype" >/dev/null 2>&1 || return 0
 
-log_info "Removing Atomix CRDs..."
-kubectl get crd -o name 2>/dev/null \
-    | grep -E '(^|\.)(atomix\.io|raft\.atomix\.io)$' \
-    | xargs -r kubectl delete 2>/dev/null || true
+    # Request deletion of every CR across every namespace without blocking.
+    kubectl delete "$crtype" --all --all-namespaces \
+        --wait=false --ignore-not-found=true 2>/dev/null || true
 
-kubectl delete crd \
+    sleep 3
+
+    # Anything still alive has a finalizer held by a controller we already
+    # uninstalled. Strip it so the apiserver can finish the deletion.
+    local stuck
+    stuck=$(kubectl get "$crtype" --all-namespaces \
+        -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{"\n"}{end}' \
+        2>/dev/null)
+    [ -z "$stuck" ] && return 0
+
+    while IFS=/ read -r ns name; do
+        [ -z "$name" ] && continue
+        log_warn "    $crtype/$name has stuck finalizer; stripping"
+        kubectl patch "$crtype" "$name" -n "$ns" \
+            -p '{"metadata":{"finalizers":null}}' --type=merge 2>/dev/null || true
+    done <<< "$stuck"
+
+    for _ in $(seq 1 10); do
+        stuck=$(kubectl get "$crtype" --all-namespaces \
+            -o jsonpath='{.items[*].metadata.name}' 2>/dev/null)
+        [ -z "$stuck" ] && return 0
+        sleep 1
+    done
+    log_warn "    $crtype CRs still present after strip: $stuck"
+}
+
+# ---------------------------------------------------------------------------
+# Helper: delete one CRD with a bounded wait, then strip its finalizer
+# (customresourcecleanup.apiextensions.k8s.io) if it hangs.
+# ---------------------------------------------------------------------------
+delete_crd() {
+    local name="$1"
+    kubectl get crd "$name" >/dev/null 2>&1 || return 0
+
+    log_info "  Deleting CRD $name..."
+    kubectl delete crd "$name" --wait=false --ignore-not-found=true 2>/dev/null || true
+
+    # 60 s natural wait (30 × 2 s). Usually done in <2 s if CRs are clean.
+    for _ in $(seq 1 30); do
+        kubectl get crd "$name" >/dev/null 2>&1 || { log_success "  CRD $name removed."; return 0; }
+        sleep 2
+    done
+
+    log_warn "  CRD $name stuck on finalizers; stripping."
+    kubectl patch crd "$name" -p '{"metadata":{"finalizers":null}}' --type=merge 2>/dev/null || true
+
+    for _ in $(seq 1 10); do
+        kubectl get crd "$name" >/dev/null 2>&1 || { log_success "  CRD $name force-removed."; return 0; }
+        sleep 1
+    done
+    log_error "  CRD $name STILL present after finalizer strip. Manual:"
+    log_error "    kubectl patch crd $name -p '{\"metadata\":{\"finalizers\":null}}' --type=merge"
+}
+
+# --- Step A: every CR must be gone before its CRD can be deleted cleanly ---
+log_info "Removing Atomix custom resources (with finalizer handling)..."
+for crtype in \
     storageprofiles.atomix.io \
     raftclusters.raft.atomix.io \
     raftstores.raft.atomix.io \
-    --ignore-not-found=true 2>/dev/null || true
+    raftreplicas.raft.atomix.io \
+    raftmembers.raft.atomix.io ; do
+    delete_all_crs "$crtype"
+done
+
+# --- Step B: now the CRDs can go; the cleanup controller has nothing left ---
+log_info "Removing Atomix CRDs (with finalizer handling)..."
+for crd_name in \
+    storageprofiles.atomix.io \
+    raftclusters.raft.atomix.io \
+    raftstores.raft.atomix.io \
+    raftreplicas.raft.atomix.io \
+    raftmembers.raft.atomix.io ; do
+    delete_crd "$crd_name"
+done
+
+# --- Step C: catch any CRDs we did not name explicitly ---
+for crd_ref in $(kubectl get crd -o name 2>/dev/null \
+        | grep -E '(^|\.)(atomix\.io|raft\.atomix\.io)$'); do
+    delete_crd "${crd_ref##*/}"
+done
 
 log_info "Removing remaining Atomix/ONOS operator workloads..."
 kubectl get pods -n kube-system -o name 2>/dev/null \
