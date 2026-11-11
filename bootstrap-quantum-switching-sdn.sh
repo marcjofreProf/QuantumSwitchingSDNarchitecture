@@ -295,22 +295,32 @@ install_juju() {
 
     log_info "Installing Juju CLI..."
 
-    # 1) go install — works when snapcraft.io / launchpad.net are blocked
-    #    but github.com + proxy.golang.org are reachable. This is the
-    #    primary path on restricted (campus / enterprise) networks.
-    #    NOTE: v3.6.4 required — `juju integrate` (used by OSM phase) was
-    #    introduced in Juju 3.2, so 3.0.x will fail later.
-    log_info "  [1/4] go install juju@v3.6.4 (5-10 min, please wait)..."
-    if command -v go >/dev/null 2>&1 \
-       && GOPROXY=https://proxy.golang.org GO111MODULE=on \
-          timeout 900 go install github.com/juju/juju/cmd/juju@v3.6.4 \
-       && [ -x "$HOME/go/bin/juju" ]; then
-        sudo install -m 0755 "$HOME/go/bin/juju" /usr/local/bin/juju
-        hash -r
-        command -v juju >/dev/null 2>&1 \
-            && { log_success "Juju installed via go install."; return 0; }
+    # 1) Clone + build from GitHub — works when launchpad.net and
+    #    snapcraft.io are blocked but github.com and proxy.golang.org
+    #    are reachable.  Uses `git clone` + `go build` because
+    #    `go install github.com/juju/juju/cmd/juju@v3.6.4` is invalid
+    #    (cmd/juju is a package, not a module — the module is
+    #    github.com/juju/juju).  See juju/CONTRIBUTING.md.
+    log_info "  [1/4] git clone + go build juju v3.6.4 (5-10 min)..."
+    if command -v go >/dev/null 2>&1 && command -v git >/dev/null 2>&1; then
+        rm -rf /tmp/juju-src
+        if git clone --depth 1 --branch v3.6.4 \
+               https://github.com/juju/juju.git /tmp/juju-src >/dev/null 2>&1 \
+           && ( cd /tmp/juju-src \
+                && GOPROXY=https://proxy.golang.org GO111MODULE=on \
+                   timeout 900 go build -o /tmp/juju ./cmd/juju ) \
+           && [ -x /tmp/juju ]; then
+            sudo install -m 0755 /tmp/juju /usr/local/bin/juju
+            rm -rf /tmp/juju-src /tmp/juju
+            hash -r
+            command -v juju >/dev/null 2>&1 \
+                && { log_success "Juju built from source (v3.6.4)."; return 0; }
+        fi
+        rm -rf /tmp/juju-src /tmp/juju
+        log_warn "  git clone + go build failed; trying tarball."
+    else
+        log_warn "  go or git missing; skipping source build."
     fi
-    log_warn "  go install failed; trying tarball."
 
     # 2) Tarball from launchpad.net
     log_info "  [2/4] tarball from launchpad.net (120s timeout)..."
