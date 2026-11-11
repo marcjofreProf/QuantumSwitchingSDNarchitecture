@@ -295,13 +295,50 @@ install_juju() {
 
     log_info "Installing Juju CLI..."
 
-    # 1) Clone + build from GitHub — works when launchpad.net and
+    # 1) Tarball from launchpad.net
+    log_info "  [1/4] tarball from launchpad.net (120s timeout)..."
+    local tb="juju-3.0.0-linux-amd64.tar.xz"
+    local url="https://launchpad.net/juju/3.0/3.0.0/+download/${tb}"
+    if curl -fsSL -4 --max-time 120 -o "/tmp/${tb}" "$url" 2>/dev/null \
+       && tar xf "/tmp/${tb}" -C /tmp 2>/dev/null && [ -x /tmp/juju ]; then
+        sudo install -m 0755 /tmp/juju /usr/local/bin/juju 2>/dev/null
+        rm -f "/tmp/${tb}" /tmp/juju
+        hash -r
+        command -v juju >/dev/null 2>&1 \
+            && { log_success "Juju installed via tarball."; return 0; }
+    fi
+    rm -f "/tmp/${tb}" /tmp/juju 2>/dev/null
+    log_warn "  tarball failed."
+
+    # 2) PPA via apt (bounded so it can't hang)
+    log_info "  [2/4] PPA ppa:juju/stable via apt (60s timeout)..."
+    if timeout 60 sudo add-apt-repository -yu ppa:juju/stable >/dev/null 2>&1; then
+        wait_for_apt_lock
+        if timeout 90 sudo DEBIAN_FRONTEND=noninteractive apt-get update -y >/dev/null 2>&1 \
+           && timeout 90 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y juju >/dev/null 2>&1; then
+            hash -r
+            command -v juju >/dev/null 2>&1 \
+                && { log_success "Juju installed via PPA."; return 0; }
+        fi
+    fi
+    log_warn "  PPA failed or timed out."
+
+    # 3) Snap (bounded)
+    log_info "  [3/4] snap install (120s timeout)..."
+    if timeout 120 sudo snap install juju --classic 2>/dev/null; then
+        hash -r
+        command -v juju >/dev/null 2>&1 \
+            && { log_success "Juju installed via Snap."; return 0; }
+    fi
+    log_warn "  snap failed or timed out."
+
+    # 4) Clone + build from GitHub — works when launchpad.net and
     #    snapcraft.io are blocked but github.com and proxy.golang.org
     #    are reachable.  Uses `git clone` + `go build` because
     #    `go install github.com/juju/juju/cmd/juju@v3.6.4` is invalid
     #    (cmd/juju is a package, not a module — the module is
     #    github.com/juju/juju).  See juju/CONTRIBUTING.md.
-    log_info "  [1/4] git clone + go build juju v3.6.4 (5-10 min)..."
+    log_info "  [4/4] git clone + go build juju v3.6.4 (5-10 min)..."
     if command -v go >/dev/null 2>&1 && command -v git >/dev/null 2>&1; then
         rm -rf /tmp/juju-src
         if git clone --depth 1 --branch v3.6.4 \
@@ -317,55 +354,18 @@ install_juju() {
                 && { log_success "Juju built from source (v3.6.4)."; return 0; }
         fi
         rm -rf /tmp/juju-src /tmp/juju
-        log_warn "  git clone + go build failed; trying tarball."
+        log_warn "  git clone + go build failed."
     else
         log_warn "  go or git missing; skipping source build."
     fi
 
-    # 2) Tarball from launchpad.net
-    log_info "  [2/4] tarball from launchpad.net (120s timeout)..."
-    local tb="juju-3.0.0-linux-amd64.tar.xz"
-    local url="https://launchpad.net/juju/3.0/3.0.0/+download/${tb}"
-    if curl -fsSL -4 --max-time 120 -o "/tmp/${tb}" "$url" 2>/dev/null \
-       && tar xf "/tmp/${tb}" -C /tmp 2>/dev/null && [ -x /tmp/juju ]; then
-        sudo install -m 0755 /tmp/juju /usr/local/bin/juju 2>/dev/null
-        rm -f "/tmp/${tb}" /tmp/juju
-        hash -r
-        command -v juju >/dev/null 2>&1 \
-            && { log_success "Juju installed via tarball."; return 0; }
-    fi
-    rm -f "/tmp/${tb}" /tmp/juju 2>/dev/null
-    log_warn "  tarball failed."
-
-    # 3) PPA via apt (bounded so it can't hang)
-    log_info "  [3/4] PPA ppa:juju/stable via apt (60s timeout)..."
-    if timeout 60 sudo add-apt-repository -yu ppa:juju/stable >/dev/null 2>&1; then
-        wait_for_apt_lock
-        if timeout 90 sudo DEBIAN_FRONTEND=noninteractive apt-get update -y >/dev/null 2>&1 \
-           && timeout 90 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y juju >/dev/null 2>&1; then
-            hash -r
-            command -v juju >/dev/null 2>&1 \
-                && { log_success "Juju installed via PPA."; return 0; }
-        fi
-    fi
-    log_warn "  PPA failed or timed out."
-
-    # 4) Snap (bounded)
-    log_info "  [4/4] snap install (120s timeout)..."
-    if timeout 120 sudo snap install juju --classic 2>/dev/null; then
-        hash -r
-        command -v juju >/dev/null 2>&1 \
-            && { log_success "Juju installed via Snap."; return 0; }
-    fi
-    log_warn "  snap failed or timed out."
-
-    log_error "All Juju install channels failed (go, tarball, PPA, snap)."
-    log_error "Manual: GOPROXY=https://proxy.golang.org GO111MODULE=on \\"
-    log_error "        go install github.com/juju/juju/cmd/juju@v3.6.4"
-    log_error "        sudo install -m 0755 ~/go/bin/juju /usr/local/bin/juju"
+    log_error "All Juju install channels failed (tarball, PPA, snap, source build)."
+    log_error "Manual:"
+    log_error "  git clone --depth 1 --branch v3.6.4 https://github.com/juju/juju.git /tmp/juju-src"
+    log_error "  cd /tmp/juju-src && GOPROXY=https://proxy.golang.org GO111MODULE=on go build -o /tmp/juju ./cmd/juju"
+    log_error "  sudo install -m 0755 /tmp/juju /usr/local/bin/juju"
     return 1
 }
-
 
 install_sys_deps() {
     log_info "Phase 2: Checking basic system dependencies..."
