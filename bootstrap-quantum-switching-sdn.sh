@@ -292,20 +292,70 @@ install_juju() {
         log_success "Juju is already installed ($(juju version 2>/dev/null | head -1))."
         return 0
     fi
+
     log_info "Installing Juju CLI..."
-    ( set -e
-      cd /tmp
-      curl -fsSL -4 --max-time 120 -o juju-3.0.0-linux-amd64.tar.xz \
-          https://launchpad.net/juju/3.0/3.0.0/+download/juju-3.0.0-linux-amd64.tar.xz
-      tar xf juju-3.0.0-linux-amd64.tar.xz
-      sudo install -m 0755 juju /usr/local/bin/juju
-      rm -f juju-3.0.0-linux-amd64.tar.xz juju
-    ) || log_error "Juju install failed. Manual: see https://launchpad.net/juju/3.0"
-    hash -r
-    command -v juju >/dev/null 2>&1 \
-        && log_success "Juju installed via tarball." \
-        || { log_error "juju binary not on PATH after install."; return 1; }
+
+    # 1) go install — works when snapcraft.io / launchpad.net are blocked
+    #    but github.com + proxy.golang.org are reachable. This is the
+    #    primary path on restricted (campus / enterprise) networks.
+    #    NOTE: v3.6.4 required — `juju integrate` (used by OSM phase) was
+    #    introduced in Juju 3.2, so 3.0.x will fail later.
+    log_info "  [1/4] go install juju@v3.6.4 (5-10 min, please wait)..."
+    if command -v go >/dev/null 2>&1 \
+       && GOPROXY=https://proxy.golang.org GO111MODULE=on \
+          timeout 900 go install github.com/juju/juju/cmd/juju@v3.6.4 \
+       && [ -x "$HOME/go/bin/juju" ]; then
+        sudo install -m 0755 "$HOME/go/bin/juju" /usr/local/bin/juju
+        hash -r
+        command -v juju >/dev/null 2>&1 \
+            && { log_success "Juju installed via go install."; return 0; }
+    fi
+    log_warn "  go install failed; trying tarball."
+
+    # 2) Tarball from launchpad.net
+    log_info "  [2/4] tarball from launchpad.net (120s timeout)..."
+    local tb="juju-3.0.0-linux-amd64.tar.xz"
+    local url="https://launchpad.net/juju/3.0/3.0.0/+download/${tb}"
+    if curl -fsSL -4 --max-time 120 -o "/tmp/${tb}" "$url" 2>/dev/null \
+       && tar xf "/tmp/${tb}" -C /tmp 2>/dev/null && [ -x /tmp/juju ]; then
+        sudo install -m 0755 /tmp/juju /usr/local/bin/juju 2>/dev/null
+        rm -f "/tmp/${tb}" /tmp/juju
+        hash -r
+        command -v juju >/dev/null 2>&1 \
+            && { log_success "Juju installed via tarball."; return 0; }
+    fi
+    rm -f "/tmp/${tb}" /tmp/juju 2>/dev/null
+    log_warn "  tarball failed."
+
+    # 3) PPA via apt (bounded so it can't hang)
+    log_info "  [3/4] PPA ppa:juju/stable via apt (60s timeout)..."
+    if timeout 60 sudo add-apt-repository -yu ppa:juju/stable >/dev/null 2>&1; then
+        wait_for_apt_lock
+        if timeout 90 sudo DEBIAN_FRONTEND=noninteractive apt-get update -y >/dev/null 2>&1 \
+           && timeout 90 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y juju >/dev/null 2>&1; then
+            hash -r
+            command -v juju >/dev/null 2>&1 \
+                && { log_success "Juju installed via PPA."; return 0; }
+        fi
+    fi
+    log_warn "  PPA failed or timed out."
+
+    # 4) Snap (bounded)
+    log_info "  [4/4] snap install (120s timeout)..."
+    if timeout 120 sudo snap install juju --classic 2>/dev/null; then
+        hash -r
+        command -v juju >/dev/null 2>&1 \
+            && { log_success "Juju installed via Snap."; return 0; }
+    fi
+    log_warn "  snap failed or timed out."
+
+    log_error "All Juju install channels failed (go, tarball, PPA, snap)."
+    log_error "Manual: GOPROXY=https://proxy.golang.org GO111MODULE=on \\"
+    log_error "        go install github.com/juju/juju/cmd/juju@v3.6.4"
+    log_error "        sudo install -m 0755 ~/go/bin/juju /usr/local/bin/juju"
+    return 1
 }
+
 
 install_sys_deps() {
     log_info "Phase 2: Checking basic system dependencies..."
