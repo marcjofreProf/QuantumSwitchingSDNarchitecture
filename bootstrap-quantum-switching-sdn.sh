@@ -303,7 +303,7 @@ install_juju() {
     log_warn "Snap installation failed (store unreachable or snapd broken)."
 
     # 2. PPA (official secondary)
-    if sudo add-apt-repository -yu ppa:juju/stable >/dev/null 2>&1 && \
+    if timeout 60 sudo add-apt-repository -yu ppa:juju/stable >/dev/null 2>&1 && \
        wait_for_apt_lock && \
        sudo DEBIAN_FRONTEND=noninteractive apt-get update -y >/dev/null 2>&1 && \
        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y juju >/dev/null 2>&1; then
