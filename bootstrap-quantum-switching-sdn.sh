@@ -287,6 +287,52 @@ create_repo_structure() {
     log_success "Repository structure verified."
 }
 
+install_juju() {
+    if command -v juju >/dev/null 2>&1; then
+        log_success "Juju is already installed ($(juju version 2>/dev/null | head -1))."
+        return 0
+    fi
+
+    log_info "Installing Juju CLI..."
+
+    # 1. Snap (official primary)
+    if sudo snap install juju --classic 2>/dev/null; then
+        log_success "Juju installed via Snap."
+        return 0
+    fi
+    log_warn "Snap installation failed (store unreachable or snapd broken)."
+
+    # 2. PPA (official secondary)
+    if sudo add-apt-repository -yu ppa:juju/stable >/dev/null 2>&1 && \
+       wait_for_apt_lock && \
+       sudo DEBIAN_FRONTEND=noninteractive apt-get update -y >/dev/null 2>&1 && \
+       sudo DEBIAN_FRONTEND=noninteractive apt-get install -y juju >/dev/null 2>&1; then
+        log_success "Juju installed via PPA."
+        return 0
+    fi
+    log_warn "PPA installation failed."
+
+    # 3. Direct binary tarball from Launchpad (last resort — no deps)
+    local tarball="juju-3.0.0-linux-amd64.tar.xz"
+    local tarball_url="https://launchpad.net/juju/3.0/3.0.0/+download/${tarball}"
+    if curl -fsL --max-time 60 -o "/tmp/${tarball}" "$tarball_url" 2>/dev/null && \
+       tar xf "/tmp/${tarball}" -C /tmp 2>/dev/null && \
+       sudo install -m 0755 /tmp/juju /usr/local/bin/juju 2>/dev/null; then
+        rm -f "/tmp/${tarball}" /tmp/juju
+        hash -r
+        log_success "Juju installed via direct binary from Launchpad."
+        return 0
+    fi
+
+    log_error "Failed to install Juju via Snap, PPA, and direct binary."
+    log_error "Manual fix (pick one):"
+    log_error "  A) sudo snap set system proxy.https=http://PROXY:PORT; sudo snap install juju --classic"
+    log_error "  B) curl -LO https://launchpad.net/juju/3.0/3.0.0/+download/juju-3.0.0-linux-amd64.tar.xz"
+    log_error "     tar xf juju-3.0.0-linux-amd64.tar.xz"
+    log_error "     sudo install -m 0755 juju /usr/local/bin/juju"
+    return 1
+}
+
 install_sys_deps() {
     log_info "Phase 2: Checking basic system dependencies..."
     local deps="curl git wget jq build-essential python3-pip python3-venv python3-flask gpg psmisc golang-go"
@@ -308,10 +354,7 @@ install_sys_deps() {
         log_success "All basic system dependencies are already installed."
     fi
 
-    if ! command -v juju >/dev/null 2>&1; then
-        log_info "Installing Juju CLI..."
-        sudo snap install juju --classic
-    fi
+    install_juju || exit 1
 }
 
 install_docker() {
