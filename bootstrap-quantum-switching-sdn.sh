@@ -292,45 +292,19 @@ install_juju() {
         log_success "Juju is already installed ($(juju version 2>/dev/null | head -1))."
         return 0
     fi
-
     log_info "Installing Juju CLI..."
-
-    # 1. Snap (official primary)
-    if sudo snap install juju --classic 2>/dev/null; then
-        log_success "Juju installed via Snap."
-        return 0
-    fi
-    log_warn "Snap installation failed (store unreachable or snapd broken)."
-
-    # 2. PPA (official secondary)
-    if timeout 60 sudo add-apt-repository -yu ppa:juju/stable >/dev/null 2>&1 && \
-       wait_for_apt_lock && \
-       sudo DEBIAN_FRONTEND=noninteractive apt-get update -y >/dev/null 2>&1 && \
-       sudo DEBIAN_FRONTEND=noninteractive apt-get install -y juju >/dev/null 2>&1; then
-        log_success "Juju installed via PPA."
-        return 0
-    fi
-    log_warn "PPA installation failed."
-
-    # 3. Direct binary tarball from Launchpad (last resort — no deps)
-    local tarball="juju-3.0.0-linux-amd64.tar.xz"
-    local tarball_url="https://launchpad.net/juju/3.0/3.0.0/+download/${tarball}"
-    if curl -fsL --max-time 60 -o "/tmp/${tarball}" "$tarball_url" 2>/dev/null && \
-       tar xf "/tmp/${tarball}" -C /tmp 2>/dev/null && \
-       sudo install -m 0755 /tmp/juju /usr/local/bin/juju 2>/dev/null; then
-        rm -f "/tmp/${tarball}" /tmp/juju
-        hash -r
-        log_success "Juju installed via direct binary from Launchpad."
-        return 0
-    fi
-
-    log_error "Failed to install Juju via Snap, PPA, and direct binary."
-    log_error "Manual fix (pick one):"
-    log_error "  A) sudo snap set system proxy.https=http://PROXY:PORT; sudo snap install juju --classic"
-    log_error "  B) curl -LO https://launchpad.net/juju/3.0/3.0.0/+download/juju-3.0.0-linux-amd64.tar.xz"
-    log_error "     tar xf juju-3.0.0-linux-amd64.tar.xz"
-    log_error "     sudo install -m 0755 juju /usr/local/bin/juju"
-    return 1
+    ( set -e
+      cd /tmp
+      curl -fsSL -4 --max-time 120 -o juju-3.0.0-linux-amd64.tar.xz \
+          https://launchpad.net/juju/3.0/3.0.0/+download/juju-3.0.0-linux-amd64.tar.xz
+      tar xf juju-3.0.0-linux-amd64.tar.xz
+      sudo install -m 0755 juju /usr/local/bin/juju
+      rm -f juju-3.0.0-linux-amd64.tar.xz juju
+    ) || log_error "Juju install failed. Manual: see https://launchpad.net/juju/3.0"
+    hash -r
+    command -v juju >/dev/null 2>&1 \
+        && log_success "Juju installed via tarball." \
+        || { log_error "juju binary not on PATH after install."; return 1; }
 }
 
 install_sys_deps() {
